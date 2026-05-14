@@ -2,7 +2,7 @@ services:
   mysql:
     image: mysql:8.0
     environment:
-      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-123456}
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
       MYSQL_DATABASE: comfyui
     volumes:
       - mysql_data:/var/lib/mysql
@@ -15,7 +15,8 @@ services:
   comfyui:
     build: ./ComfyUI
     volumes:
-      - ./ComfyUI/models:/app/models
+      - ./ComfyUI:/app                          # 挂载源码，git pull 后 restart 即生效
+      - ./ComfyUI/models:/app/models            # 覆盖模型目录（大文件单独管理）
       - ./ComfyUI/custom_nodes:/app/custom_nodes
       - ./ComfyUI/output:/app/output
       - ./ComfyUI/input:/app/input
