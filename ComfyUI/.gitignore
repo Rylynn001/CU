@@ -11,13 +11,22 @@ __pycache__/
 *.pyo
 *.pyd
 
-# 模型文件（体积大，单独管理）
-models/
+# 模型文件（忽略内容，保留目录结构）
+models/**
+!models/**/
+!models/**/.gitkeep
+# configs 目录保留 yaml 配置文件
+!models/configs/*.yaml
 
-# 运行时目录
-output/
-input/
-temp/
+# 运行时目录（忽略内容，保留目录结构）
+output/**
+!output/.gitkeep
+input/**
+!input/.gitkeep
+!input/3d/
+!input/3d/.gitkeep
+temp/**
+!temp/.gitkeep
 
 # 用户数据
 user/
