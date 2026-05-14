@@ -32,7 +32,7 @@ comfyui             ComfyUI + comfy_api_proxy
 ### 1. 上传代码
 
 ```bash
-git clone <your-repo-url> /opt/comfy
+git clone git@github.com:Rylynn001/CU.git /opt/comfy
 cd /opt/comfy
 ```
 

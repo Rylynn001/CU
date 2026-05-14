@@ -7,9 +7,8 @@ RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debia
 
 WORKDIR /app
 
-# CPU 版 PyTorch（换清华 pip 镜像）
 RUN pip install torch torchvision torchaudio \
-    --index-url https://download.pytorch.org/whl/cpu
+    -i https://pypi.tuna.tsinghua.edu.cn/simple/
 
 COPY requirements.txt .
 RUN pip install -r requirements.txt \
