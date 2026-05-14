@@ -1,9 +1,10 @@
 import { ref, onUnmounted } from 'vue'
 import { getWsUrl } from '../config'
 import { getImageUrl } from '../api/comfyui'
+import { generateUUID } from '../utils/uuid'
 
 export function useComfyWebSocket() {
-  const clientId = crypto.randomUUID().replace(/-/g, '')
+  const clientId = generateUUID().replace(/-/g, '')
   const progress = ref(0)
   const generating = ref(false)
   const imageUrl = ref('')

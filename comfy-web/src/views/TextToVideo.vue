@@ -7,6 +7,7 @@ import RecordCard from '../components/RecordCard.vue'
 import { apiVideoGenerate, apiImg2VideoGenerate, getApiModels, type ApiModel } from '../api/apiService'
 import { useTaskHistory } from '../composables/useTaskHistory'
 import { getCurrentUserId } from '../utils/user'
+import { generateUUID } from '../utils/uuid'
 
 // ── 生成记录 ──────────────────────────────────────────────
 interface VideoRecord {
@@ -38,7 +39,7 @@ const { records, saveRecords, clearAll, deleteRecord } = useTaskHistory<VideoRec
 async function retryRecord(record: VideoRecord) {
   // 创建新记录，复用原来的参数
   const newRecord: VideoRecord = {
-    id: crypto.randomUUID(),
+    id: generateUUID(),
     createdAt: Date.now(),
     prompt: record.prompt,
     modelName: record.modelName,
@@ -395,7 +396,7 @@ async function handleGenerate() {
     const modelName = apiModels.value.find(m => m.id === apiModel.value)?.name || apiModel.value
 
     const record: VideoRecord = {
-      id: crypto.randomUUID(),
+      id: generateUUID(),
       createdAt: Date.now(),
       prompt: prompt.value,
       modelName,

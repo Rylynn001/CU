@@ -10,6 +10,7 @@ import { useComfyWebSocket } from '../composables/useComfyWebSocket'
 import { getApiModels, apiGenerate, pollTaskUntilDone, resolveImageSrc, uploadInputImage, type ApiModel } from '../api/apiService'
 import { useTaskHistory } from '../composables/useTaskHistory'
 import { getCurrentUserId } from '../utils/user'
+import { generateUUID } from '../utils/uuid'
 
 const { clientId, progress, generating, imageUrl, connect, startGeneration } = useComfyWebSocket()
 
@@ -49,7 +50,7 @@ const { records, saveRecords, clearAll, formatTime, deleteRecord } = useTaskHist
 
 async function retryRecord(record: GenerationRecord) {
   const newRecord: GenerationRecord = {
-    id: crypto.randomUUID(),
+    id: generateUUID(),
     createdAt: Date.now(),
     mode: record.mode,
     prompt: record.prompt,
@@ -445,7 +446,7 @@ async function handleGenerate() {
     if (!apiModel.value) { errorMsg.value = '请先在模型管理中添加 API 模型'; return }
 
     const record: GenerationRecord = {
-      id: crypto.randomUUID(),
+      id: generateUUID(),
       createdAt: Date.now(),
       prompt: form.value.positive_prompt,
       inputPreviews,
@@ -468,7 +469,7 @@ async function handleGenerate() {
   if (!form.value.ckpt_name) { errorMsg.value = '请先选择模型'; return }
 
   const record: GenerationRecord = {
-    id: crypto.randomUUID(),
+    id: generateUUID(),
     createdAt: Date.now(),
     prompt: form.value.positive_prompt,
     inputPreviews,
