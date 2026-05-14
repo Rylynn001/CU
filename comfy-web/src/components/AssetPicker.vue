@@ -58,11 +58,11 @@ function setFilter(filter: 'all' | 'picture' | 'video') {
 }
 
 function getImageUrl(location: string) {
-  return `http://127.0.0.1:8188/view?filename=${location}&type=output`
+  return `/api/view?filename=${encodeURIComponent(location)}&type=output`
 }
 
 function getMediaUrl(location: string) {
-  return `/api/api-proxy/output/${location.split('\\').pop()}`
+  return `/api/api-proxy/output/${location.split(/[/\\]/).pop()}`
 }
 
 function selectAsset(asset: Asset) {
@@ -166,7 +166,7 @@ watch(() => props.visible, (val) => {
           loading="lazy"
         />
         <div class="gallery-info">
-          <span class="gallery-name">{{ asset.location.split('\\').pop() }}</span>
+          <span class="gallery-name">{{ asset.location.split(/[/\\]/).pop() }}</span>
           <span v-if="asset.asset_type === 'video'" class="asset-type-badge">视频</span>
         </div>
         <div v-if="selectedAssets.some(a => a.id === asset.id)" class="selected-badge">
