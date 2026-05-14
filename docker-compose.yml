@@ -1,0 +1,36 @@
+services:
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-123456}
+      MYSQL_DATABASE: comfyui
+    volumes:
+      - mysql_data:/var/lib/mysql
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+
+  comfyui:
+    build: ./ComfyUI
+    volumes:
+      - ./ComfyUI/models:/app/models
+      - ./ComfyUI/custom_nodes:/app/custom_nodes
+      - ./ComfyUI/output:/app/output
+      - ./ComfyUI/input:/app/input
+    depends_on:
+      - mysql
+      - redis
+    restart: unless-stopped
+
+  comfy-web:
+    build: ./comfy-web
+    ports:
+      - "80:80"
+    depends_on:
+      - comfyui
+    restart: unless-stopped
+
+volumes:
+  mysql_data:

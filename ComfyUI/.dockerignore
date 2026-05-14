@@ -1,0 +1,7 @@
+models/
+output/
+input/
+__pycache__/
+*.pyc
+.git/
+venv/

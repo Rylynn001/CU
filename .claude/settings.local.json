@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"from openai import AsyncOpenAI; print\\('OpenAI OK'\\)\")",
+      "Bash(python -c \"import google.generativeai as genai; print\\('Gemini OK'\\)\")",
+      "Bash(pip show *)",
+      "Bash(python -c \"from google import genai; print\\('Gemini import OK'\\)\")",
+      "Bash(python -c \"import sys; sys.path.insert\\(0, 'custom_nodes/comfy_api_proxy'\\); from routes import routes; print\\('Routes import OK'\\)\")",
+      "Bash(mysql -u root -p123456 comfyui -e \"SHOW TABLES; DESCRIBE assets;\")",
+      "WebSearch"
+    ]
+  }
+}

@@ -1,0 +1,8 @@
+services:
+  comfy-web:
+    build: .
+    ports:
+      - "80:80"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"  # 让容器能访问宿主机
+    restart: unless-stopped
