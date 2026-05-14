@@ -13,13 +13,12 @@ import os
 # 添加父目录到 path，以便导入 config
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from config import get_db_config, get_redis_config
+from config import get_db_config, get_redis_config, get_output_dir
 
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s: %(message)s')
 logger = logging.getLogger('worker')
 
-OUTPUT_DIR = pathlib.Path(r'D:\AAAA\output')
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+OUTPUT_DIR = get_output_dir()
 
 # Redis 连接
 redis_client = redis.Redis(**get_redis_config())

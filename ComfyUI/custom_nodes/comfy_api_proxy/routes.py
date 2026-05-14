@@ -45,7 +45,7 @@ _executor = ThreadPoolExecutor(max_workers=4)
 
 # 输出目录
 import pathlib
-OUTPUT_DIR = pathlib.Path(r'D:\AAAA\output')
+OUTPUT_DIR = cfg.get_output_dir()
 
 # Redis 连接（任务队列 + 状态存储）
 import redis
@@ -1168,8 +1168,7 @@ async def upload_input_image(request: web.Request):
     import uuid
     ext = pathlib.Path(filename).suffix or '.png'
     unique_name = f'input_{uuid.uuid4().hex}{ext}'
-    input_dir = pathlib.Path(r'D:\AAAA\input')
-    input_dir.mkdir(parents=True, exist_ok=True)
+    input_dir = cfg.get_input_dir()
     save_path = input_dir / unique_name
     save_path.write_bytes(file_bytes)
     location = str(save_path)  # 绝对路径

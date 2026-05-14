@@ -82,6 +82,18 @@ def get_redis_config() -> dict:
         'decode_responses': True,
     }
 
+def get_output_dir() -> pathlib.Path:
+    """获取输出目录"""
+    path = pathlib.Path(os.environ.get('OUTPUT_DIR', '/app/output'))
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+def get_input_dir() -> pathlib.Path:
+    """获取输入目录"""
+    path = pathlib.Path(os.environ.get('INPUT_DIR', '/app/input'))
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
 def get_oss_config() -> dict:
     """获取 OSS 配置"""
     return {
