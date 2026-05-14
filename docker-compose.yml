@@ -5,11 +5,15 @@ services:
       MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
       MYSQL_DATABASE: comfyui
     volumes:
-      - mysql_data:/var/lib/mysql
+      - ./mysql_data:/var/lib/mysql
+    ports:
+      - "3306:3306"
     restart: unless-stopped
 
   redis:
     image: redis:7-alpine
+    ports:
+      - "6379:6379"
     restart: unless-stopped
 
   comfyui:
@@ -20,6 +24,8 @@ services:
       - ./ComfyUI/custom_nodes:/app/custom_nodes
       - ./ComfyUI/output:/app/output
       - ./ComfyUI/input:/app/input
+    ports:
+      - "8188:8188"
     depends_on:
       - mysql
       - redis
