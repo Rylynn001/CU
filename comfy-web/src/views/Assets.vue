@@ -64,7 +64,7 @@ function getImageUrl(location: string) {
 }
 
 function getMediaUrl(location: string) {
-  return `/api/api-proxy/output/${location.split('\\').pop()}`
+  return `/api/api-proxy/output/${location.split(/[/\\]/).pop()}`
 }
 
 function isVideo(asset: Asset): boolean {
@@ -76,7 +76,7 @@ function downloadImage(asset: Asset) {
   const url = isVideo(asset) ? getMediaUrl(asset.location) : getImageUrl(asset.location)
   const a = document.createElement('a')
   a.href = url
-  a.download = asset.location.split('\\').pop() || 'asset'
+  a.download = asset.location.split(/[/\\]/).pop() || 'asset'
   a.click()
 }
 
@@ -135,7 +135,7 @@ onMounted(() => {
             @click="previewImage(asset)"
           />
           <div class="gallery-info">
-            <span class="gallery-name">{{ asset.location.split('\\').pop() }}</span>
+            <span class="gallery-name">{{ asset.location.split(/[/\\]/).pop() }}</span>
             <span v-if="isVideo(asset)" class="gallery-type">视频</span>
           </div>
           <button class="download-btn" @click.stop="downloadImage(asset)" title="下载">
