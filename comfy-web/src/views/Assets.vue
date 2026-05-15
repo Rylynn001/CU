@@ -60,7 +60,7 @@ function setFilter(filter: 'all' | 'picture' | 'video') {
 }
 
 function getImageUrl(location: string) {
-  return `/api/view?filename=${encodeURIComponent(location)}&type=output`
+  return `/api/api-proxy/output/${location.split(/[/\\]/).pop()}`
 }
 
 function getMediaUrl(location: string) {
