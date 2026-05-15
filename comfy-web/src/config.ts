@@ -10,9 +10,7 @@ export function setHost(host: string) {
 }
 
 export function getBaseUrl(): string {
-  // 开发环境走 Vite 代理（/api → ComfyUI），避免 HTTP 跨域
-  if (isDev) return '/api'
-  return `http://${getHost()}`
+  return '/api'
 }
 
 export function getWsUrl(): string {
