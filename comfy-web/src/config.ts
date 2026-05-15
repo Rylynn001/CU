@@ -16,6 +16,7 @@ export function getBaseUrl(): string {
 }
 
 export function getWsUrl(): string {
-  // 直连 ComfyUI（后端已关闭 CSRF 校验）
-  return `ws://${getHost()}/ws`
+  if (isDev) return `ws://${getHost()}/ws`
+  const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
+  return `${protocol}//${location.host}/ws`
 }
