@@ -156,6 +156,9 @@ interface InputImage {
 const inputImages = ref<InputImage[]>([])
 const showAssetPicker = ref(false)
 const assetPickerTargetIndex = ref(-1)  // 当前要替换的图片索引，-1 表示新增
+const promptInputRef = ref<InstanceType<typeof ElInput> | null>(null)
+const atMentionActive = ref(false)  // 是否由 @ 触发的资产选择
+const atMentionStartIdx = ref(-1)   // @ 在 prompt 中的位置
 
 // 兼容旧的单图逻辑（本地 ComfyUI 模式）
 const inputImageFile = ref<File | null>(null)
@@ -242,18 +245,49 @@ function stopStep() {
 
 watch(isImg2Img, (val) => { form.value.denoise = val ? 0.75 : 1 })
 
-// 图片列表变化时，自动在 prompt 开头插入/更新图片标签
-watch(inputImages, (imgs) => {
-  if (!isImg2Img.value || modelSource.value !== 'api') return
-  // 移除旧的图片标签前缀（格式：[图1] [图2] ... ）
-  const cleaned = form.value.positive_prompt.replace(/^(\[图\d+\]\s*)+/, '')
-  if (imgs.length === 0) {
-    form.value.positive_prompt = cleaned
-  } else {
-    const label = imgs.map((_, i) => `[图${i + 1}]`).join(' ') + ' '
-    form.value.positive_prompt = label + cleaned
+const atMentionIndex = ref(-1) // 键盘高亮项
+
+function onPromptKeyup(e: KeyboardEvent) {
+  if (e.key === '@') {
+    if (inputImages.value.length === 0) return
+    const textarea = promptInputRef.value?.textarea
+    if (!textarea) return
+    atMentionStartIdx.value = textarea.selectionStart - 1
+    atMentionActive.value = true
+    atMentionIndex.value = -1
+  } else if (e.key === 'Escape') {
+    atMentionActive.value = false
   }
-}, { deep: true })
+}
+
+function onPromptKeydown(e: KeyboardEvent | Event) {
+  if (!(e instanceof KeyboardEvent)) return
+  if (!atMentionActive.value) return
+  const count = inputImages.value.length
+  if (e.key === 'ArrowDown') {
+    e.preventDefault()
+    atMentionIndex.value = (atMentionIndex.value + 1) % count
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault()
+    atMentionIndex.value = (atMentionIndex.value - 1 + count) % count
+  } else if (e.key === 'Enter') {
+    e.preventDefault()
+    if (atMentionIndex.value >= 0) insertMention(atMentionIndex.value)
+  }
+}
+
+function insertMention(idx: number) {
+  const textarea = promptInputRef.value?.textarea
+  if (!textarea) return
+  const label = `@图${idx + 1}`
+  const start = atMentionStartIdx.value
+  const before = form.value.positive_prompt.slice(0, start)
+  const after = form.value.positive_prompt.slice(start + 1) // 跳过 @
+  form.value.positive_prompt = `${before}${label} ${after}`
+  atMentionActive.value = false
+  atMentionIndex.value = -1
+  textarea.focus()
+}
 
 onMounted(async () => {
   connect()
@@ -626,12 +660,31 @@ watch(generating, (val) => {
 
           <!-- prompt -->
           <div class="section-label">{{ activeTab === 'txt2img' ? '描述你想生成的内容' : '描述生成方向' }}</div>
-          <ElInput
-            v-model="form.positive_prompt"
-            type="textarea" :rows="4"
-            :placeholder="activeTab === 'txt2img' ? '输入提示词，描述画面内容、风格、光线...' : '描述想要生成的内容方向...'"
-            class="prompt-input"
-          />
+          <div class="prompt-wrap">
+            <ElInput
+              ref="promptInputRef"
+              v-model="form.positive_prompt"
+              type="textarea" :rows="4"
+              :placeholder="activeTab === 'txt2img' ? '输入提示词，描述画面内容、风格、光线...（@ 选参考图）' : '描述想要生成的内容方向...（@ 选参考图）'"
+              class="prompt-input"
+              @keyup="onPromptKeyup"
+              @keydown="onPromptKeydown"
+              @blur="atMentionActive = false"
+            />
+            <!-- @ 提及下拉：从已上传图片中选择 -->
+            <div v-if="atMentionActive && inputImages.length > 0" class="mention-dropdown">
+              <div
+                v-for="(img, idx) in inputImages"
+                :key="idx"
+                class="mention-item"
+                :class="{ active: atMentionIndex === idx }"
+                @mousedown.prevent="insertMention(idx)"
+              >
+                <img :src="img.preview" class="mention-thumb" />
+                <span>@图{{ idx + 1 }}</span>
+              </div>
+            </div>
+          </div>
           <!-- 反向提示词：仅本地模式显示 -->
           <ElInput
             v-if="modelSource === 'local'"
@@ -938,7 +991,38 @@ watch(generating, (val) => {
 }
 
 /* prompt inputs */
+.prompt-wrap { position: relative; width: 100%; }
 .prompt-input { width: 100%; }
+.mention-dropdown {
+  position: absolute;
+  z-index: 100;
+  background: #1e1e2e;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 8px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 140px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+}
+.mention-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #e2e8f0;
+}
+.mention-item:hover, .mention-item.active { background: rgba(255,255,255,0.08); }
+.mention-thumb {
+  width: 32px;
+  height: 32px;
+  object-fit: cover;
+  border-radius: 4px;
+}
 .prompt-input.neg :deep(.el-textarea__inner) {
   background: rgba(248,113,113,0.04) !important;
   border-color: rgba(248,113,113,0.1) !important;
