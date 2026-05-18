@@ -40,6 +40,7 @@ interface GenerationRecord {
   isImg2Img?: boolean
   dbId?: number        // 数据库 history 表的主键，用于删除/同步
   inputAssetIds?: number[]
+  modelId?: number
 }
 
 const HISTORY_KEY = 'generation_history'
@@ -52,14 +53,15 @@ const { records, saveRecords, clearAll: clearAllLocal, formatTime, deleteRecord:
 )
 
 const historyDb = useHistoryDb()
+const _persisting = new Set<string>()
 
 // 持久化单条已完成记录到数据库
 async function persistRecord(rec: GenerationRecord, inputAssetIds?: number[]) {
-  if (rec.dbId) return  // 已持久化过，跳过
+  if (rec.dbId || _persisting.has(rec.id)) return
+  _persisting.add(rec.id)
   const userId = getCurrentUserId()
-  if (!userId) return
+  if (!userId) { _persisting.delete(rec.id); return }
   const outputUrls = rec.images.filter(img => img.startsWith('/api/api-proxy/output/') || img.startsWith('http'))
-  if (outputUrls.length === 0) return
   const id = await historyDb.persist({
     userId,
     prompt: rec.prompt,
@@ -69,8 +71,10 @@ async function persistRecord(rec: GenerationRecord, inputAssetIds?: number[]) {
     mode: rec.mode,
     status: rec.status,
     type: rec.isImg2Img ? 'img2img' : 'txt2img',
-    modelName: rec.modelName,
+    message: rec.errorMsg,
+    modelId: rec.modelId,
   })
+  _persisting.delete(rec.id)
   if (id) rec.dbId = id
 }
 
@@ -519,6 +523,7 @@ async function resumeTaskPolling(record: GenerationRecord, userId?: number) {
         if (rec) {
           rec.status = 'error'
           rec.errorMsg = checkData.error?.error_message || '任务失败'
+          await persistRecord(rec)
           saveRecords()
         }
         return
@@ -534,7 +539,11 @@ async function resumeTaskPolling(record: GenerationRecord, userId?: number) {
     }
   } catch (e: any) {
     const rec = records.value.find(r => r.id === record.id)
-    if (rec) { rec.status = 'error'; rec.errorMsg = (e as any).message }
+    if (rec) {
+      rec.status = 'error'
+      rec.errorMsg = (e as any).message
+      await persistRecord(rec)
+    }
   } finally {
     saveRecords()
   }
@@ -556,6 +565,7 @@ async function handleGenerate() {
       prompt: form.value.positive_prompt,
       inputPreviews,
       modelName,
+      modelId: Number(apiModel.value) || undefined,
       mode: 'api',
       status: 'generating',
       progress: 0,

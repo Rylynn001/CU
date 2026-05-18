@@ -98,54 +98,26 @@ def process_ark_img2video_task(task):
         auth = oss2.Auth(oss_config['access_key_id'], oss_config['access_key_secret'])
         bucket = oss2.Bucket(auth, oss_config['endpoint'], oss_config['bucket_name'])
 
-        # 收集所有素材（保持顺序：先本地上传，后资产选择）
+        # 收集所有素材
         all_media = []
 
-        # 处理输入文件（上传到 OSS）
-        input_files = task.get('input_files', [])
-        for file_info in input_files:
-            # 从 hex 恢复二进制数据
-            file_data = bytes.fromhex(file_info['data'])
-            filename = file_info['filename']
-            content_type = file_info['content_type']
-
-            # 判断文件类型
-            ext = filename.split('.')[-1].lower()
-            is_video = ext in ['mp4', 'mov', 'avi', 'webm']
-
-            # 上传到 OSS
-            import time
-            object_name = f"seedance/{int(time.time())}_{filename}"
-            bucket.put_object(object_name, file_data)
-            file_url = f"https://{oss_config['bucket_name']}.{oss_config['endpoint'].replace('https://', '')}/{object_name}"
-
-            logger.info(f'[{task_id}] Uploaded to OSS: {file_url}')
-
-            all_media.append({
-                'url': file_url,
-                'is_video': is_video
-            })
-
-        # 处理输入资产（从数据库读取并上传到 OSS）
+        # 处理输入资产（从 input_assets 表读取文件路径，上传到 OSS）
         input_asset_ids = task.get('input_asset_ids', [])
         if input_asset_ids:
             conn = pymysql.connect(**get_db_config())
             try:
                 with conn.cursor(pymysql.cursors.DictCursor) as cursor:
                     for asset_id in input_asset_ids:
-                        cursor.execute('SELECT location FROM assets WHERE id = %s', (asset_id,))
+                        cursor.execute('SELECT location FROM input_assets WHERE id = %s', (asset_id,))
                         asset = cursor.fetchone()
                         if asset:
                             location = asset['location']
-                            # 读取文件
                             with open(location, 'rb') as f:
                                 file_data = f.read()
 
-                            # 判断文件类型
                             ext = location.split('.')[-1].lower()
                             is_video = ext in ['mp4', 'mov', 'avi', 'webm']
 
-                            # 上传到 OSS
                             import time
                             object_name = f"seedance/{int(time.time())}_{asset_id}.{ext}"
                             bucket.put_object(object_name, file_data)

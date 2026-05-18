@@ -1147,25 +1147,10 @@ async def save_history(request: web.Request):
     status     = body.get('status', 'done')
     type_      = body.get('type')
     message    = body.get('message')
-    model_name = body.get('model_name')  # 前端传 api_models.name，后端查出数字 id
+    model_id = body.get('model_id')
 
     if not user_id:
         raise web.HTTPBadRequest(reason='user_id is required')
-
-    # 根据 model_name 查出 api_models 的数字主键
-    model_id = None
-    if model_name:
-        try:
-            import pymysql as _pymysql
-            _conn = _pymysql.connect(**cfg.get_db_config())
-            with _conn.cursor(_pymysql.cursors.DictCursor) as _cur:
-                _cur.execute("SELECT id FROM api_models WHERE name = %s LIMIT 1", (model_name,))
-                _row = _cur.fetchone()
-                if _row:
-                    model_id = _row['id']
-            _conn.close()
-        except Exception as e:
-            logger.warning(f'[api-proxy] model_id lookup failed: {e}')
 
     # 从 output_urls 提取文件名，查 assets 表得到 id
     output_asset_ids = []
