@@ -1131,6 +1131,127 @@ async def test_save_asset(request: web.Request):
         logger.error(f'[test] save failed: {e}')
         raise web.HTTPInternalServerError(reason=str(e))
 
+# ── /api-proxy/history ───────────────────────────────────────────────────
+
+@routes.post('/api-proxy/history')
+async def save_history(request: web.Request):
+    """保存一条历史记录。output_urls 传文件名或完整路径，后端查 assets 表得到 id"""
+    from . import db_queries
+    body = await request.json()
+    user_id    = body.get('user_id')
+    prompt     = body.get('prompt', '')
+    output_urls = body.get('output_urls', [])
+    input_asset_ids = body.get('input_asset_ids', [])
+    task_id    = body.get('task_id')
+    mode       = body.get('mode')
+    status     = body.get('status', 'done')
+    type_      = body.get('type')
+    message    = body.get('message')
+    model_name = body.get('model_name')  # 前端传 api_models.name，后端查出数字 id
+
+    if not user_id:
+        raise web.HTTPBadRequest(reason='user_id is required')
+
+    # 根据 model_name 查出 api_models 的数字主键
+    model_id = None
+    if model_name:
+        try:
+            import pymysql as _pymysql
+            _conn = _pymysql.connect(**cfg.get_db_config())
+            with _conn.cursor(_pymysql.cursors.DictCursor) as _cur:
+                _cur.execute("SELECT id FROM api_models WHERE name = %s LIMIT 1", (model_name,))
+                _row = _cur.fetchone()
+                if _row:
+                    model_id = _row['id']
+            _conn.close()
+        except Exception as e:
+            logger.warning(f'[api-proxy] model_id lookup failed: {e}')
+
+    # 从 output_urls 提取文件名，查 assets 表得到 id
+    output_asset_ids = []
+    if output_urls:
+        import pymysql, pathlib
+        try:
+            conn = pymysql.connect(**cfg.get_db_config())
+            with conn.cursor(pymysql.cursors.DictCursor) as cursor:
+                for url in output_urls:
+                    filename = pathlib.Path(url).name
+                    cursor.execute(
+                        "SELECT id FROM assets WHERE location LIKE %s AND rfid = %s ORDER BY id DESC LIMIT 1",
+                        (f'%{filename}', int(user_id))
+                    )
+                    row = cursor.fetchone()
+                    if row:
+                        output_asset_ids.append(row['id'])
+            conn.close()
+        except Exception as e:
+            logger.error(f'[api-proxy] save_history lookup error: {e}')
+
+    try:
+        history_id = db_queries.save_history(
+            user_id=int(user_id),
+            prompt=prompt,
+            input_asset_ids=input_asset_ids,
+            output_asset_ids=output_asset_ids,
+            task_id=task_id,
+            mode=mode,
+            status=status,
+            type_=type_,
+            message=message,
+            model_id=model_id,
+        )
+        return web.json_response({'id': history_id})
+    except Exception as e:
+        logger.error(f'[api-proxy] save_history error: {e}')
+        raise web.HTTPInternalServerError(reason=str(e))
+
+
+@routes.get('/api-proxy/history')
+async def get_history(request: web.Request):
+    """获取用户历史记录列表"""
+    from . import db_queries
+    user_id = request.rel_url.query.get('user_id')
+    if not user_id:
+        raise web.HTTPBadRequest(reason='user_id is required')
+    try:
+        records = db_queries.get_user_history(int(user_id))
+        return web.json_response({'records': records})
+    except Exception as e:
+        logger.error(f'[api-proxy] get_history error: {e}')
+        raise web.HTTPInternalServerError(reason=str(e))
+
+
+@routes.delete('/api-proxy/history/{history_id}')
+async def delete_history(request: web.Request):
+    """删除单条历史记录"""
+    from . import db_queries
+    history_id = request.match_info['history_id']
+    user_id = request.rel_url.query.get('user_id')
+    if not user_id:
+        raise web.HTTPBadRequest(reason='user_id is required')
+    try:
+        deleted = db_queries.delete_history(int(history_id), int(user_id))
+        return web.json_response({'ok': deleted})
+    except Exception as e:
+        logger.error(f'[api-proxy] delete_history error: {e}')
+        raise web.HTTPInternalServerError(reason=str(e))
+
+
+@routes.delete('/api-proxy/history')
+async def clear_history(request: web.Request):
+    """清空用户所有历史记录"""
+    from . import db_queries
+    user_id = request.rel_url.query.get('user_id')
+    if not user_id:
+        raise web.HTTPBadRequest(reason='user_id is required')
+    try:
+        count = db_queries.clear_user_history(int(user_id))
+        return web.json_response({'deleted': count})
+    except Exception as e:
+        logger.error(f'[api-proxy] clear_history error: {e}')
+        raise web.HTTPInternalServerError(reason=str(e))
+
+
 # ── /api-proxy/upload/image ───────────────────────────────────────────────
 # 上传输入图片，保存到 ComfyUI input 目录，写入 input_assets 表
 #

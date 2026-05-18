@@ -9,6 +9,7 @@ import { getModels, getKSamplerInfo, submitPrompt, uploadImage, type PromptParam
 import { useComfyWebSocket } from '../composables/useComfyWebSocket'
 import { getApiModels, apiGenerate, pollTaskUntilDone, resolveImageSrc, uploadInputImage, type ApiModel } from '../api/apiService'
 import { useTaskHistory } from '../composables/useTaskHistory'
+import { useHistoryDb } from '../composables/useHistoryDb'
 import { getCurrentUserId } from '../utils/user'
 import { generateUUID } from '../utils/uuid'
 
@@ -37,16 +38,58 @@ interface GenerationRecord {
   errorMsg?: string
   taskId?: string
   isImg2Img?: boolean
+  dbId?: number        // 数据库 history 表的主键，用于删除/同步
+  inputAssetIds?: number[]
 }
 
 const HISTORY_KEY = 'generation_history'
 const MAX_RECORDS = 50
 
-const { records, saveRecords, clearAll, formatTime, deleteRecord } = useTaskHistory<GenerationRecord>(
+const { records, saveRecords, clearAll: clearAllLocal, formatTime, deleteRecord: deleteRecordLocal } = useTaskHistory<GenerationRecord>(
   HISTORY_KEY,
   MAX_RECORDS,
   (r) => ({ images: r.images.filter(img => img.startsWith('http') || img.startsWith('/')) }),
 )
+
+const historyDb = useHistoryDb()
+
+// 持久化单条已完成记录到数据库
+async function persistRecord(rec: GenerationRecord, inputAssetIds?: number[]) {
+  if (rec.dbId) return  // 已持久化过，跳过
+  const userId = getCurrentUserId()
+  if (!userId) return
+  const outputUrls = rec.images.filter(img => img.startsWith('/api/api-proxy/output/') || img.startsWith('http'))
+  if (outputUrls.length === 0) return
+  const id = await historyDb.persist({
+    userId,
+    prompt: rec.prompt,
+    outputUrls,
+    inputAssetIds: inputAssetIds ?? rec.inputAssetIds,
+    taskId: rec.taskId,
+    mode: rec.mode,
+    status: rec.status,
+    type: rec.isImg2Img ? 'img2img' : 'txt2img',
+    modelName: rec.modelName,
+  })
+  if (id) rec.dbId = id
+}
+
+// 包装删除：同时删除 DB 记录
+async function deleteRecord(id: string) {
+  const rec = (records.value as GenerationRecord[]).find(r => r.id === id)
+  if (rec?.dbId) {
+    const userId = getCurrentUserId()
+    if (userId) await historyDb.remove(rec.dbId, userId)
+  }
+  await deleteRecordLocal(id)
+}
+
+// 包装清空：同时清空 DB
+async function clearAll() {
+  const userId = getCurrentUserId()
+  if (userId) await historyDb.clear(userId)
+  clearAllLocal()
+}
 
 async function retryRecord(record: GenerationRecord) {
   const newRecord: GenerationRecord = {
@@ -308,19 +351,42 @@ onMounted(async () => {
     if (apiModels.value.length > 0) apiModel.value = apiModels.value[0].id
   } catch {}
 
-  // 恢复刷新前未完成的 API 任务
   const userId = getCurrentUserId()
-  const pending = records.value.filter(r => r.mode === 'api' && r.status === 'generating' && r.taskId)
+
+  // 从数据库加载历史，合并到 records（以 DB 为准，保留本地进行中的任务）
+  if (userId) {
+    const dbRecords = await historyDb.load(userId)
+    const localPending = (records.value as GenerationRecord[]).filter(r => r.status === 'generating')
+    // 本地已完成记录若 DB 中存在对应条目则跳过（避免重复）
+    const fromDb: GenerationRecord[] = dbRecords.map(r => ({
+      id: String(r.id),
+      dbId: r.id,
+      createdAt: 0,
+      prompt: r.prompt || '',
+      inputPreviews: [],
+      modelName: '',
+      mode: 'api' as const,
+      status: 'done' as const,
+      progress: 100,
+      images: r.output_urls.map(o => o.url),
+      inputAssetIds: r.input_asset_ids,
+    }))
+    records.value = [...localPending, ...fromDb] as any
+    saveRecords()
+  }
+
+  // 恢复刷新前未完成的 API 任务
+  const pending = (records.value as GenerationRecord[]).filter(r => r.mode === 'api' && r.status === 'generating' && r.taskId)
   for (const rec of pending) {
     resumeTaskPolling(rec, userId)
   }
   // API 任务没有 taskId 的（直接返回结果但 base64 被过滤掉了）→ 标记失败
-  records.value.filter(r => r.mode === 'api' && r.status === 'generating' && !r.taskId).forEach(r => {
+  ;(records.value as GenerationRecord[]).filter(r => r.mode === 'api' && r.status === 'generating' && !r.taskId).forEach(r => {
     r.status = 'error'
     r.errorMsg = '页面刷新，结果已丢失（base64 图片无法持久化）'
   })
   // 本地模式刷新后无法恢复，标记为失败
-  records.value.filter(r => r.mode === 'local' && r.status === 'generating').forEach(r => {
+  ;(records.value as GenerationRecord[]).filter(r => r.mode === 'local' && r.status === 'generating').forEach(r => {
     r.status = 'error'
     r.errorMsg = '页面刷新，生成中断'
   })
@@ -397,6 +463,8 @@ async function runApiGeneration(
       input_asset_ids = ids
     }
     const rec = getRecord()
+    // 把 input_asset_ids 存到 record，轮询完成后持久化时能拿到
+    if (rec && input_asset_ids) rec.inputAssetIds = input_asset_ids
     const userId = getCurrentUserId()
     const submitted = await apiGenerate({
       model: rec ? rec.modelName : apiModel.value,
@@ -417,6 +485,7 @@ async function runApiGeneration(
       if (r) {
         r.images = submitted.images.map(resolveImageSrc).filter(Boolean)
         r.status = 'done'
+        await persistRecord(r, input_asset_ids)
       }
       saveRecords()
     }
@@ -441,6 +510,7 @@ async function resumeTaskPolling(record: GenerationRecord, userId?: number) {
         if (rec) {
           rec.images = checkData.result.map((item: any) => item.url).filter(Boolean)
           rec.status = 'done'
+          await persistRecord(rec)
           saveRecords()
         }
         return
@@ -460,6 +530,7 @@ async function resumeTaskPolling(record: GenerationRecord, userId?: number) {
     if (rec) {
       rec.images = result.images.map(resolveImageSrc).filter(Boolean)
       rec.status = 'done'
+      await persistRecord(rec)
     }
   } catch (e: any) {
     const rec = records.value.find(r => r.id === record.id)
@@ -556,12 +627,13 @@ watch(progress, (val) => {
   if (rec) rec.progress = val
 })
 
-watch(imageUrl, (url) => {
+watch(imageUrl, async (url) => {
   if (!url) return
   const rec = records.value.find(r => r.mode === 'local' && r.status === 'generating')
   if (rec) {
     rec.images = [url]
     rec.status = 'done'
+    await persistRecord(rec)
     saveRecords()
   }
 })

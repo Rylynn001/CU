@@ -200,6 +200,58 @@ export async function apiImg2VideoGenerate(params: ApiImg2VideoParams): Promise<
   return { task_id: data.task_id }
 }
 
+// ── History ───────────────────────────────────────────────────────────────
+
+export interface HistoryRecord {
+  id: number
+  task_id?: string
+  prompt: string
+  mode?: string
+  status?: string
+  type?: string
+  message?: string
+  output_urls: Array<{ url: string; type: string }>
+  input_asset_ids: number[]
+}
+
+export async function saveHistory(params: {
+  user_id: number
+  prompt: string
+  output_urls: string[]
+  input_asset_ids?: number[]
+  task_id?: string
+  mode?: string
+  status?: string
+  type?: string
+  message?: string
+  model_name?: string
+}): Promise<{ id: number }> {
+  const res = await fetch(`${BASE}/history`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  })
+  if (!res.ok) throw new Error(`save history failed: ${res.status}`)
+  return res.json()
+}
+
+export async function fetchHistory(userId: number): Promise<HistoryRecord[]> {
+  const res = await fetch(`${BASE}/history?user_id=${userId}`)
+  if (!res.ok) throw new Error(`fetch history failed: ${res.status}`)
+  const data = await res.json()
+  return data.records || []
+}
+
+export async function deleteHistory(historyId: number, userId: number): Promise<void> {
+  const res = await fetch(`${BASE}/history/${historyId}?user_id=${userId}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error(`delete history failed: ${res.status}`)
+}
+
+export async function clearHistory(userId: number): Promise<void> {
+  const res = await fetch(`${BASE}/history?user_id=${userId}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error(`clear history failed: ${res.status}`)
+}
+
 // ── Task Cancel / Priority ────────────────────────────────────────────────
 
 export async function cancelTask(taskId: string, userId?: number): Promise<void> {
