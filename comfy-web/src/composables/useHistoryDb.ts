@@ -27,7 +27,7 @@ export function useHistoryDb() {
     status?: string
     type?: string
     message?: string
-    modelName?: string
+    modelId?: number
   }): Promise<number | null> {
     try {
       const res = await saveHistory({
@@ -40,7 +40,7 @@ export function useHistoryDb() {
         status: params.status,
         type: params.type,
         message: params.message,
-        model_name: params.modelName,
+        model_id: params.modelId,
       })
       return res.id
     } catch (e) {

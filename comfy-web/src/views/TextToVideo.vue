@@ -4,7 +4,7 @@ import { ElInput, ElSelect, ElOption } from 'element-plus'
 import { UploadFilled } from '@element-plus/icons-vue'
 import AssetPicker from '../components/AssetPicker.vue'
 import RecordCard from '../components/RecordCard.vue'
-import { apiVideoGenerate, apiImg2VideoGenerate, getApiModels, type ApiModel } from '../api/apiService'
+import { apiVideoGenerate, apiImg2VideoGenerate, uploadInputImage, getApiModels, type ApiModel } from '../api/apiService'
 import { useTaskHistory } from '../composables/useTaskHistory'
 import { useHistoryDb } from '../composables/useHistoryDb'
 import { getCurrentUserId } from '../utils/user'
@@ -24,9 +24,9 @@ interface VideoRecord {
   errorMsg?: string
   taskId?: string
   mode: 'txt2video' | 'img2video'
-  inputFiles?: File[]
   inputAssetIds?: number[]
   dbId?: number
+  modelId?: number
 }
 
 const HISTORY_KEY = 'video_generation_history'
@@ -35,19 +35,19 @@ const MAX_RECORDS = 50
 const { records, saveRecords, clearAll: clearAllLocal, deleteRecord: deleteRecordLocal } = useTaskHistory<VideoRecord>(
   HISTORY_KEY,
   MAX_RECORDS,
-  () => ({ inputFiles: undefined }),
 )
 
 const historyDb = useHistoryDb()
+const _persisting = new Set<string>()
 
 async function persistRecord(rec: VideoRecord) {
-  if (rec.dbId) return
+  if (rec.dbId || _persisting.has(rec.id)) return
+  _persisting.add(rec.id)
   const userId = getCurrentUserId()
-  if (!userId || !rec.videoUrl) return
-  const outputUrls = rec.videoUrl.startsWith('/api/api-proxy/output/') || rec.videoUrl.startsWith('http')
+  if (!userId) return
+  const outputUrls = rec.videoUrl && (rec.videoUrl.startsWith('/api/api-proxy/output/') || rec.videoUrl.startsWith('http'))
     ? [rec.videoUrl]
     : []
-  if (outputUrls.length === 0) return
   const id = await historyDb.persist({
     userId,
     prompt: rec.prompt,
@@ -57,8 +57,10 @@ async function persistRecord(rec: VideoRecord) {
     mode: 'api',
     status: rec.status,
     type: rec.mode,
-    modelName: rec.modelName,
+    message: rec.errorMsg,
+    modelId: rec.modelId,
   })
+  _persisting.delete(rec.id)
   if (id) rec.dbId = id
 }
 
@@ -89,7 +91,6 @@ async function retryRecord(record: VideoRecord) {
     duration: record.duration,
     status: 'generating',
     mode: record.mode,
-    inputFiles: record.inputFiles,
     inputAssetIds: record.inputAssetIds,
   }
   records.value.unshift(newRecord)
@@ -120,7 +121,6 @@ async function retryRecord(record: VideoRecord) {
         ratio: record.ratio,
         resolution: record.resolution,
         duration: record.duration,
-        input_files: record.inputFiles || [],
         input_asset_ids: record.inputAssetIds || [],
       })
       taskId = result.task_id
@@ -435,6 +435,7 @@ async function resumeTaskPolling(record: VideoRecord, userId?: number) {
         if (rec) {
           rec.status = 'error'
           rec.errorMsg = checkData.error?.error_message || '任务失败'
+          await persistRecord(rec)
           saveRecords()
         }
         return
@@ -460,6 +461,7 @@ async function resumeTaskPolling(record: VideoRecord, userId?: number) {
     if (rec) {
       rec.status = 'error'
       rec.errorMsg = e.message
+      await persistRecord(rec)
       saveRecords()
     }
   }
@@ -497,13 +499,13 @@ async function handleGenerate() {
       id: generateUUID(),
       createdAt: Date.now(),
       prompt: prompt.value,
-      modelName,
+      modelId: Number(apiModel.value) || undefined,
+    modelName,
       ratio: ratio.value,
       resolution: resolution.value,
       duration: duration.value,
       status: 'generating',
       mode: activeTab.value,  // 记录是文生视频还是图生视频
-      inputFiles: activeTab.value === 'img2video' ? [...inputFiles.value] : undefined,
       inputAssetIds: activeTab.value === 'img2video' ? [...selectedAssetIds.value] : undefined,
     }
     records.value.unshift(record)
@@ -529,6 +531,15 @@ async function handleGenerate() {
         console.log('[handleGenerate] inputFiles:', inputFiles.value.length, 'selectedAssetIds:', selectedAssetIds.value.length)
         console.log('[handleGenerate] inputFiles details:', inputFiles.value.map(f => ({ name: f.name, size: f.size, type: f.type })))
 
+        // 先把本地上传的文件存入 input_assets 表，拿到 ID
+        const uploadedIds: number[] = []
+        for (const file of inputFiles.value) {
+          const res = await uploadInputImage(file, userId!)
+          uploadedIds.push(res.id)
+        }
+        const allAssetIds = [...uploadedIds, ...selectedAssetIds.value]
+        record.inputAssetIds = allAssetIds
+
         const result = await apiImg2VideoGenerate({
           model: apiModel.value,
           prompt: prompt.value,
@@ -536,8 +547,7 @@ async function handleGenerate() {
           ratio: ratio.value,
           resolution: resolution.value,
           duration: duration.value,
-          input_files: inputFiles.value,
-          input_asset_ids: selectedAssetIds.value,
+          input_asset_ids: allAssetIds,
         })
 
         taskId = result.task_id
@@ -584,6 +594,7 @@ async function handleGenerate() {
       errorMsg.value = 'API 生成失败：' + e.message
       record.status = 'error'
       record.errorMsg = e.message
+      await persistRecord(record)
       saveRecords()
       generating.value = false
     }

@@ -168,7 +168,6 @@ export interface ApiImg2VideoParams {
   resolution?: string
   duration?: number
   input_asset_ids?: number[]
-  input_files?: File[]
 }
 
 export async function apiImg2VideoGenerate(params: ApiImg2VideoParams): Promise<{ task_id: string }> {
@@ -181,11 +180,6 @@ export async function apiImg2VideoGenerate(params: ApiImg2VideoParams): Promise<
   if (params.duration) form.append('duration', String(params.duration))
   if (params.input_asset_ids && params.input_asset_ids.length > 0) {
     form.append('input_asset_ids', params.input_asset_ids.join(','))
-  }
-  if (params.input_files && params.input_files.length > 0) {
-    for (const file of params.input_files) {
-      form.append('input_file', file)
-    }
   }
 
   const res = await fetch(`${BASE}/img2video`, {
@@ -224,7 +218,7 @@ export async function saveHistory(params: {
   status?: string
   type?: string
   message?: string
-  model_name?: string
+  model_id?: number
 }): Promise<{ id: number }> {
   const res = await fetch(`${BASE}/history`, {
     method: 'POST',

@@ -85,8 +85,8 @@ def save_history(
         cursor = conn.cursor()
         cursor.execute(
             """INSERT INTO history
-               (task_id, prompt, mode, status, type, message, input_file, output_file, user_id, model_id)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+               (task_id, prompt, mode, status, type, message, input_file, output_file, user_id, model_id, del_flag)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0)""",
             (task_id, prompt, mode, status, type_, message, input_file, output_file, user_id, model_id)
         )
         conn.commit()
@@ -99,7 +99,7 @@ def get_user_history(user_id: int) -> list[dict]:
         cursor = conn.cursor()
         cursor.execute(
             """SELECT id, task_id, prompt, mode, status, type, message, input_file, output_file
-               FROM history WHERE user_id = %s ORDER BY id DESC""",
+               FROM history WHERE user_id = %s AND del_flag = 0 ORDER BY id DESC""",
             (user_id,)
         )
         rows = cursor.fetchall()
@@ -149,11 +149,11 @@ def get_user_history(user_id: int) -> list[dict]:
 
 
 def delete_history(history_id: int, user_id: int) -> bool:
-    """删除单条历史记录（校验 user_id 防止越权）"""
+    """软删除单条历史记录（校验 user_id 防止越权）"""
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "DELETE FROM history WHERE id = %s AND user_id = %s",
+            "UPDATE history SET del_flag = 1 WHERE id = %s AND user_id = %s AND del_flag = 0",
             (history_id, user_id)
         )
         conn.commit()
@@ -161,9 +161,9 @@ def delete_history(history_id: int, user_id: int) -> bool:
 
 
 def clear_user_history(user_id: int) -> int:
-    """清空用户所有历史记录，返回删除条数"""
+    """软删除用户所有历史记录，返回影响条数"""
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM history WHERE user_id = %s", (user_id,))
+        cursor.execute("UPDATE history SET del_flag = 1 WHERE user_id = %s AND del_flag = 0", (user_id,))
         conn.commit()
         return cursor.rowcount
