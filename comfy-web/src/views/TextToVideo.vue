@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, watch } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { ElInput, ElSelect, ElOption } from 'element-plus'
 import { UploadFilled } from '@element-plus/icons-vue'
 import AssetPicker from '../components/AssetPicker.vue'
 import RecordCard from '../components/RecordCard.vue'
 import { apiVideoGenerate, apiImg2VideoGenerate, getApiModels, type ApiModel } from '../api/apiService'
 import { useTaskHistory } from '../composables/useTaskHistory'
+import { useHistoryDb } from '../composables/useHistoryDb'
 import { getCurrentUserId } from '../utils/user'
 import { generateUUID } from '../utils/uuid'
 
@@ -22,19 +23,59 @@ interface VideoRecord {
   videoUrl?: string
   errorMsg?: string
   taskId?: string
-  mode: 'txt2video' | 'img2video'  // 记录是文生视频还是图生视频
-  inputFiles?: File[]  // 保存输入的文件
-  inputAssetIds?: number[]  // 保存输入的资产ID
+  mode: 'txt2video' | 'img2video'
+  inputFiles?: File[]
+  inputAssetIds?: number[]
+  dbId?: number
 }
 
 const HISTORY_KEY = 'video_generation_history'
 const MAX_RECORDS = 50
 
-const { records, saveRecords, clearAll, deleteRecord } = useTaskHistory<VideoRecord>(
+const { records, saveRecords, clearAll: clearAllLocal, deleteRecord: deleteRecordLocal } = useTaskHistory<VideoRecord>(
   HISTORY_KEY,
   MAX_RECORDS,
   () => ({ inputFiles: undefined }),
 )
+
+const historyDb = useHistoryDb()
+
+async function persistRecord(rec: VideoRecord) {
+  if (rec.dbId) return
+  const userId = getCurrentUserId()
+  if (!userId || !rec.videoUrl) return
+  const outputUrls = rec.videoUrl.startsWith('/api/api-proxy/output/') || rec.videoUrl.startsWith('http')
+    ? [rec.videoUrl]
+    : []
+  if (outputUrls.length === 0) return
+  const id = await historyDb.persist({
+    userId,
+    prompt: rec.prompt,
+    outputUrls,
+    inputAssetIds: rec.inputAssetIds,
+    taskId: rec.taskId,
+    mode: 'api',
+    status: rec.status,
+    type: rec.mode,
+    modelName: rec.modelName,
+  })
+  if (id) rec.dbId = id
+}
+
+async function deleteRecord(id: string) {
+  const rec = (records.value as VideoRecord[]).find(r => r.id === id)
+  if (rec?.dbId) {
+    const userId = getCurrentUserId()
+    if (userId) await historyDb.remove(rec.dbId, userId)
+  }
+  await deleteRecordLocal(id)
+}
+
+async function clearAll() {
+  const userId = getCurrentUserId()
+  if (userId) await historyDb.clear(userId)
+  clearAllLocal()
+}
 
 async function retryRecord(record: VideoRecord) {
   // 创建新记录，复用原来的参数
@@ -168,34 +209,64 @@ const showAssetPicker = ref(false)
 const selectedAssetIds = ref<number[]>([])
 const selectedAssetPreviews = ref<Array<{id: number, url: string, type: 'image' | 'video'}>>([])
 
+const promptInputRef = ref<InstanceType<typeof ElInput> | null>(null)
+const atMentionActive = ref(false)
+const atMentionStartIdx = ref(-1)
+const atMentionIndex = ref(-1)
+
+const allMediaItems = computed(() => [
+  ...inputPreviews.value,
+  ...selectedAssetPreviews.value,
+])
+
 const isImg2Video = computed(() => activeTab.value === 'img2video')
 
 const maxImages = 9
 const maxVideos = 3
 const maxTotal = 12
 
-// 素材列表变化时，自动在 prompt 开头插入/更新素材标签
-watch([inputPreviews, selectedAssetPreviews], ([files, assets]) => {
-  if (activeTab.value !== 'img2video' || modelSource.value !== 'api') return
-
-  const allMedia = [...files, ...assets]
-  if (allMedia.length === 0) {
-    // 移除旧的素材标签前缀
-    prompt.value = prompt.value.replace(/^(\[(图|视频)\d+\]\s*)+/, '')
-    return
+function onPromptKeyup(e: KeyboardEvent) {
+  if (e.key === '@') {
+    if (allMediaItems.value.length === 0) return
+    const textarea = promptInputRef.value?.textarea
+    if (!textarea) return
+    atMentionStartIdx.value = textarea.selectionStart - 1
+    atMentionActive.value = true
+    atMentionIndex.value = -1
+  } else if (e.key === 'Escape') {
+    atMentionActive.value = false
   }
+}
 
-  // 移除旧的素材标签前缀
-  const cleaned = prompt.value.replace(/^(\[(图|视频)\d+\]\s*)+/, '')
+function onPromptKeydown(e: KeyboardEvent | Event) {
+  if (!(e instanceof KeyboardEvent)) return
+  if (!atMentionActive.value) return
+  const count = allMediaItems.value.length
+  if (e.key === 'ArrowDown') {
+    e.preventDefault()
+    atMentionIndex.value = (atMentionIndex.value + 1) % count
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault()
+    atMentionIndex.value = (atMentionIndex.value - 1 + count) % count
+  } else if (e.key === 'Enter') {
+    e.preventDefault()
+    if (atMentionIndex.value >= 0) insertMention(atMentionIndex.value)
+  }
+}
 
-  // 构建新的标签
-  const labels = allMedia.map((media, i) => {
-    const type = media.type === 'video' ? '视频' : '图'
-    return `[${type}${i + 1}]`
-  }).join(' ')
-
-  prompt.value = labels + (cleaned ? ' ' + cleaned : '')
-}, { deep: true })
+function insertMention(idx: number) {
+  const textarea = promptInputRef.value?.textarea
+  if (!textarea) return
+  const media = allMediaItems.value[idx]
+  const label = `@${media.type === 'video' ? '视频' : '图'}${idx + 1}`
+  const start = atMentionStartIdx.value
+  const before = prompt.value.slice(0, start)
+  const after = prompt.value.slice(start + 1)
+  prompt.value = `${before}${label} ${after}`
+  atMentionActive.value = false
+  atMentionIndex.value = -1
+  textarea.focus()
+}
 
 onMounted(async () => {
   // 加载 API 模型
@@ -204,9 +275,34 @@ onMounted(async () => {
     if (apiModels.value.length > 0) apiModel.value = apiModels.value[0].id
   } catch {}
 
-  // 恢复刷新前未完成的 API 任务
   const userId = getCurrentUserId()
-  const pending = records.value.filter(r => r.status === 'generating' && r.taskId)
+
+  // 从数据库加载历史，合并到 records（以 DB 为准，保留本地进行中的任务）
+  if (userId) {
+    const dbRecords = await historyDb.load(userId)
+    const localPending = (records.value as VideoRecord[]).filter(r => r.status === 'generating')
+    const fromDb: VideoRecord[] = dbRecords
+      .filter(r => r.output_urls.some(o => o.type === 'video'))
+      .map(r => ({
+        id: String(r.id),
+        dbId: r.id,
+        createdAt: 0,
+        prompt: r.prompt || '',
+        modelName: '',
+        ratio: '',
+        resolution: '',
+        duration: 0,
+        status: 'done' as const,
+        mode: 'txt2video' as const,
+        videoUrl: r.output_urls.find(o => o.type === 'video')?.url || r.output_urls[0]?.url,
+        inputAssetIds: r.input_asset_ids,
+      }))
+    records.value = [...localPending, ...fromDb] as any
+    saveRecords()
+  }
+
+  // 恢复刷新前未完成的 API 任务
+  const pending = (records.value as VideoRecord[]).filter(r => r.status === 'generating' && r.taskId)
   for (const rec of pending) {
     resumeTaskPolling(rec, userId)
   }
@@ -330,6 +426,7 @@ async function resumeTaskPolling(record: VideoRecord, userId?: number) {
           console.log('[Video] Found video item:', videoItem)
           rec.videoUrl = videoItem?.url || ''
           rec.status = 'done'
+          await persistRecord(rec)
           saveRecords()
         }
         return
@@ -354,6 +451,7 @@ async function resumeTaskPolling(record: VideoRecord, userId?: number) {
       console.log('[Video] Found video in result:', videoItem)
       rec.videoUrl = videoItem?.url || ''
       rec.status = 'done'
+      await persistRecord(rec)
       saveRecords()
     }
   } catch (e: any) {
@@ -462,6 +560,7 @@ async function handleGenerate() {
           videoUrl.value = result.video_url
           record.videoUrl = result.video_url
           record.status = 'done'
+          await persistRecord(record)
           saveRecords()
           generating.value = false
           return
@@ -631,16 +730,35 @@ async function handleGenerate() {
           <!-- prompt -->
           <div class="section-label">
             {{ activeTab === 'txt2video' ? '描述你想生成的视频' : '描述生成方向' }}
-            <span v-if="activeTab === 'img2video' && (inputPreviews.length > 0 || selectedAssetPreviews.length > 0)" class="prompt-hint">
-              （已上传{{ inputPreviews.length + selectedAssetPreviews.length }}个素材，可在提示词中使用编号引用）
+            <span v-if="activeTab === 'img2video' && allMediaItems.length > 0" class="prompt-hint">
+              （已上传{{ allMediaItems.length }}个素材，@ 引用）
             </span>
           </div>
-          <ElInput
-            v-model="prompt"
-            type="textarea" :rows="6"
-            :placeholder="activeTab === 'txt2video' ? '输入提示词，描述视频内容、场景、动作...' : ''"
-            class="prompt-input"
-          />
+          <div class="prompt-wrap">
+            <ElInput
+              ref="promptInputRef"
+              v-model="prompt"
+              type="textarea" :rows="6"
+              :placeholder="activeTab === 'txt2video' ? '输入提示词，描述视频内容、场景、动作...（@ 选参考素材）' : '描述生成方向...（@ 选参考素材）'"
+              class="prompt-input"
+              @keyup="onPromptKeyup"
+              @keydown="onPromptKeydown"
+              @blur="atMentionActive = false"
+            />
+            <div v-if="atMentionActive && allMediaItems.length > 0" class="mention-dropdown">
+              <div
+                v-for="(media, idx) in allMediaItems"
+                :key="idx"
+                class="mention-item"
+                :class="{ active: atMentionIndex === idx }"
+                @mousedown.prevent="insertMention(idx)"
+              >
+                <video v-if="media.type === 'video'" :src="media.url" class="mention-thumb" />
+                <img v-else :src="media.url" class="mention-thumb" />
+                <span>@{{ media.type === 'video' ? '视频' : '图' }}{{ idx + 1 }}</span>
+              </div>
+            </div>
+          </div>
 
           <!-- generate -->
           <button class="generate-btn" :class="{ loading: generating }" :disabled="generating" @click="handleGenerate">
@@ -802,7 +920,38 @@ async function handleGenerate() {
 }
 
 /* prompt inputs */
+.prompt-wrap { position: relative; width: 100%; }
 .prompt-input { width: 100%; }
+.mention-dropdown {
+  position: absolute;
+  z-index: 100;
+  background: #1e1e2e;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 8px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 140px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+}
+.mention-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #e2e8f0;
+}
+.mention-item:hover, .mention-item.active { background: rgba(255,255,255,0.08); }
+.mention-thumb {
+  width: 32px;
+  height: 32px;
+  object-fit: cover;
+  border-radius: 4px;
+}
 
 /* divider */
 .divider {
