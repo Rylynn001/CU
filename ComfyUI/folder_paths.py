@@ -51,12 +51,23 @@ folder_names_and_paths["classifiers"] = ([os.path.join(models_dir, "classifiers"
 folder_names_and_paths["model_patches"] = ([os.path.join(models_dir, "model_patches")], supported_pt_extensions)
 
 folder_names_and_paths["audio_encoders"] = ([os.path.join(models_dir, "audio_encoders")], supported_pt_extensions)
+#(Rylynn)修改
+def _load_proxy_env():
+    env_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "custom_nodes", "comfy_api_proxy", ".env")
+    if not os.path.exists(env_path):
+        return
+    with open(env_path, encoding='utf-8') as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith('#') or '=' not in line:
+                continue
+            k, v = line.split('=', 1)
+            os.environ.setdefault(k.strip(), v.strip())
+_load_proxy_env()
 
-# output_directory = os.path.join(base_path, "output")
-#路径修改地址（Rylynn)
-output_directory = "D:\AAAA\output"
+output_directory = os.environ.get("OUTPUT_DIR", os.path.join(base_path, "output"))
 temp_directory = os.path.join(base_path, "temp")
-input_directory = os.path.join(base_path, "input")
+input_directory = os.environ.get("INPUT_DIR", os.path.join(base_path, "input"))
 user_directory = os.path.join(base_path, "user")
 
 filename_list_cache: dict[str, tuple[list[str], dict[str, float], float]] = {}
