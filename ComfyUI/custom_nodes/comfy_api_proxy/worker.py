@@ -14,6 +14,29 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from config import get_db_config, get_redis_config, get_output_dir
+import pymysql
+
+
+def _save_history(task_id, prompt, user_id, model_id, input_asset_ids, output_asset_ids, status, type_, message=None):
+    """任务完成或失败后写入 history 表，返回 history_id"""
+    input_file = ','.join(str(i) for i in input_asset_ids) if input_asset_ids else None
+    output_file = ','.join(str(i) for i in output_asset_ids) if output_asset_ids else None
+    try:
+        conn = pymysql.connect(**get_db_config())
+        with conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """INSERT INTO history
+                       (task_id, prompt, mode, status, type, message, input_file, output_file, user_id, model_id, del_flag)
+                       VALUES (%s, %s, 'api', %s, %s, %s, %s, %s, %s, %s, 0)""",
+                    (task_id, prompt, status, type_, message, input_file, output_file,
+                     int(user_id) if user_id else None, int(model_id) if model_id else None)
+                )
+            conn.commit()
+            return cursor.lastrowid
+    except Exception as e:
+        logger.error(f'[history] save failed: {e}')
+        return None
 
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s: %(message)s')
 logger = logging.getLogger('worker')
@@ -63,6 +86,9 @@ def process_ark_txt2video_task(task):
         redis_client.setex(f'task:{task_id}:base_url', 3600, task['base_url'])
         redis_client.setex(f'task:{task_id}:provider', 3600, 'ark')
         redis_client.setex(f'task:{task_id}:user_id', 3600, str(task.get('user_id', '')))
+        redis_client.setex(f'task:{task_id}:prompt', 3600, task.get('prompt', ''))
+        redis_client.setex(f'task:{task_id}:model_id', 3600, str(task.get('model_id', '')))
+        redis_client.setex(f'task:{task_id}:type', 3600, 'txt2video')
 
         # 更新状态为 processing
         redis_client.set(f'task:{task_id}:status', 'processing')
@@ -70,6 +96,17 @@ def process_ark_txt2video_task(task):
 
     except Exception as e:
         logger.error(f'[{task_id}] Failed to submit Ark txt2video task: {e}')
+        _save_history(
+            task_id=task_id,
+            prompt=task.get('prompt', ''),
+            user_id=task.get('user_id'),
+            model_id=task.get('model_id'),
+            input_asset_ids=[],
+            output_asset_ids=[],
+            status='error',
+            type_='txt2video',
+            message=str(e),
+        )
         redis_client.set(f'task:{task_id}:status', 'failed')
         redis_client.setex(f'task:{task_id}:result', 3600, json.dumps({
             'error': {'error_message': str(e)}
@@ -174,6 +211,10 @@ def process_ark_img2video_task(task):
         redis_client.setex(f'task:{task_id}:api_key', 3600, task['api_key'])
         redis_client.setex(f'task:{task_id}:provider', 3600, 'ark')
         redis_client.setex(f'task:{task_id}:user_id', 3600, str(task.get('user_id', '')))
+        redis_client.setex(f'task:{task_id}:prompt', 3600, task.get('prompt', ''))
+        redis_client.setex(f'task:{task_id}:model_id', 3600, str(task.get('model_id', '')))
+        redis_client.setex(f'task:{task_id}:input_asset_ids', 3600, json.dumps(task.get('input_asset_ids', [])))
+        redis_client.setex(f'task:{task_id}:type', 3600, 'img2video')
 
         # 更新状态为 processing
         redis_client.set(f'task:{task_id}:status', 'processing')
@@ -181,6 +222,17 @@ def process_ark_img2video_task(task):
 
     except Exception as e:
         logger.error(f'[{task_id}] Failed to submit Ark task: {e}')
+        _save_history(
+            task_id=task_id,
+            prompt=task.get('prompt', ''),
+            user_id=task.get('user_id'),
+            model_id=task.get('model_id'),
+            input_asset_ids=task.get('input_asset_ids', []),
+            output_asset_ids=[],
+            status='error',
+            type_='img2video',
+            message=str(e),
+        )
         redis_client.set(f'task:{task_id}:status', 'failed')
         redis_client.setex(f'task:{task_id}:result', 3600, json.dumps({
             'error': {'error_message': str(e)}
@@ -281,6 +333,7 @@ def process_openai_task(task):
                 save_paths.append(save_path)
 
         # 写入 assets 表
+        output_asset_ids = []
         if images and save_paths:
             user_id = task.get('user_id')
             if user_id:
@@ -293,6 +346,7 @@ def process_openai_task(task):
                                     'INSERT INTO assets (location, rfid, asset_type, created_at) VALUES (%s, %s, %s, NOW())',
                                     (str(save_path), int(user_id), 'picture')
                                 )
+                                output_asset_ids.append(cursor.lastrowid)
                         conn.commit()
                     logger.info(f'[{task_id}] Saved to assets table as picture')
                 except Exception as db_e:
@@ -301,14 +355,42 @@ def process_openai_task(task):
         if not images:
             raise Exception('No image generated')
 
+        # 写入 history 表
+        user_id = task.get('user_id')
+        history_id = _save_history(
+            task_id=task_id,
+            prompt=task.get('prompt', ''),
+            user_id=user_id,
+            model_id=task.get('model_id'),
+            input_asset_ids=task.get('input_asset_ids', []),
+            output_asset_ids=output_asset_ids,
+            status='done',
+            type_='img2img' if task.get('input_asset_ids') else 'txt2img',
+        )
+
         # 更新 Redis 状态
         redis_client.set(f'task:{task_id}:status', 'completed')
-        redis_client.setex(f'task:{task_id}:result', 3600, json.dumps({'result': images}))
+        redis_client.setex(f'task:{task_id}:result', 3600, json.dumps({
+            'result': images,
+            'history_id': history_id,
+        }))
 
         logger.info(f'[{task_id}] Completed, {len(images)} image(s)')
 
     except Exception as e:
         logger.error(f'[{task_id}] Failed: {e}')
+        # 写入失败历史
+        _save_history(
+            task_id=task_id,
+            prompt=task.get('prompt', ''),
+            user_id=task.get('user_id'),
+            model_id=task.get('model_id'),
+            input_asset_ids=task.get('input_asset_ids', []),
+            output_asset_ids=[],
+            status='error',
+            type_='img2img' if task.get('input_asset_ids') else 'txt2img',
+            message=str(e),
+        )
         redis_client.set(f'task:{task_id}:status', 'failed')
         redis_client.setex(f'task:{task_id}:result', 3600, json.dumps({
             'error': {'error_message': str(e)}
@@ -388,6 +470,7 @@ def process_gemini_task(task):
         result_images = images[-1:] if images else []
 
         # 只把最后一张写入 assets 表
+        output_asset_ids = []
         if result_images and save_paths:
             user_id = task.get('user_id')
             if user_id:
@@ -399,6 +482,7 @@ def process_gemini_task(task):
                                 'INSERT INTO assets (location, rfid, asset_type, created_at) VALUES (%s, %s, %s, NOW())',
                                 (str(save_paths[-1]), int(user_id), 'picture')
                             )
+                            output_asset_ids.append(cursor.lastrowid)
                         conn.commit()
                     logger.info(f'[{task_id}] Saved to assets table as picture')
                 except Exception as db_e:
@@ -407,14 +491,42 @@ def process_gemini_task(task):
         if not result_images:
             raise Exception('No image generated')
 
+        # 写入 history 表
+        user_id = task.get('user_id')
+        history_id = _save_history(
+            task_id=task_id,
+            prompt=task.get('prompt', ''),
+            user_id=user_id,
+            model_id=task.get('model_id'),
+            input_asset_ids=task.get('input_asset_ids', []),
+            output_asset_ids=output_asset_ids,
+            status='done',
+            type_='img2img' if task.get('input_asset_ids') else 'txt2img',
+        )
+
         # 更新 Redis 状态
         redis_client.set(f'task:{task_id}:status', 'completed')
-        redis_client.setex(f'task:{task_id}:result', 3600, json.dumps({'result': result_images}))
+        redis_client.setex(f'task:{task_id}:result', 3600, json.dumps({
+            'result': result_images,
+            'history_id': history_id,
+        }))
 
         logger.info(f'[{task_id}] Completed, {len(result_images)} image(s)')
 
     except Exception as e:
         logger.error(f'[{task_id}] Failed: {e}')
+        # 写入失败历史
+        _save_history(
+            task_id=task_id,
+            prompt=task.get('prompt', ''),
+            user_id=task.get('user_id'),
+            model_id=task.get('model_id'),
+            input_asset_ids=task.get('input_asset_ids', []),
+            output_asset_ids=[],
+            status='error',
+            type_='img2img' if task.get('input_asset_ids') else 'txt2img',
+            message=str(e),
+        )
         redis_client.set(f'task:{task_id}:status', 'failed')
         redis_client.setex(f'task:{task_id}:result', 3600, json.dumps({
             'error': {'error_message': str(e)}

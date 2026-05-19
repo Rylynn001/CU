@@ -30,6 +30,7 @@ interface GenerationRecord {
   createdAt: number
   prompt: string
   inputPreviews: string[]
+  inputAssetUrls?: Array<{ url: string; type: string }>
   modelName: string
   mode: 'api' | 'local'
   status: 'generating' | 'done' | 'error'
@@ -53,30 +54,13 @@ const { records, saveRecords, clearAll: clearAllLocal, formatTime, deleteRecord:
 )
 
 const historyDb = useHistoryDb()
-const _persisting = new Set<string>()
 
-// 持久化单条已完成记录到数据库
-async function persistRecord(rec: GenerationRecord, inputAssetIds?: number[]) {
-  if (rec.dbId || _persisting.has(rec.id)) return
-  _persisting.add(rec.id)
-  const userId = getCurrentUserId()
-  if (!userId) { _persisting.delete(rec.id); return }
-  const outputUrls = rec.images.filter(img => img.startsWith('/api/api-proxy/output/') || img.startsWith('http'))
-  const id = await historyDb.persist({
-    userId,
-    prompt: rec.prompt,
-    outputUrls,
-    inputAssetIds: inputAssetIds ?? rec.inputAssetIds,
-    taskId: rec.taskId,
-    mode: rec.mode,
-    status: rec.status,
-    type: rec.isImg2Img ? 'img2img' : 'txt2img',
-    message: rec.errorMsg,
-    modelId: rec.modelId,
-  })
-  _persisting.delete(rec.id)
-  if (id) rec.dbId = id
-}
+const searchQuery = ref('')
+const filteredRecords = computed(() => {
+  if (!searchQuery.value.trim()) return records.value as GenerationRecord[]
+  const q = searchQuery.value.trim().toLowerCase()
+  return (records.value as GenerationRecord[]).filter(r => r.prompt.toLowerCase().includes(q))
+})
 
 // 包装删除：同时删除 DB 记录
 async function deleteRecord(id: string) {
@@ -96,6 +80,11 @@ async function clearAll() {
 }
 
 async function retryRecord(record: GenerationRecord) {
+  // 软删除旧记录
+  if (record.dbId) {
+    const userId = getCurrentUserId()
+    if (userId) await historyDb.remove(record.dbId, userId)
+  }
   const newRecord: GenerationRecord = {
     id: generateUUID(),
     createdAt: Date.now(),
@@ -359,7 +348,7 @@ onMounted(async () => {
 
   // 从数据库加载历史，合并到 records（以 DB 为准，保留本地进行中的任务）
   if (userId) {
-    const dbRecords = await historyDb.load(userId)
+    const dbRecords = await historyDb.load(userId, 'img')
     const localPending = (records.value as GenerationRecord[]).filter(r => r.status === 'generating')
     // 本地已完成记录若 DB 中存在对应条目则跳过（避免重复）
     const fromDb: GenerationRecord[] = dbRecords.map(r => ({
@@ -368,7 +357,8 @@ onMounted(async () => {
       createdAt: 0,
       prompt: r.prompt || '',
       inputPreviews: [],
-      modelName: '',
+      inputAssetUrls: r.input_asset_urls || [],
+      modelName: r.model_name || '',
       mode: 'api' as const,
       status: 'done' as const,
       progress: 100,
@@ -489,7 +479,6 @@ async function runApiGeneration(
       if (r) {
         r.images = submitted.images.map(resolveImageSrc).filter(Boolean)
         r.status = 'done'
-        await persistRecord(r, input_asset_ids)
       }
       saveRecords()
     }
@@ -509,12 +498,11 @@ async function resumeTaskPolling(record: GenerationRecord, userId?: number) {
     if (checkRes.ok) {
       const checkData = await checkRes.json()
       if (checkData.status === 'completed' && checkData.result) {
-        // 已完成，直接用结果
         const rec = records.value.find(r => r.id === record.id)
         if (rec) {
           rec.images = checkData.result.map((item: any) => item.url).filter(Boolean)
           rec.status = 'done'
-          await persistRecord(rec)
+          if (checkData.history_id) rec.dbId = checkData.history_id
           saveRecords()
         }
         return
@@ -523,7 +511,6 @@ async function resumeTaskPolling(record: GenerationRecord, userId?: number) {
         if (rec) {
           rec.status = 'error'
           rec.errorMsg = checkData.error?.error_message || '任务失败'
-          await persistRecord(rec)
           saveRecords()
         }
         return
@@ -535,14 +522,13 @@ async function resumeTaskPolling(record: GenerationRecord, userId?: number) {
     if (rec) {
       rec.images = result.images.map(resolveImageSrc).filter(Boolean)
       rec.status = 'done'
-      await persistRecord(rec)
+      if ((result as any).historyId) rec.dbId = (result as any).historyId
     }
   } catch (e: any) {
     const rec = records.value.find(r => r.id === record.id)
     if (rec) {
       rec.status = 'error'
       rec.errorMsg = (e as any).message
-      await persistRecord(rec)
     }
   } finally {
     saveRecords()
@@ -643,7 +629,6 @@ watch(imageUrl, async (url) => {
   if (rec) {
     rec.images = [url]
     rec.status = 'done'
-    await persistRecord(rec)
     saveRecords()
   }
 })
@@ -911,22 +896,28 @@ watch(generating, (val) => {
 
       <!-- ── RIGHT: MESSAGE STREAM ── -->
       <main class="right-panel">
-        <div v-if="records.length === 0" class="empty-wrap">
+        <div v-if="filteredRecords.length === 0 && records.length === 0" class="empty-wrap">
           <div class="empty-orb" />
           <p class="empty-text">等待生成</p>
         </div>
         <div v-else class="stream">
-          <!-- 清空按钮 -->
+          <!-- 搜索框 -->
           <div class="stream-header">
-            <span class="stream-title">历史记录 ({{ records.length }})</span>
-            <button class="clear-all-btn" @click="clearAll">清空全部</button>
+            <span class="stream-title">历史记录 ({{ filteredRecords.length }})</span>
+            <input v-model="searchQuery" class="search-input" placeholder="搜索提示词..." />
           </div>
 
-          <div v-for="rec in records" :key="rec.id">
+          <div v-for="rec in filteredRecords" :key="rec.id">
             <RecordCard :record="rec" @delete="deleteRecord" @retry="(r) => retryRecord(r as any)">
               <template #meta>
-                <div v-if="rec.inputPreviews && rec.inputPreviews.length" class="card-previews">
-                  <img v-for="(p, i) in rec.inputPreviews" :key="i" :src="p" class="card-preview-img" />
+                <div v-if="(rec.inputAssetUrls && rec.inputAssetUrls.length) || (rec.inputPreviews && rec.inputPreviews.length)" class="card-previews">
+                  <template v-if="rec.inputAssetUrls && rec.inputAssetUrls.length">
+                    <template v-for="(a, i) in rec.inputAssetUrls" :key="'a' + i">
+                      <video v-if="a.type === 'video'" :src="a.url" class="card-preview-img" />
+                      <img v-else :src="a.url" class="card-preview-img" />
+                    </template>
+                  </template>
+                  <img v-else v-for="(p, i) in rec.inputPreviews" :key="i" :src="p" class="card-preview-img" />
                 </div>
               </template>
               <template #prompt>
@@ -1479,20 +1470,20 @@ watch(generating, (val) => {
   letter-spacing: 0.5px;
 }
 
-.clear-all-btn {
-  padding: 6px 16px;
-  background: rgba(248,113,113,0.1);
-  border: 1px solid rgba(248,113,113,0.2);
+.search-input {
+  flex: 1;
+  max-width: 200px;
+  padding: 5px 10px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
   border-radius: 6px;
-  color: #f87171;
+  color: rgba(255,255,255,0.8);
   font-size: 12px;
-  cursor: pointer;
-  transition: all 0.2s;
+  outline: none;
+  transition: border-color 0.2s;
 }
-.clear-all-btn:hover {
-  background: rgba(248,113,113,0.2);
-  border-color: rgba(248,113,113,0.4);
-}
+.search-input::placeholder { color: rgba(255,255,255,0.25); }
+.search-input:focus { border-color: rgba(108,99,255,0.5); }
 
 .card-previews {
   display: flex;
@@ -1505,6 +1496,12 @@ watch(generating, (val) => {
   object-fit: cover;
   border-radius: 8px;
   border: 1px solid rgba(255,255,255,0.08);
+}
+
+.card-model-name {
+  font-size: 11px;
+  color: rgba(108,99,255,0.8);
+  margin-top: 4px;
 }
 
 .card-prompt {

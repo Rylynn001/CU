@@ -25,6 +25,7 @@ interface VideoRecord {
   taskId?: string
   mode: 'txt2video' | 'img2video'
   inputAssetIds?: number[]
+  inputAssetUrls?: Array<{ url: string; type: string }>
   dbId?: number
   modelId?: number
 }
@@ -38,31 +39,13 @@ const { records, saveRecords, clearAll: clearAllLocal, deleteRecord: deleteRecor
 )
 
 const historyDb = useHistoryDb()
-const _persisting = new Set<string>()
 
-async function persistRecord(rec: VideoRecord) {
-  if (rec.dbId || _persisting.has(rec.id)) return
-  _persisting.add(rec.id)
-  const userId = getCurrentUserId()
-  if (!userId) return
-  const outputUrls = rec.videoUrl && (rec.videoUrl.startsWith('/api/api-proxy/output/') || rec.videoUrl.startsWith('http'))
-    ? [rec.videoUrl]
-    : []
-  const id = await historyDb.persist({
-    userId,
-    prompt: rec.prompt,
-    outputUrls,
-    inputAssetIds: rec.inputAssetIds,
-    taskId: rec.taskId,
-    mode: 'api',
-    status: rec.status,
-    type: rec.mode,
-    message: rec.errorMsg,
-    modelId: rec.modelId,
-  })
-  _persisting.delete(rec.id)
-  if (id) rec.dbId = id
-}
+const searchQuery = ref('')
+const filteredRecords = computed(() => {
+  if (!searchQuery.value.trim()) return records.value as VideoRecord[]
+  const q = searchQuery.value.trim().toLowerCase()
+  return (records.value as VideoRecord[]).filter(r => r.prompt.toLowerCase().includes(q))
+})
 
 async function deleteRecord(id: string) {
   const rec = (records.value as VideoRecord[]).find(r => r.id === id)
@@ -80,6 +63,11 @@ async function clearAll() {
 }
 
 async function retryRecord(record: VideoRecord) {
+  // 软删除旧记录
+  if (record.dbId) {
+    const userId = getCurrentUserId()
+    if (userId) await historyDb.remove(record.dbId, userId)
+  }
   // 创建新记录，复用原来的参数
   const newRecord: VideoRecord = {
     id: generateUUID(),
@@ -279,16 +267,15 @@ onMounted(async () => {
 
   // 从数据库加载历史，合并到 records（以 DB 为准，保留本地进行中的任务）
   if (userId) {
-    const dbRecords = await historyDb.load(userId)
+    const dbRecords = await historyDb.load(userId, 'video')
     const localPending = (records.value as VideoRecord[]).filter(r => r.status === 'generating')
     const fromDb: VideoRecord[] = dbRecords
-      .filter(r => r.output_urls.some(o => o.type === 'video'))
       .map(r => ({
         id: String(r.id),
         dbId: r.id,
         createdAt: 0,
         prompt: r.prompt || '',
-        modelName: '',
+        modelName: r.model_name || '',
         ratio: '',
         resolution: '',
         duration: 0,
@@ -296,6 +283,7 @@ onMounted(async () => {
         mode: 'txt2video' as const,
         videoUrl: r.output_urls.find(o => o.type === 'video')?.url || r.output_urls[0]?.url,
         inputAssetIds: r.input_asset_ids,
+        inputAssetUrls: r.input_asset_urls || [],
       }))
     records.value = [...localPending, ...fromDb] as any
     saveRecords()
@@ -418,7 +406,6 @@ async function resumeTaskPolling(record: VideoRecord, userId?: number) {
       const checkData = await checkRes.json()
       console.log('[Video] Task status:', checkData)
       if (checkData.status === 'completed' && checkData.result) {
-        // 已完成，直接用结果
         console.log('[Video] Task completed, result:', checkData.result)
         const rec = records.value.find(r => r.id === record.id)
         if (rec) {
@@ -426,7 +413,7 @@ async function resumeTaskPolling(record: VideoRecord, userId?: number) {
           console.log('[Video] Found video item:', videoItem)
           rec.videoUrl = videoItem?.url || ''
           rec.status = 'done'
-          await persistRecord(rec)
+          if (checkData.history_id) rec.dbId = checkData.history_id
           saveRecords()
         }
         return
@@ -435,7 +422,6 @@ async function resumeTaskPolling(record: VideoRecord, userId?: number) {
         if (rec) {
           rec.status = 'error'
           rec.errorMsg = checkData.error?.error_message || '任务失败'
-          await persistRecord(rec)
           saveRecords()
         }
         return
@@ -452,7 +438,7 @@ async function resumeTaskPolling(record: VideoRecord, userId?: number) {
       console.log('[Video] Found video in result:', videoItem)
       rec.videoUrl = videoItem?.url || ''
       rec.status = 'done'
-      await persistRecord(rec)
+      if ((result as any).historyId) rec.dbId = (result as any).historyId
       saveRecords()
     }
   } catch (e: any) {
@@ -461,7 +447,6 @@ async function resumeTaskPolling(record: VideoRecord, userId?: number) {
     if (rec) {
       rec.status = 'error'
       rec.errorMsg = e.message
-      await persistRecord(rec)
       saveRecords()
     }
   }
@@ -570,7 +555,6 @@ async function handleGenerate() {
           videoUrl.value = result.video_url
           record.videoUrl = result.video_url
           record.status = 'done'
-          await persistRecord(record)
           saveRecords()
           generating.value = false
           return
@@ -594,7 +578,6 @@ async function handleGenerate() {
       errorMsg.value = 'API 生成失败：' + e.message
       record.status = 'error'
       record.errorMsg = e.message
-      await persistRecord(record)
       saveRecords()
       generating.value = false
     }
@@ -781,20 +764,26 @@ async function handleGenerate() {
 
       <!-- ── RIGHT: MESSAGE STREAM ── -->
       <main class="right-panel">
-        <div v-if="records.length === 0" class="empty-wrap">
+        <div v-if="filteredRecords.length === 0 && records.length === 0" class="empty-wrap">
           <div class="empty-orb" />
           <p class="empty-text">等待生成</p>
         </div>
         <div v-else class="stream">
-          <!-- 清空按钮 -->
+          <!-- 搜索框 -->
           <div class="stream-header">
-            <span class="stream-title">历史记录 ({{ records.length }})</span>
-            <button class="clear-all-btn" @click="clearAll">清空全部</button>
+            <span class="stream-title">历史记录 ({{ filteredRecords.length }})</span>
+            <input v-model="searchQuery" class="search-input" placeholder="搜索提示词..." />
           </div>
 
-          <div v-for="rec in records" :key="rec.id">
+          <div v-for="rec in filteredRecords" :key="rec.id">
             <RecordCard :record="rec" @delete="deleteRecord" @retry="(r) => retryRecord(r as any)">
               <template #meta>
+                <div v-if="rec.inputAssetUrls && rec.inputAssetUrls.length" class="card-previews">
+                  <template v-for="(a, i) in rec.inputAssetUrls" :key="i">
+                    <video v-if="a.type === 'video'" :src="a.url" class="card-preview-img" />
+                    <img v-else :src="a.url" class="card-preview-img" />
+                  </template>
+                </div>
                 <div class="card-params">
                   <span>{{ rec.ratio }}</span>
                   <span>·</span>
@@ -1313,19 +1302,39 @@ async function handleGenerate() {
   letter-spacing: 0.5px;
 }
 
-.clear-all-btn {
-  padding: 6px 16px;
-  background: rgba(248,113,113,0.1);
-  border: 1px solid rgba(248,113,113,0.2);
+.search-input {
+  flex: 1;
+  max-width: 200px;
+  padding: 5px 10px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
   border-radius: 6px;
-  color: #f87171;
+  color: rgba(255,255,255,0.8);
   font-size: 12px;
-  cursor: pointer;
-  transition: all 0.2s;
+  outline: none;
+  transition: border-color 0.2s;
 }
-.clear-all-btn:hover {
-  background: rgba(248,113,113,0.2);
-  border-color: rgba(248,113,113,0.4);
+.search-input::placeholder { color: rgba(255,255,255,0.25); }
+.search-input:focus { border-color: rgba(108,99,255,0.5); }
+
+.card-previews {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.card-preview-img {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid rgba(255,255,255,0.1);
+}
+
+.card-model-name {
+  font-size: 11px;
+  color: rgba(108,99,255,0.8);
+  margin-top: 4px;
 }
 
 .card-params {

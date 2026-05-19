@@ -204,8 +204,10 @@ export interface HistoryRecord {
   status?: string
   type?: string
   message?: string
+  model_name?: string
   output_urls: Array<{ url: string; type: string }>
   input_asset_ids: number[]
+  input_asset_urls: Array<{ url: string; type: string }>
 }
 
 export async function saveHistory(params: {
@@ -229,8 +231,9 @@ export async function saveHistory(params: {
   return res.json()
 }
 
-export async function fetchHistory(userId: number): Promise<HistoryRecord[]> {
-  const res = await fetch(`${BASE}/history?user_id=${userId}`)
+export async function fetchHistory(userId: number, type?: 'img' | 'video'): Promise<HistoryRecord[]> {
+  const url = type ? `${BASE}/history?user_id=${userId}&type=${type}` : `${BASE}/history?user_id=${userId}`
+  const res = await fetch(url)
   if (!res.ok) throw new Error(`fetch history failed: ${res.status}`)
   const data = await res.json()
   return data.records || []

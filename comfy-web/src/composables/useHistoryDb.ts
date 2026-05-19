@@ -8,9 +8,9 @@ export type { HistoryRecord }
  * 本 composable 只负责与后端通信。
  */
 export function useHistoryDb() {
-  async function load(userId: number): Promise<HistoryRecord[]> {
+  async function load(userId: number, type?: 'img' | 'video'): Promise<HistoryRecord[]> {
     try {
-      return await fetchHistory(userId)
+      return await fetchHistory(userId, type)
     } catch (e) {
       console.warn('[useHistoryDb] load failed:', e)
       return []
