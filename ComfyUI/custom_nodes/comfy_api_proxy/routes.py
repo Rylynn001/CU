@@ -63,6 +63,33 @@ except Exception as e:
 
 # ── 工具函数 ───────────────────────────────────────────────────────────────
 
+def _save_history_from_task(task_id: str, redis_c, output_asset_ids: list, status: str, message: str | None = None):
+    """从 Redis 读取任务元数据，写入 history 表，返回 history_id"""
+    try:
+        from . import db_queries
+        user_id   = redis_c.get(f'task:{task_id}:user_id')
+        prompt    = redis_c.get(f'task:{task_id}:prompt') or ''
+        model_id  = redis_c.get(f'task:{task_id}:model_id')
+        type_     = redis_c.get(f'task:{task_id}:type') or 'txt2video'
+        input_ids_raw = redis_c.get(f'task:{task_id}:input_asset_ids')
+        input_asset_ids = json_lib.loads(input_ids_raw) if input_ids_raw else []
+
+        return db_queries.save_history(
+            user_id=int(user_id) if user_id else 0,
+            prompt=prompt,
+            input_asset_ids=input_asset_ids,
+            output_asset_ids=output_asset_ids,
+            task_id=task_id,
+            mode='api',
+            status=status,
+            type_=type_,
+            message=message,
+            model_id=int(model_id) if model_id else None,
+        )
+    except Exception as e:
+        logger.error(f'[history] save failed for task {task_id}: {e}')
+        return None
+
 def _get_provider_by_model(model_id: int) -> int | None:
     """根据模型表的主键 id 从数据库查找对应的 rfid (provider_id)"""
     try:
@@ -317,6 +344,7 @@ async def txt2img(request: web.Request):
             'task_id': task_id,
             'provider': 'openai',
             'model': model_name,
+            'model_id': model,
             'prompt': prompt,
             'width': width,
             'height': height,
@@ -324,7 +352,8 @@ async def txt2img(request: web.Request):
             'user_id': user_id,
             'api_key': api_key,
             'base_url': base_url,
-            'image_b64_list': image_b64_list,  # 支持图生图
+            'image_b64_list': image_b64_list,
+            'input_asset_ids': input_asset_ids,
         }
 
         redis_client.lpush('queue:txt2img', json_lib.dumps(task_payload))
@@ -352,11 +381,13 @@ async def txt2img(request: web.Request):
             'task_id': task_id,
             'provider': 'gemini',
             'model': model_name,
+            'model_id': model,
             'prompt': prompt,
             'user_id': user_id,
             'api_key': api_key,
             'base_url': base_url,
             'image_b64_list': image_b64_list,
+            'input_asset_ids': input_asset_ids,
         }
 
         redis_client.lpush('queue:txt2img', json_lib.dumps(task_payload))
@@ -426,6 +457,7 @@ async def txt2video(request: web.Request):
         'task_id': task_id,
         'provider': 'ark',
         'model': model_name,
+        'model_id': model,
         'prompt': prompt,
         'ratio': ratio,
         'resolution': resolution,
@@ -576,6 +608,7 @@ async def img2video(request: web.Request):
         'task_id': task_id,
         'provider': 'ark',
         'model': model_name,
+        'model_id': model,
         'prompt': prompt,
         'ratio': ratio,
         'resolution': resolution,
@@ -712,6 +745,7 @@ async def get_task_status(request: web.Request):
                                         logger.info(f'[{task_id}] Video saved to {save_path}')
 
                                         # 写入 assets 表
+                                        output_asset_id = None
                                         if stored_user_id:
                                             try:
                                                 conn = pymysql.connect(**cfg.get_db_config())
@@ -721,15 +755,24 @@ async def get_task_status(request: web.Request):
                                                             'INSERT INTO assets (location, rfid, asset_type, created_at) VALUES (%s, %s, %s, NOW())',
                                                             (str(save_path), int(stored_user_id), 'video')
                                                         )
+                                                        output_asset_id = cursor.lastrowid
                                                     conn.commit()
                                                 logger.info(f'[{task_id}] Saved to assets table as video')
                                             except Exception as db_e:
                                                 logger.error(f'[{task_id}] DB insert failed: {db_e}')
 
+                                        # 写入 history 表
+                                        history_id = _save_history_from_task(
+                                            task_id, redis_client,
+                                            output_asset_ids=[output_asset_id] if output_asset_id else [],
+                                            status='done',
+                                        )
+
                                         # 更新 Redis 状态为完成
                                         redis_client.set(f'task:{task_id}:status', 'completed')
                                         redis_client.setex(f'task:{task_id}:result', 3600, json_lib.dumps({
-                                            'result': [{'url': local_url, 'type': 'video'}]
+                                            'result': [{'url': local_url, 'type': 'video'}],
+                                            'history_id': history_id,
                                         }))
 
                                         # 清理临时数据
@@ -742,7 +785,8 @@ async def get_task_status(request: web.Request):
 
                                         return web.json_response({
                                             'status': 'completed',
-                                            'result': [{'url': local_url, 'type': 'video'}]
+                                            'result': [{'url': local_url, 'type': 'video'}],
+                                            'history_id': history_id,
                                         })
                                     except Exception as download_error:
                                         redis_client.delete(f'task:{task_id}:downloading')
@@ -750,6 +794,7 @@ async def get_task_status(request: web.Request):
 
                                 elif remote_status == "failed":
                                     error_msg = result.get("error", {}).get("message", "Video generation failed")
+                                    _save_history_from_task(task_id, redis_client, output_asset_ids=[], status='error', message=error_msg)
                                     redis_client.set(f'task:{task_id}:status', 'failed')
                                     redis_client.setex(f'task:{task_id}:result', 3600, json_lib.dumps({
                                         'error': {'error_message': error_msg}
@@ -758,8 +803,6 @@ async def get_task_status(request: web.Request):
                                         'status': 'failed',
                                         'error': {'error_message': error_msg}
                                     })
-
-                            # 否则使用 Ark SDK（图生视频）
                             else:
                                 from volcenginesdkarkruntime import Ark
                                 import uuid, pymysql
@@ -798,6 +841,7 @@ async def get_task_status(request: web.Request):
                                         logger.info(f'[{task_id}] Video saved to {save_path}')
 
                                         # 写入 assets 表
+                                        output_asset_id = None
                                         if stored_user_id:
                                             try:
                                                 conn = pymysql.connect(**cfg.get_db_config())
@@ -807,15 +851,24 @@ async def get_task_status(request: web.Request):
                                                             'INSERT INTO assets (location, rfid, asset_type, created_at) VALUES (%s, %s, %s, NOW())',
                                                             (str(save_path), int(stored_user_id), 'video')
                                                         )
+                                                        output_asset_id = cursor.lastrowid
                                                     conn.commit()
                                                 logger.info(f'[{task_id}] Saved to assets table as video')
                                             except Exception as db_e:
                                                 logger.error(f'[{task_id}] DB insert failed: {db_e}')
 
+                                        # 写入 history 表
+                                        history_id = _save_history_from_task(
+                                            task_id, redis_client,
+                                            output_asset_ids=[output_asset_id] if output_asset_id else [],
+                                            status='done',
+                                        )
+
                                         # 更新 Redis 状态为完成
                                         redis_client.set(f'task:{task_id}:status', 'completed')
                                         redis_client.setex(f'task:{task_id}:result', 3600, json_lib.dumps({
-                                            'result': [{'url': local_url, 'type': 'video'}]
+                                            'result': [{'url': local_url, 'type': 'video'}],
+                                            'history_id': history_id,
                                         }))
 
                                         # 清理临时数据
@@ -827,7 +880,8 @@ async def get_task_status(request: web.Request):
 
                                         return web.json_response({
                                             'status': 'completed',
-                                            'result': [{'url': local_url, 'type': 'video'}]
+                                            'result': [{'url': local_url, 'type': 'video'}],
+                                            'history_id': history_id,
                                         })
                                     except Exception as download_error:
                                         redis_client.delete(f'task:{task_id}:downloading')
@@ -835,6 +889,7 @@ async def get_task_status(request: web.Request):
 
                                 elif remote_status == "failed":
                                     error_msg = result.error.message if hasattr(result, 'error') and hasattr(result.error, 'message') else "Video generation failed"
+                                    _save_history_from_task(task_id, redis_client, output_asset_ids=[], status='error', message=error_msg)
                                     redis_client.set(f'task:{task_id}:status', 'failed')
                                     redis_client.setex(f'task:{task_id}:result', 3600, json_lib.dumps({
                                         'error': {'error_message': error_msg}
@@ -892,6 +947,7 @@ async def get_task_status(request: web.Request):
                                         logger.info(f'[{task_id}] Video saved to {save_path}')
 
                                         # 写入 assets 表
+                                        output_asset_id = None
                                         if stored_user_id:
                                             try:
                                                 conn = pymysql.connect(**cfg.get_db_config())
@@ -901,15 +957,24 @@ async def get_task_status(request: web.Request):
                                                             'INSERT INTO assets (location, rfid, asset_type, created_at) VALUES (%s, %s, %s, NOW())',
                                                             (str(save_path), int(stored_user_id), 'video')
                                                         )
+                                                        output_asset_id = cursor.lastrowid
                                                     conn.commit()
                                                 logger.info(f'[{task_id}] Saved to assets table as video')
                                             except Exception as db_e:
                                                 logger.error(f'[{task_id}] DB insert failed: {db_e}')
 
+                                        # 写入 history 表
+                                        history_id = _save_history_from_task(
+                                            task_id, redis_client,
+                                            output_asset_ids=[output_asset_id] if output_asset_id else [],
+                                            status='done',
+                                        )
+
                                         # 更新 Redis 状态为完成（使用本地 URL）
                                         redis_client.set(f'task:{task_id}:status', 'completed')
                                         redis_client.setex(f'task:{task_id}:result', 3600, json_lib.dumps({
-                                            'result': [{'url': local_url, 'type': 'video'}]
+                                            'result': [{'url': local_url, 'type': 'video'}],
+                                            'history_id': history_id,
                                         }))
 
                                         # 清理临时数据
@@ -921,7 +986,8 @@ async def get_task_status(request: web.Request):
 
                                         return web.json_response({
                                             'status': 'completed',
-                                            'result': [{'url': local_url, 'type': 'video'}]
+                                            'result': [{'url': local_url, 'type': 'video'}],
+                                            'history_id': history_id,
                                         })
                                     except Exception as download_error:
                                         # 下载失败，释放锁
@@ -930,6 +996,7 @@ async def get_task_status(request: web.Request):
 
                                 elif remote_status == "failed":
                                     error_msg = result.get("error", {}).get("message", "Video generation failed")
+                                    _save_history_from_task(task_id, redis_client, output_asset_ids=[], status='error', message=error_msg)
                                     redis_client.set(f'task:{task_id}:status', 'failed')
                                     redis_client.setex(f'task:{task_id}:result', 3600, json_lib.dumps({
                                         'error': {'error_message': error_msg}
@@ -952,6 +1019,8 @@ async def get_task_status(request: web.Request):
                     result_data = json_lib.loads(result_json)
                     if status == 'completed':
                         response['result'] = result_data.get('result', [])
+                        if result_data.get('history_id'):
+                            response['history_id'] = result_data['history_id']
                     else:
                         response['error'] = result_data.get('error')
 
@@ -1055,6 +1124,21 @@ async def serve_output_file(request: web.Request):
     if '..' in filename or '/' in filename or '\\' in filename:
         raise web.HTTPBadRequest(reason='Invalid filename')
     file_path = OUTPUT_DIR / filename
+    if not file_path.exists():
+        raise web.HTTPNotFound()
+    return web.FileResponse(file_path)
+
+
+# ── /api-proxy/input/{filename} ──────────────────────────────────────────
+# 提供 input 目录下文件的访问（用于历史记录展示输入素材）
+
+@routes.get('/api-proxy/input/{filename}')
+async def serve_input_file(request: web.Request):
+    filename = request.match_info['filename']
+    if '..' in filename or '/' in filename or '\\' in filename:
+        raise web.HTTPBadRequest(reason='Invalid filename')
+    input_dir = cfg.get_input_dir()
+    file_path = input_dir / filename
     if not file_path.exists():
         raise web.HTTPNotFound()
     return web.FileResponse(file_path)
@@ -1193,13 +1277,14 @@ async def save_history(request: web.Request):
 
 @routes.get('/api-proxy/history')
 async def get_history(request: web.Request):
-    """获取用户历史记录列表"""
+    """获取用户历史记录列表，type 参数可选：img / video"""
     from . import db_queries
     user_id = request.rel_url.query.get('user_id')
     if not user_id:
         raise web.HTTPBadRequest(reason='user_id is required')
+    type_filter = request.rel_url.query.get('type')  # 'img' or 'video'
     try:
-        records = db_queries.get_user_history(int(user_id))
+        records = db_queries.get_user_history(int(user_id), type_filter=type_filter or None)
         return web.json_response({'records': records})
     except Exception as e:
         logger.error(f'[api-proxy] get_history error: {e}')

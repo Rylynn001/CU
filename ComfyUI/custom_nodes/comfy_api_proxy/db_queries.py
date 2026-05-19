@@ -93,15 +93,28 @@ def save_history(
         return cursor.lastrowid
 
 
-def get_user_history(user_id: int) -> list[dict]:
-    """获取用户历史记录，关联 assets 表返回可访问的 URL"""
+def get_user_history(user_id: int, type_filter: str | None = None) -> list[dict]:
+    """获取用户历史记录，关联 assets / input_assets 表返回可访问的 URL。
+    type_filter: 'img' 或 'video'，用 LIKE 模糊匹配 type 字段末尾"""
+    import pathlib as _pathlib
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute(
-            """SELECT id, task_id, prompt, mode, status, type, message, input_file, output_file
-               FROM history WHERE user_id = %s AND del_flag = 0 ORDER BY id DESC""",
-            (user_id,)
-        )
+        if type_filter:
+            cursor.execute(
+                """SELECT h.id, h.task_id, h.prompt, h.mode, h.status, h.type, h.message,
+                          h.input_file, h.output_file, m.description AS model_name
+                   FROM history h LEFT JOIN api_models m ON h.model_id = m.id
+                   WHERE h.user_id = %s AND h.del_flag = 0 AND h.type LIKE %s ORDER BY h.id DESC""",
+                (user_id, f'%{type_filter}')
+            )
+        else:
+            cursor.execute(
+                """SELECT h.id, h.task_id, h.prompt, h.mode, h.status, h.type, h.message,
+                          h.input_file, h.output_file, m.description AS model_name
+                   FROM history h LEFT JOIN api_models m ON h.model_id = m.id
+                   WHERE h.user_id = %s AND h.del_flag = 0 ORDER BY h.id DESC""",
+                (user_id,)
+            )
         rows = cursor.fetchall()
 
     result = []
@@ -114,8 +127,10 @@ def get_user_history(user_id: int) -> list[dict]:
             'status': row['status'],
             'type': row['type'],
             'message': row['message'],
+            'model_name': row.get('model_name') or '',
             'output_urls': [],
             'input_asset_ids': [],
+            'input_asset_urls': [],
         }
 
         # 解析 output_file 字段，查询 assets 表获取 location
@@ -133,16 +148,34 @@ def get_user_history(user_id: int) -> list[dict]:
                 for aid in ids:
                     if aid in assets:
                         a = assets[aid]
-                        import pathlib
-                        filename = pathlib.Path(a['location']).name
+                        filename = _pathlib.Path(a['location']).name
                         item['output_urls'].append({
                             'url': f'/api/api-proxy/output/{filename}',
                             'type': a['asset_type'],
                         })
 
-        # 解析 input_file 字段
+        # 解析 input_file 字段，查询 input_assets 表获取预览 URL
         if row['input_file']:
-            item['input_asset_ids'] = [int(x) for x in row['input_file'].split(',') if x.strip()]
+            ids = [int(x) for x in row['input_file'].split(',') if x.strip()]
+            item['input_asset_ids'] = ids
+            if ids:
+                with get_db_connection() as conn:
+                    cursor = conn.cursor()
+                    placeholders = ','.join(['%s'] * len(ids))
+                    cursor.execute(
+                        f"SELECT id, location FROM input_assets WHERE id IN ({placeholders})",
+                        ids
+                    )
+                    in_assets = {a['id']: a for a in cursor.fetchall()}
+                for aid in ids:
+                    if aid in in_assets:
+                        filename = _pathlib.Path(in_assets[aid]['location']).name
+                        ext = _pathlib.Path(filename).suffix.lower()
+                        asset_type = 'video' if ext in ('.mp4', '.mov', '.avi', '.webm') else 'image'
+                        item['input_asset_urls'].append({
+                            'url': f'/api/api-proxy/input/{filename}',
+                            'type': asset_type,
+                        })
 
         result.append(item)
     return result
