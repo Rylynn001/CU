@@ -545,6 +545,12 @@ async function handleGenerate() {
   if (modelSource.value === 'api') {
     if (!apiModel.value) { errorMsg.value = '请先在模型管理中添加 API 模型'; return }
 
+    // 图生图：提前校验图片
+    if (isImg2Img.value && inputImages.value.length === 0) {
+      errorMsg.value = '请先上传或选择参考图片'
+      return
+    }
+
     const record: GenerationRecord = {
       id: generateUUID(),
       createdAt: Date.now(),
@@ -563,6 +569,8 @@ async function handleGenerate() {
 
     // 快照当前图片列表，fire-and-forget
     runApiGeneration(record.id, isImg2Img.value, [...inputImages.value])
+    form.value.positive_prompt = ''
+    inputImages.value = []
     return
   }
 

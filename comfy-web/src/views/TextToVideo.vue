@@ -478,23 +478,33 @@ async function handleGenerate() {
       return
     }
 
+    // 图生视频：提前校验图片
+    if (activeTab.value === 'img2video' && inputFiles.value.length === 0 && selectedAssetIds.value.length === 0) {
+      errorMsg.value = '请上传图片/视频或从资产选择'
+      generating.value = false
+      return
+    }
+
     const modelName = apiModels.value.find(m => m.id === apiModel.value)?.name || apiModel.value
+    const currentPrompt = prompt.value
 
     const record: VideoRecord = {
       id: generateUUID(),
       createdAt: Date.now(),
-      prompt: prompt.value,
+      prompt: currentPrompt,
       modelId: Number(apiModel.value) || undefined,
     modelName,
       ratio: ratio.value,
       resolution: resolution.value,
       duration: duration.value,
       status: 'generating',
-      mode: activeTab.value,  // 记录是文生视频还是图生视频
+      mode: activeTab.value,
       inputAssetIds: activeTab.value === 'img2video' ? [...selectedAssetIds.value] : undefined,
     }
     records.value.unshift(record)
     saveRecords()
+    prompt.value = ''
+    clearAllInputs()
 
     // 获取 user_id
     const userId = getCurrentUserId()
@@ -504,14 +514,6 @@ async function handleGenerate() {
 
       // 图生视频模式
       if (activeTab.value === 'img2video') {
-        // 检查是否有输入
-        if (inputFiles.value.length === 0 && selectedAssetIds.value.length === 0) {
-          errorMsg.value = '请上传图片/视频或从资产选择'
-          generating.value = false
-          records.value.shift()
-          saveRecords()
-          return
-        }
 
         console.log('[handleGenerate] inputFiles:', inputFiles.value.length, 'selectedAssetIds:', selectedAssetIds.value.length)
         console.log('[handleGenerate] inputFiles details:', inputFiles.value.map(f => ({ name: f.name, size: f.size, type: f.type })))
@@ -527,7 +529,7 @@ async function handleGenerate() {
 
         const result = await apiImg2VideoGenerate({
           model: apiModel.value,
-          prompt: prompt.value,
+          prompt: currentPrompt,
           user_id: userId,
           ratio: ratio.value,
           resolution: resolution.value,
@@ -541,7 +543,7 @@ async function handleGenerate() {
       else {
         const result = await apiVideoGenerate({
           model: apiModel.value,
-          prompt: prompt.value,
+          prompt: currentPrompt,
           user_id: userId,
           ratio: ratio.value,
           resolution: resolution.value,
