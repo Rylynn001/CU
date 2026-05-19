@@ -389,7 +389,7 @@ function handleAssetSelect(assets: Array<{ id: number; location: string; asset_t
     const isVideo = asset.asset_type === 'video'
     selectedAssetPreviews.value.push({
       id: asset.id,
-      url: `/api/view?filename=${encodeURIComponent(asset.location)}&type=output`,
+      url: `/api/view?filename=${encodeURIComponent(asset.location.split('/').pop()!)}&type=output`,
       type: isVideo ? 'video' : 'image'
     })
   }
