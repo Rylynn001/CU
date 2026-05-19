@@ -414,7 +414,7 @@ function handleAssetSelect(assets: Array<{ id: number; location: string; asset_t
       if (inputImages.value.length >= maxImages) break
       inputImages.value.push({
         file: null,
-        preview: `/api/view?filename=${encodeURIComponent(asset.location)}&type=output`,
+        preview: `/api/view?filename=${encodeURIComponent(asset.location.replace(/\\/g, '/').split('/').pop()!)}&type=output`,
         assetLocation: asset.location,
       })
     }
@@ -447,7 +447,7 @@ async function runApiGeneration(
           const uploaded = await uploadInputImage(img.file, userId)
           ids.push(uploaded.id)
         } else if (img.assetLocation) {
-          const imgRes = await fetch(`/api/view?filename=${encodeURIComponent(img.assetLocation)}&type=output`)
+          const imgRes = await fetch(`/api/view?filename=${encodeURIComponent(img.assetLocation.replace(/\\/g, '/').split('/').pop()!)}&type=output`)
           const blob = await imgRes.blob()
           const file = new File([blob], img.assetLocation, { type: blob.type })
           const uploaded = await uploadInputImage(file, userId)
