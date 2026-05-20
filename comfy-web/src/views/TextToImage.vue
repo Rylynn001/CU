@@ -5,6 +5,7 @@ import { Refresh, UploadFilled, Close, Setting } from '@element-plus/icons-vue'
 import { ElImageViewer } from 'element-plus'
 import AssetPicker from '../components/AssetPicker.vue'
 import RecordCard from '../components/RecordCard.vue'
+import ImageEditor from '../components/ImageEditor.vue'
 import { getModels, getKSamplerInfo, submitPrompt, uploadImage, type PromptParams } from '../api/comfyui'
 import { useComfyWebSocket } from '../composables/useComfyWebSocket'
 import { getApiModels, apiGenerate, pollTaskUntilDone, resolveImageSrc, uploadInputImage, type ApiModel } from '../api/apiService'
@@ -407,6 +408,27 @@ function addLocalImage(file: File) {
   inputImages.value.push({ file, preview: URL.createObjectURL(file), assetLocation: '' })
 }
 
+// 图片编辑器
+const showEditor = ref(false)
+const editingIndex = ref(-1)
+
+function openEditor(idx: number) {
+  editingIndex.value = idx
+  showEditor.value = true
+}
+
+function onEditorConfirm(file: File) {
+  const idx = editingIndex.value
+  if (idx >= 0 && idx < inputImages.value.length) {
+    inputImages.value[idx] = { file, preview: URL.createObjectURL(file), assetLocation: '' }
+  }
+  showEditor.value = false
+}
+
+function onEditorCancel() {
+  showEditor.value = false
+}
+
 function handleAssetSelect(assets: Array<{ id: number; location: string; asset_type?: string }>) {
   if (activeTab.value === 'img2img') {
     const maxImages = modelSource.value === 'api' ? 4 : 1
@@ -712,6 +734,9 @@ watch(generating, (val) => {
               <div v-for="(img, idx) in inputImages" :key="idx" class="preview-item">
                 <span class="img-label">图{{ idx + 1 }}</span>
                 <img :src="img.preview" class="preview-img" />
+                <button class="edit-btn" @click="openEditor(idx)" title="编辑图片">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19l7-7-3-3-7 7v3h3z"/><path d="M18 13l1.5-1.5a2.12 2.12 0 0 0-3-3L15 10"/></svg>
+                </button>
                 <button class="clear-btn" @click="inputImages.splice(idx, 1)"><el-icon><Close /></el-icon></button>
               </div>
             </div>
@@ -967,6 +992,15 @@ watch(generating, (val) => {
       :url-list="[previewImageUrl]"
       @close="showImageViewer = false"
       :hide-on-click-modal="true"
+    />
+
+    <!-- Image Editor -->
+    <ImageEditor
+      v-if="showEditor && editingIndex >= 0 && inputImages[editingIndex]"
+      :image-src="inputImages[editingIndex].preview"
+      :visible="showEditor"
+      @confirm="onEditorConfirm"
+      @cancel="onEditorCancel"
     />
   </div>
 </template>
@@ -1387,6 +1421,16 @@ watch(generating, (val) => {
   font-size: 11px; transition: background 0.2s;
 }
 .clear-btn:hover { background: rgba(220,50,50,0.7); }
+
+.edit-btn {
+  position: absolute; top: 6px; right: 36px;
+  width: 24px; height: 24px; border-radius: 50%;
+  background: rgba(0,0,0,0.6); border: none;
+  color: white; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.2s;
+}
+.edit-btn:hover { background: rgba(108,99,255,0.8); }
 
 .multi-preview-wrap {
   display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px;

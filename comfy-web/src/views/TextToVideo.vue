@@ -4,6 +4,7 @@ import { ElInput, ElSelect, ElOption } from 'element-plus'
 import { UploadFilled } from '@element-plus/icons-vue'
 import AssetPicker from '../components/AssetPicker.vue'
 import RecordCard from '../components/RecordCard.vue'
+import ImageEditor from '../components/ImageEditor.vue'
 import { apiVideoGenerate, apiImg2VideoGenerate, uploadInputImage, getApiModels, type ApiModel } from '../api/apiService'
 import { useTaskHistory } from '../composables/useTaskHistory'
 import { useHistoryDb } from '../composables/useHistoryDb'
@@ -343,6 +344,49 @@ function removeFile(index: number) {
   URL.revokeObjectURL(inputPreviews.value[index].url)
   inputFiles.value.splice(index, 1)
   inputPreviews.value.splice(index, 1)
+}
+
+// 图片编辑器
+const showEditor = ref(false)
+const editingSource = ref<'file' | 'asset'>('file')
+const editingFileIndex = ref(-1)
+const editingAssetIndex = ref(-1)
+
+function openLocalEditor(index: number) {
+  editingSource.value = 'file'
+  editingFileIndex.value = index
+  showEditor.value = true
+}
+
+function openAssetEditor(index: number) {
+  editingSource.value = 'asset'
+  editingAssetIndex.value = index
+  showEditor.value = true
+}
+
+function onEditorCancel() {
+  showEditor.value = false
+}
+
+function onEditorConfirmUnified(file: File) {
+  if (editingSource.value === 'file') {
+    const idx = editingFileIndex.value
+    if (idx >= 0 && idx < inputFiles.value.length) {
+      URL.revokeObjectURL(inputPreviews.value[idx].url)
+      inputFiles.value[idx] = file
+      inputPreviews.value[idx] = { url: URL.createObjectURL(file), type: 'image' }
+    }
+  } else {
+    const idx = editingAssetIndex.value
+    if (idx >= 0 && idx < selectedAssetPreviews.value.length) {
+      // 从资产列表移除，加入本地文件列表
+      selectedAssetIds.value.splice(idx, 1)
+      selectedAssetPreviews.value.splice(idx, 1)
+      inputFiles.value.push(file)
+      inputPreviews.value.push({ url: URL.createObjectURL(file), type: 'image' })
+    }
+  }
+  showEditor.value = false
 }
 
 function removeAsset(index: number) {
@@ -692,6 +736,9 @@ async function handleGenerate() {
               <div v-for="(preview, index) in inputPreviews" :key="'file-' + index" class="preview-item">
                 <video v-if="preview.type === 'video'" :src="preview.url" class="preview-media" />
                 <img v-else :src="preview.url" class="preview-media" />
+                <button v-if="preview.type === 'image'" class="edit-btn" @click="openLocalEditor(index)" title="编辑图片">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19l7-7-3-3-7 7v3h3z"/><path d="M18 13l1.5-1.5a2.12 2.12 0 0 0-3-3L15 10"/></svg>
+                </button>
                 <button class="remove-btn" @click="removeFile(index)">×</button>
                 <span class="preview-badge">{{ preview.type === 'video' ? '视频' : '图片' }}{{ index + 1 }}</span>
               </div>
@@ -702,6 +749,9 @@ async function handleGenerate() {
               <div v-for="(preview, index) in selectedAssetPreviews" :key="'asset-' + preview.id" class="preview-item">
                 <video v-if="preview.type === 'video'" :src="preview.url" class="preview-media" />
                 <img v-else :src="preview.url" class="preview-media" />
+                <button v-if="preview.type === 'image'" class="edit-btn" @click="openAssetEditor(index)" title="编辑图片">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19l7-7-3-3-7 7v3h3z"/><path d="M18 13l1.5-1.5a2.12 2.12 0 0 0-3-3L15 10"/></svg>
+                </button>
                 <button class="remove-btn" @click="removeAsset(index)">×</button>
                 <span class="preview-badge">{{ preview.type === 'video' ? '视频' : '图片' }}{{ inputPreviews.length + index + 1 }}</span>
               </div>
@@ -817,6 +867,15 @@ async function handleGenerate() {
       :max-select="12"
       :allow-video="true"
       @select="handleAssetSelect"
+    />
+
+    <!-- Image Editor -->
+    <ImageEditor
+      v-if="showEditor"
+      :image-src="editingSource === 'file' ? (inputPreviews[editingFileIndex]?.url ?? '') : (selectedAssetPreviews[editingAssetIndex]?.url ?? '')"
+      :visible="showEditor"
+      @confirm="onEditorConfirmUnified"
+      @cancel="onEditorCancel"
     />
   </div>
 </template>
@@ -1138,7 +1197,7 @@ async function handleGenerate() {
 
 .preview-item {
   position: relative;
-  aspect-ratio: 1;
+  aspect-ratio: 16 / 9;
   border-radius: 8px;
   overflow: hidden;
   border: 1px solid rgba(255,255,255,0.08);
@@ -1172,6 +1231,28 @@ async function handleGenerate() {
 }
 .remove-btn:hover {
   background: rgba(220,50,50,0.9);
+  transform: scale(1.1);
+}
+
+.edit-btn {
+  position: absolute;
+  top: 4px;
+  right: 28px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.6);
+  border: none;
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  z-index: 2;
+}
+.edit-btn:hover {
+  background: rgba(108,99,255,0.9);
   transform: scale(1.1);
 }
 
