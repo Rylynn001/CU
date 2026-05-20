@@ -220,6 +220,7 @@ const form = ref<PromptParams>({
 })
 
 const errorMsg = ref('')
+const justSubmitted = ref(false)
 
 const ratios = [
   { label: '1:1',  w: 1,  h: 1,  icon: '⬜' },
@@ -589,10 +590,11 @@ async function handleGenerate() {
     records.value.unshift(record)
     saveRecords()
 
+    justSubmitted.value = true
+    setTimeout(() => justSubmitted.value = false, 1000)
+
     // 快照当前图片列表，fire-and-forget
     runApiGeneration(record.id, isImg2Img.value, [...inputImages.value])
-    form.value.positive_prompt = ''
-    inputImages.value = []
     return
   }
 
@@ -920,9 +922,9 @@ watch(generating, (val) => {
           </div>
 
           <!-- generate -->
-          <button class="generate-btn" :class="{ loading: generating }" :disabled="generating" @click="handleGenerate">
+          <button class="generate-btn" :class="{ loading: generating, submitted: justSubmitted }" :disabled="generating || justSubmitted" @click="handleGenerate">
             <span class="btn-glow" />
-            <span class="btn-label">{{ generating ? '生成中...' : '开始生成' }}</span>
+            <span class="btn-label">{{ justSubmitted ? '已提交 ✓' : generating ? '生成中...' : '开始生成' }}</span>
           </button>
         </div>
       </aside>
@@ -1468,6 +1470,11 @@ watch(generating, (val) => {
 .generate-btn:active:not(:disabled) { transform: translateY(0); }
 .generate-btn:disabled { opacity: 0.45; cursor: not-allowed; animation: none; }
 .generate-btn.loading { animation: breathe 2s ease-in-out infinite; }
+.generate-btn.submitted {
+  background: linear-gradient(135deg, #22c55e, #4ade80, #22c55e);
+  background-size: 200% auto;
+  animation: shimmer 1s linear infinite;
+}
 
 .btn-glow {
   position: absolute; inset: 0;

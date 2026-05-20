@@ -170,6 +170,7 @@ const prompt = ref('')
 const videoUrl = ref('')
 const generating = ref(false)
 const errorMsg = ref('')
+const justSubmitted = ref(false)
 
 // 视频参数
 const ratio = ref('16:9')
@@ -547,8 +548,9 @@ async function handleGenerate() {
     }
     records.value.unshift(record)
     saveRecords()
-    prompt.value = ''
-    clearAllInputs()
+
+    justSubmitted.value = true
+    setTimeout(() => justSubmitted.value = false, 1000)
 
     // 获取 user_id
     const userId = getCurrentUserId()
@@ -807,9 +809,9 @@ async function handleGenerate() {
           </div>
 
           <!-- generate -->
-          <button class="generate-btn" :class="{ loading: generating }" :disabled="generating" @click="handleGenerate">
+          <button class="generate-btn" :class="{ loading: generating, submitted: justSubmitted }" :disabled="generating" @click="handleGenerate">
             <span class="btn-glow" />
-            <span class="btn-label">{{ generating ? '生成中...' : '开始生成' }}</span>
+            <span class="btn-label">{{ justSubmitted ? '已提交 ✓' : generating ? '生成中...' : '开始生成' }}</span>
           </button>
         </div>
       </aside>
@@ -1300,6 +1302,11 @@ async function handleGenerate() {
 }
 .generate-btn.loading {
   animation: breathe 2s ease-in-out infinite;
+}
+.generate-btn.submitted {
+  background: linear-gradient(135deg, #22c55e, #4ade80, #22c55e);
+  background-size: 200% auto;
+  animation: shimmer 1s linear infinite;
 }
 
 .btn-glow {
