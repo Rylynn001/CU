@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useSlots } from 'vue'
 import { ElMessage } from 'element-plus'
 import { prioritizeTask } from '../api/apiService'
 
@@ -15,7 +16,10 @@ const props = defineProps<{ record: Record }>()
 const emit = defineEmits<{
   (e: 'delete', id: string): void
   (e: 'retry', record: Record): void
+  (e: 'edit', id: string): void
 }>()
+
+const slots = useSlots()
 
 async function handlePrioritize() {
   if (!props.record.taskId) return
@@ -38,41 +42,65 @@ function formatTime(ts: number): string {
 
 <template>
   <div class="record-card" :class="record.status">
-    <!-- 卡片头部 -->
-    <div class="card-header">
-      <div class="card-header-left">
-        <span class="card-time">{{ formatTime(record.createdAt) }}</span>
-        <span class="card-model">{{ record.modelName }}</span>
+    <div class="card-body">
+      <!-- 左侧：输入图列（随卡片滚动） -->
+      <div v-if="slots.input" class="card-input-col">
+        <slot name="input" />
       </div>
-      <button class="card-delete-btn" @click="emit('delete', record.id)" title="删除">×</button>
-    </div>
 
-    <!-- meta slot（参考图、视频参数等） -->
-    <slot name="meta" />
+      <!-- 右侧：主内容 -->
+      <div class="card-main-col">
+        <!-- 卡片头部 -->
+        <div class="card-header">
+          <div class="card-header-left">
+            <span class="card-time">{{ formatTime(record.createdAt) }}</span>
+            <span class="card-model">{{ record.modelName }}</span>
+          </div>
+          <div class="card-header-actions">
+            <button
+              v-if="record.status === 'done'"
+              class="card-edit-btn"
+              @click="emit('edit', record.id)"
+              title="编辑并继续生图"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 19l7-7-3-3-7 7v3h3z"/>
+                <path d="M18 13l1.5-1.5a2.12 2.12 0 0 0-3-3L15 10"/>
+              </svg>
+              编辑
+            </button>
+            <button class="card-delete-btn" @click="emit('delete', record.id)" title="删除">×</button>
+          </div>
+        </div>
 
-    <!-- prompt slot -->
-    <slot name="prompt" />
+        <!-- meta slot（参数标签等） -->
+        <slot name="meta" />
 
-    <!-- 生成中 -->
-    <div v-if="record.status === 'generating'" class="card-generating">
-      <div class="breath-ring" />
-      <div class="generating-content">
-        <slot name="progress">
-          <span class="loading-text">生成中...</span>
-        </slot>
+        <!-- prompt slot -->
+        <slot name="prompt" />
+
+        <!-- 生成中 -->
+        <div v-if="record.status === 'generating'" class="card-generating">
+          <div class="breath-ring" />
+          <div class="generating-content">
+            <slot name="progress">
+              <span class="loading-text">生成中...</span>
+            </slot>
+          </div>
+          <button v-if="record.taskId" class="prioritize-btn" @click="handlePrioritize">插队</button>
+        </div>
+
+        <!-- 错误 -->
+        <div v-else-if="record.status === 'error'" class="card-error">
+          <span class="error-text">{{ record.errorMsg || '生成失败' }}</span>
+          <button class="retry-btn" @click="emit('retry', record)">重试</button>
+        </div>
+
+        <!-- 结果 -->
+        <div v-else-if="record.status === 'done'">
+          <slot name="result" />
+        </div>
       </div>
-      <button v-if="record.taskId" class="prioritize-btn" @click="handlePrioritize">插队</button>
-    </div>
-
-    <!-- 错误 -->
-    <div v-else-if="record.status === 'error'" class="card-error">
-      <span class="error-text">{{ record.errorMsg || '生成失败' }}</span>
-      <button class="retry-btn" @click="emit('retry', record)">重试</button>
-    </div>
-
-    <!-- 结果 -->
-    <div v-else-if="record.status === 'done'">
-      <slot name="result" />
     </div>
   </div>
 </template>
@@ -82,10 +110,7 @@ function formatTime(ts: number): string {
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.07);
   border-radius: 16px;
-  padding: 16px 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+  overflow: hidden;
   transition: border-color 0.2s;
 }
 .record-card:hover {
@@ -98,6 +123,32 @@ function formatTime(ts: number): string {
   border-color: rgba(248, 113, 113, 0.2);
 }
 
+.card-body {
+  display: flex;
+  min-height: 0;
+}
+
+/* 左侧输入图列 */
+.card-input-col {
+  flex: 0 0 40%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  padding: 12px;
+  border-right: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(0, 0, 0, 0.1);
+}
+
+/* 右侧主内容 */
+.card-main-col {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 20px;
+}
+
 .card-header {
   display: flex;
   align-items: center;
@@ -107,6 +158,11 @@ function formatTime(ts: number): string {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+.card-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 .card-time {
   font-size: 11px;
@@ -124,6 +180,25 @@ function formatTime(ts: number): string {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.card-edit-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 6px;
+  background: rgba(108, 99, 255, 0.12);
+  border: 1px solid rgba(108, 99, 255, 0.25);
+  color: rgba(167, 139, 250, 0.85);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+.card-edit-btn:hover {
+  background: rgba(108, 99, 255, 0.28);
+  border-color: rgba(108, 99, 255, 0.5);
+  color: #a78bfa;
 }
 .card-delete-btn {
   width: 24px;

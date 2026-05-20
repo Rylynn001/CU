@@ -430,6 +430,72 @@ function onEditorCancel() {
   showEditor.value = false
 }
 
+// 历史记录编辑面板
+const showRecordEditor = ref(false)
+const editingRecordId = ref('')
+const recordEditorPrompt = ref('')
+const recordEditorImages = ref<string[]>([])
+const recordEditorEditedFile = ref<File | null>(null)
+const recordEditorEditedPreview = ref('')
+const recordEditorEditingSrc = ref('')
+const showRecordImageEditor = ref(false)
+
+function handleRecordEdit(id: string) {
+  const rec = (records.value as GenerationRecord[]).find(r => r.id === id)
+  if (!rec || rec.status !== 'done') return
+  editingRecordId.value = id
+  recordEditorPrompt.value = rec.prompt
+  recordEditorImages.value = rec.images
+  recordEditorEditedFile.value = null
+  recordEditorEditedPreview.value = ''
+  showRecordEditor.value = true
+}
+
+function openRecordImageEditor(src: string) {
+  recordEditorEditingSrc.value = src
+  showRecordImageEditor.value = true
+}
+
+function onRecordImageEditorConfirm(file: File) {
+  recordEditorEditedFile.value = file
+  recordEditorEditedPreview.value = URL.createObjectURL(file)
+  showRecordImageEditor.value = false
+}
+
+function onRecordImageEditorCancel() {
+  showRecordImageEditor.value = false
+}
+
+async function generateFromEdit() {
+  if (!apiModel.value) { errorMsg.value = '请先选择 API 模型'; return }
+  showRecordEditor.value = false
+
+  const src = recordEditorEditedPreview.value || recordEditorImages.value[0]
+  if (!src) return
+
+  const record: GenerationRecord = {
+    id: generateUUID(),
+    createdAt: Date.now(),
+    prompt: recordEditorPrompt.value,
+    inputPreviews: [src],
+    modelName: apiModel.value,   // 传 ID，与 handleGenerate 保持一致
+    modelId: Number(apiModel.value) || undefined,
+    mode: 'api',
+    status: 'generating',
+    progress: 0,
+    images: [],
+    isImg2Img: true,
+  }
+  records.value.unshift(record)
+  saveRecords()
+
+  const inputImg: InputImage = recordEditorEditedFile.value
+    ? { file: recordEditorEditedFile.value, preview: src, assetLocation: '' }
+    : { file: null, preview: src, assetLocation: '' }
+
+  runApiGeneration(record.id, true, [inputImg])
+}
+
 function handleAssetSelect(assets: Array<{ id: number; location: string; asset_type?: string }>) {
   if (activeTab.value === 'img2img') {
     const maxImages = modelSource.value === 'api' ? 4 : 1
@@ -473,6 +539,13 @@ async function runApiGeneration(
           const imgRes = await fetch(`/api/view?filename=${encodeURIComponent(img.assetLocation.replace(/\\/g, '/').split('/').pop()!)}&type=output`)
           const blob = await imgRes.blob()
           const file = new File([blob], img.assetLocation, { type: blob.type })
+          const uploaded = await uploadInputImage(file, userId)
+          ids.push(uploaded.id)
+        } else if (img.preview) {
+          // 来自历史记录编辑面板的 URL（blob 或 http）
+          const imgRes = await fetch(img.preview)
+          const blob = await imgRes.blob()
+          const file = new File([blob], 'input.png', { type: blob.type || 'image/png' })
           const uploaded = await uploadInputImage(file, userId)
           ids.push(uploaded.id)
         }
@@ -942,19 +1015,21 @@ watch(generating, (val) => {
             <input v-model="searchQuery" class="search-input" placeholder="搜索提示词..." />
           </div>
 
-          <div v-for="rec in filteredRecords" :key="rec.id">
-            <RecordCard :record="rec" @delete="deleteRecord" @retry="(r) => retryRecord(r as any)">
-              <template #meta>
-                <div v-if="(rec.inputAssetUrls && rec.inputAssetUrls.length) || (rec.inputPreviews && rec.inputPreviews.length)" class="card-previews">
-                  <template v-if="rec.inputAssetUrls && rec.inputAssetUrls.length">
-                    <template v-for="(a, i) in rec.inputAssetUrls" :key="'a' + i">
-                      <video v-if="a.type === 'video'" :src="a.url" class="card-preview-img" />
-                      <img v-else :src="a.url" class="card-preview-img" />
-                    </template>
-                  </template>
-                  <img v-else v-for="(p, i) in rec.inputPreviews" :key="i" :src="p" class="card-preview-img" />
-                </div>
+          <div v-for="rec in filteredRecords" :key="rec.id" class="record-row">
+            <!-- 左侧输入图 -->
+            <div class="record-input-col">
+              <template v-if="rec.inputAssetUrls && rec.inputAssetUrls.length">
+                <template v-for="(a, i) in rec.inputAssetUrls" :key="'a' + i">
+                  <video v-if="a.type === 'video'" :src="a.url" class="input-panel-thumb" />
+                  <img v-else :src="a.url" class="input-panel-thumb" @click="previewImage(a.url)" />
+                </template>
               </template>
+              <template v-else-if="rec.inputPreviews && rec.inputPreviews.length">
+                <img v-for="(p, i) in rec.inputPreviews" :key="i" :src="p" class="input-panel-thumb" @click="previewImage(p)" />
+              </template>
+            </div>
+            <!-- 右侧卡片 -->
+            <RecordCard class="record-card-flex" :record="rec" @delete="deleteRecord" @retry="(r) => retryRecord(r as any)" @edit="handleRecordEdit">
               <template #prompt>
                 <p class="card-prompt">{{ rec.prompt }}</p>
               </template>
@@ -996,13 +1071,73 @@ watch(generating, (val) => {
       :hide-on-click-modal="true"
     />
 
-    <!-- Image Editor -->
+    <!-- Image Editor（输入图编辑） -->
     <ImageEditor
       v-if="showEditor && editingIndex >= 0 && inputImages[editingIndex]"
       :image-src="inputImages[editingIndex].preview"
       :visible="showEditor"
       @confirm="onEditorConfirm"
       @cancel="onEditorCancel"
+    />
+
+    <!-- 历史记录编辑面板 -->
+    <div v-if="showRecordEditor" class="record-edit-overlay" @click.self="showRecordEditor = false">
+      <div class="record-edit-panel">
+        <div class="record-edit-header">
+          <span class="record-edit-title">编辑并继续生图</span>
+          <button class="record-edit-close" @click="showRecordEditor = false">×</button>
+        </div>
+
+        <!-- 生成结果图预览 + 编辑入口 -->
+        <div class="record-edit-images">
+          <div
+            v-for="(src, i) in recordEditorImages"
+            :key="i"
+            class="record-edit-img-wrap"
+            :class="{ selected: (recordEditorEditedPreview || recordEditorImages[0]) === (i === 0 ? (recordEditorEditedPreview || src) : src) }"
+          >
+            <img
+              :src="i === 0 && recordEditorEditedPreview ? recordEditorEditedPreview : src"
+              class="record-edit-img"
+            />
+            <button
+              v-if="i === 0"
+              class="record-edit-img-btn"
+              @click="openRecordImageEditor(recordEditorEditedPreview || src)"
+              title="编辑此图"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 19l7-7-3-3-7 7v3h3z"/>
+                <path d="M18 13l1.5-1.5a2.12 2.12 0 0 0-3-3L15 10"/>
+              </svg>
+              编辑
+            </button>
+            <span v-if="i === 0 && recordEditorEditedPreview" class="record-edit-badge">已编辑</span>
+          </div>
+        </div>
+
+        <!-- 提示词 -->
+        <div class="record-edit-label">提示词</div>
+        <textarea
+          v-model="recordEditorPrompt"
+          class="record-edit-textarea"
+          rows="4"
+          placeholder="修改提示词..."
+        />
+
+        <button class="record-edit-generate-btn" @click="generateFromEdit">
+          <span>继续生图</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- 历史记录图片编辑器 -->
+    <ImageEditor
+      v-if="showRecordImageEditor"
+      :image-src="recordEditorEditingSrc"
+      :visible="showRecordImageEditor"
+      @confirm="onRecordImageEditorConfirm"
+      @cancel="onRecordImageEditorCancel"
     />
   </div>
 </template>
@@ -1500,16 +1635,15 @@ watch(generating, (val) => {
   flex: 1;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
   justify-content: flex-start;
-  padding: 32px 40px;
+  padding: 24px 24px 24px 20px;
   overflow-y: auto;
 }
 
 /* message stream */
 .stream {
   width: 100%;
-  max-width: 720px;
   display: flex;
   flex-direction: column;
   gap: 20px;
@@ -1664,6 +1798,204 @@ watch(generating, (val) => {
   font-size: 12px;
   color: rgba(255,255,255,0.2);
   letter-spacing: 2px;
+}
+
+/* 历史记录左侧输入图 */
+.hist-input-col {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 8px;
+  width: 100%;
+  align-content: start;
+}
+.hist-input-thumb {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.08);
+  cursor: zoom-in;
+  transition: transform 0.15s, border-color 0.15s;
+  display: block;
+}
+.hist-input-thumb:hover {
+  transform: scale(1.04);
+  border-color: rgba(108,99,255,0.4);
+}
+
+/* ── 每条记录行 ── */
+.record-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.record-input-col {
+  width: 240px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 0;
+}
+.record-card-flex {
+  flex: 1;
+  min-width: 0;
+}
+.input-panel-thumb {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.08);
+  display: block;
+  transition: transform 0.15s, border-color 0.15s;
+}
+img.input-panel-thumb {
+  cursor: zoom-in;
+}
+.input-panel-thumb:hover {
+  transform: scale(1.03);
+  border-color: rgba(108,99,255,0.4);
+}
+
+/* 历史记录编辑面板 overlay */
+.record-edit-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.record-edit-panel {
+  width: 380px;
+  max-width: 95vw;
+  height: 100vh;
+  background: #16162a;
+  border-left: 1px solid rgba(108,99,255,0.2);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px 20px;
+  overflow-y: auto;
+}
+
+.record-edit-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.record-edit-title {
+  font-size: 14px;
+  color: rgba(255,255,255,0.85);
+  font-weight: 500;
+}
+.record-edit-close {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: none;
+  border: 1px solid rgba(255,255,255,0.1);
+  color: rgba(255,255,255,0.4);
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+.record-edit-close:hover {
+  background: rgba(248,113,113,0.15);
+  border-color: rgba(248,113,113,0.3);
+  color: #f87171;
+}
+
+.record-edit-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.record-edit-img-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+.record-edit-img {
+  width: 160px;
+  height: 160px;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.08);
+  display: block;
+}
+.record-edit-img-btn {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: rgba(0,0,0,0.7);
+  border: 1px solid rgba(108,99,255,0.4);
+  color: rgba(167,139,250,0.9);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.record-edit-img-btn:hover {
+  background: rgba(108,99,255,0.4);
+}
+.record-edit-badge {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(108,99,255,0.7);
+  color: white;
+}
+
+.record-edit-label {
+  font-size: 11px;
+  color: rgba(255,255,255,0.35);
+  letter-spacing: 0.5px;
+}
+.record-edit-textarea {
+  width: 100%;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 10px;
+  color: rgba(255,255,255,0.8);
+  font-size: 13px;
+  line-height: 1.6;
+  padding: 10px 12px;
+  resize: vertical;
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 0.2s;
+}
+.record-edit-textarea:focus {
+  border-color: rgba(108,99,255,0.4);
+}
+
+.record-edit-generate-btn {
+  width: 100%;
+  height: 44px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(108,99,255,0.8), rgba(167,139,250,0.6));
+  border: 1px solid rgba(108,99,255,0.4);
+  color: white;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-top: auto;
+}
+.record-edit-generate-btn:hover {
+  background: linear-gradient(135deg, rgba(108,99,255,1), rgba(167,139,250,0.8));
 }
 
 @media (max-width: 900px) {
