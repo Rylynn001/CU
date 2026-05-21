@@ -57,6 +57,11 @@ const { records, saveRecords, clearAll: clearAllLocal, formatTime, deleteRecord:
 const historyDb = useHistoryDb()
 
 const searchQuery = ref('')
+const expandedInputs = ref<Set<string>>(new Set())
+function toggleInputExpand(id: string) {
+  if (expandedInputs.value.has(id)) expandedInputs.value.delete(id)
+  else expandedInputs.value.add(id)
+}
 const filteredRecords = computed(() => {
   if (!searchQuery.value.trim()) return records.value as GenerationRecord[]
   const q = searchQuery.value.trim().toLowerCase()
@@ -1018,14 +1023,22 @@ watch(generating, (val) => {
           <div v-for="rec in filteredRecords" :key="rec.id" class="record-row">
             <!-- 左侧输入图 -->
             <div class="record-input-col">
-              <template v-if="rec.inputAssetUrls && rec.inputAssetUrls.length">
-                <template v-for="(a, i) in rec.inputAssetUrls" :key="'a' + i">
-                  <video v-if="a.type === 'video'" :src="a.url" class="input-panel-thumb" />
-                  <img v-else :src="a.url" class="input-panel-thumb" @click="previewImage(a.url)" />
+              <template v-if="(rec.inputAssetUrls && rec.inputAssetUrls.length) || (rec.inputPreviews && rec.inputPreviews.length)">
+                <button class="input-toggle-btn" @click="toggleInputExpand(rec.id)">
+                  参考图
+                  <span class="input-toggle-arrow" :class="{ open: expandedInputs.has(rec.id) }">›</span>
+                </button>
+                <template v-if="expandedInputs.has(rec.id)">
+                  <template v-if="rec.inputAssetUrls && rec.inputAssetUrls.length">
+                    <template v-for="(a, i) in rec.inputAssetUrls" :key="'a' + i">
+                      <video v-if="a.type === 'video'" :src="a.url" class="input-panel-thumb" />
+                      <img v-else :src="a.url" class="input-panel-thumb" @click="previewImage(a.url)" />
+                    </template>
+                  </template>
+                  <template v-else-if="rec.inputPreviews && rec.inputPreviews.length">
+                    <img v-for="(p, i) in rec.inputPreviews" :key="i" :src="p" class="input-panel-thumb" @click="previewImage(p)" />
+                  </template>
                 </template>
-              </template>
-              <template v-else-if="rec.inputPreviews && rec.inputPreviews.length">
-                <img v-for="(p, i) in rec.inputPreviews" :key="i" :src="p" class="input-panel-thumb" @click="previewImage(p)" />
               </template>
             </div>
             <!-- 右侧卡片 -->
@@ -1836,6 +1849,33 @@ watch(generating, (val) => {
   flex-direction: column;
   gap: 6px;
   padding: 4px 0;
+}
+.input-toggle-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.1);
+  color: rgba(255,255,255,0.5);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.input-toggle-btn:hover {
+  background: rgba(108,99,255,0.1);
+  border-color: rgba(108,99,255,0.3);
+  color: rgba(255,255,255,0.8);
+}
+.input-toggle-arrow {
+  display: inline-block;
+  transition: transform 0.2s;
+  font-size: 14px;
+}
+.input-toggle-arrow.open {
+  transform: rotate(90deg);
 }
 .record-card-flex {
   flex: 1;

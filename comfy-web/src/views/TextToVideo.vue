@@ -42,6 +42,11 @@ const { records, saveRecords, clearAll: clearAllLocal, deleteRecord: deleteRecor
 const historyDb = useHistoryDb()
 
 const searchQuery = ref('')
+const expandedInputs = ref<Set<string>>(new Set())
+function toggleInputExpand(id: string) {
+  if (expandedInputs.value.has(id)) expandedInputs.value.delete(id)
+  else expandedInputs.value.add(id)
+}
 const filteredRecords = computed(() => {
   if (!searchQuery.value.trim()) return records.value as VideoRecord[]
   const q = searchQuery.value.trim().toLowerCase()
@@ -935,9 +940,15 @@ async function handleGenerate() {
             <!-- 左侧输入图 -->
             <div class="record-input-col">
               <template v-if="rec.inputAssetUrls && rec.inputAssetUrls.length">
-                <template v-for="(a, i) in rec.inputAssetUrls" :key="i">
-                  <video v-if="a.type === 'video'" :src="a.url" class="input-panel-thumb" controls />
-                  <img v-else :src="a.url" class="input-panel-thumb" @click="previewImage(a.url)" />
+                <button class="input-toggle-btn" @click="toggleInputExpand(rec.id)">
+                  参考图
+                  <span class="input-toggle-arrow" :class="{ open: expandedInputs.has(rec.id) }">›</span>
+                </button>
+                <template v-if="expandedInputs.has(rec.id)">
+                  <template v-for="(a, i) in rec.inputAssetUrls" :key="i">
+                    <video v-if="a.type === 'video'" :src="a.url" class="input-panel-thumb" controls />
+                    <img v-else :src="a.url" class="input-panel-thumb" @click="previewImage(a.url)" />
+                  </template>
                 </template>
               </template>
             </div>
@@ -1564,6 +1575,33 @@ async function handleGenerate() {
   flex-direction: column;
   gap: 6px;
   padding: 4px 0;
+}
+.input-toggle-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.1);
+  color: rgba(255,255,255,0.5);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.input-toggle-btn:hover {
+  background: rgba(108,99,255,0.1);
+  border-color: rgba(108,99,255,0.3);
+  color: rgba(255,255,255,0.8);
+}
+.input-toggle-arrow {
+  display: inline-block;
+  transition: transform 0.2s;
+  font-size: 14px;
+}
+.input-toggle-arrow.open {
+  transform: rotate(90deg);
 }
 .record-card-flex {
   flex: 1;
