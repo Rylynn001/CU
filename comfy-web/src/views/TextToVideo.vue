@@ -402,7 +402,14 @@ function handleRecordEdit(id: string) {
   recordEditorInputUrls.value = rec.inputAssetUrls || []
   recordEditorEditedFile.value = null
   recordEditorEditedPreview.value = ''
-  showRecordEditor.value = true
+  // 有输入图时直接打开图片编辑器
+  const firstImg = (rec.inputAssetUrls || []).find(a => a.type !== 'video')
+  if (firstImg) {
+    recordEditorEditingSrc.value = firstImg.url
+    showRecordImageEditor.value = true
+  } else {
+    showRecordEditor.value = true
+  }
 }
 
 function openRecordImageEditor(src: string) {
@@ -414,6 +421,7 @@ function onRecordImageEditorConfirm(file: File) {
   recordEditorEditedFile.value = file
   recordEditorEditedPreview.value = URL.createObjectURL(file)
   showRecordImageEditor.value = false
+  showRecordEditor.value = true
 }
 
 function onRecordImageEditorCancel() {
@@ -925,56 +933,111 @@ async function handleGenerate() {
 
       <!-- ── RIGHT: MESSAGE STREAM ── -->
       <main class="right-panel">
-        <div v-if="filteredRecords.length === 0 && records.length === 0" class="empty-wrap">
-          <div class="empty-orb" />
-          <p class="empty-text">等待生成</p>
-        </div>
-        <div v-else class="stream">
-          <!-- 搜索框 -->
-          <div class="stream-header">
-            <span class="stream-title">历史记录 ({{ filteredRecords.length }})</span>
-            <input v-model="searchQuery" class="search-input" placeholder="搜索提示词..." />
+        <div class="right-inner" :class="{ 'has-editor': showRecordEditor }">
+          <!-- 历史记录列 -->
+          <div class="history-col">
+            <div v-if="filteredRecords.length === 0 && records.length === 0" class="empty-wrap">
+              <div class="empty-orb" />
+              <p class="empty-text">等待生成</p>
+            </div>
+            <div v-else class="stream">
+              <!-- 搜索框 -->
+              <div class="stream-header">
+                <span class="stream-title">历史记录 ({{ filteredRecords.length }})</span>
+                <input v-model="searchQuery" class="search-input" placeholder="搜索提示词..." />
+              </div>
+
+              <div v-for="rec in filteredRecords" :key="rec.id" class="record-row" :class="{ 'editing': showRecordEditor && editingRecordId === rec.id }">
+                <!-- 左侧输入图 -->
+                <div class="record-input-col">
+                  <template v-if="rec.inputAssetUrls && rec.inputAssetUrls.length">
+                    <button class="input-toggle-btn" @click="toggleInputExpand(rec.id)">
+                      参考图
+                      <span class="input-toggle-arrow" :class="{ open: expandedInputs.has(rec.id) }">›</span>
+                    </button>
+                    <template v-if="expandedInputs.has(rec.id)">
+                      <template v-for="(a, i) in rec.inputAssetUrls" :key="i">
+                        <video v-if="a.type === 'video'" :src="a.url" class="input-panel-thumb" controls />
+                        <img v-else :src="a.url" class="input-panel-thumb" @click="previewImage(a.url)" />
+                      </template>
+                    </template>
+                  </template>
+                </div>
+                <!-- 右侧卡片 -->
+                <RecordCard class="record-card-flex" :record="rec" @delete="deleteRecord" @retry="(r) => retryRecord(r as any)" @edit="handleRecordEdit">
+                  <template #meta>
+                    <div class="card-params">
+                      <span>{{ rec.ratio }}</span>
+                      <span>·</span>
+                      <span>{{ rec.resolution }}</span>
+                      <span>·</span>
+                      <span>{{ rec.duration }}s</span>
+                    </div>
+                  </template>
+                  <template #prompt>
+                    <p class="card-prompt">{{ rec.prompt }}</p>
+                  </template>
+                  <template #result>
+                    <div v-if="rec.videoUrl" class="card-video">
+                      <video :src="rec.videoUrl" controls class="video-player" />
+                      <button class="download-btn" @click="downloadVideo(rec.videoUrl)" title="下载">
+                        <span>⬇</span>
+                      </button>
+                    </div>
+                  </template>
+                </RecordCard>
+              </div>
+            </div>
           </div>
 
-          <div v-for="rec in filteredRecords" :key="rec.id" class="record-row">
-            <!-- 左侧输入图 -->
-            <div class="record-input-col">
-              <template v-if="rec.inputAssetUrls && rec.inputAssetUrls.length">
-                <button class="input-toggle-btn" @click="toggleInputExpand(rec.id)">
-                  参考图
-                  <span class="input-toggle-arrow" :class="{ open: expandedInputs.has(rec.id) }">›</span>
-                </button>
-                <template v-if="expandedInputs.has(rec.id)">
-                  <template v-for="(a, i) in rec.inputAssetUrls" :key="i">
-                    <video v-if="a.type === 'video'" :src="a.url" class="input-panel-thumb" controls />
-                    <img v-else :src="a.url" class="input-panel-thumb" @click="previewImage(a.url)" />
-                  </template>
-                </template>
-              </template>
+          <!-- 内联编辑面板 -->
+          <div v-if="showRecordEditor" class="inline-edit-panel">
+            <div class="record-edit-header">
+              <span class="record-edit-title">编辑并继续生成</span>
+              <button class="record-edit-close" @click="showRecordEditor = false">×</button>
             </div>
-            <!-- 右侧卡片 -->
-            <RecordCard class="record-card-flex" :record="rec" @delete="deleteRecord" @retry="(r) => retryRecord(r as any)" @edit="handleRecordEdit">
-              <template #meta>
-                <div class="card-params">
-                  <span>{{ rec.ratio }}</span>
-                  <span>·</span>
-                  <span>{{ rec.resolution }}</span>
-                  <span>·</span>
-                  <span>{{ rec.duration }}s</span>
-                </div>
-              </template>
-              <template #prompt>
-                <p class="card-prompt">{{ rec.prompt }}</p>
-              </template>
-              <template #result>
-                <div v-if="rec.videoUrl" class="card-video">
-                  <video :src="rec.videoUrl" controls class="video-player" />
-                  <button class="download-btn" @click="downloadVideo(rec.videoUrl)" title="下载">
-                    <span>⬇</span>
+
+            <!-- 输入图预览 + 编辑入口 -->
+            <template v-if="recordEditorInputUrls.length > 0">
+              <div class="record-edit-label">输入素材</div>
+              <div class="record-edit-images">
+                <div
+                  v-for="(a, i) in recordEditorInputUrls"
+                  :key="i"
+                  class="record-edit-img-wrap"
+                >
+                  <video v-if="a.type === 'video'" :src="a.url" class="record-edit-img" controls />
+                  <img v-else :src="i === 0 && recordEditorEditedPreview ? recordEditorEditedPreview : a.url" class="record-edit-img" />
+                  <button
+                    v-if="a.type !== 'video'"
+                    class="record-edit-img-btn"
+                    @click="openRecordImageEditor(i === 0 && recordEditorEditedPreview ? recordEditorEditedPreview : a.url)"
+                    title="编辑此图"
+                  >
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M12 19l7-7-3-3-7 7v3h3z"/>
+                      <path d="M18 13l1.5-1.5a2.12 2.12 0 0 0-3-3L15 10"/>
+                    </svg>
+                    编辑
                   </button>
+                  <span v-if="i === 0 && recordEditorEditedPreview" class="record-edit-badge">已编辑</span>
                 </div>
-              </template>
-            </RecordCard>
+              </div>
+            </template>
+
+            <!-- 提示词 -->
+            <div class="record-edit-label">提示词</div>
+            <textarea
+              v-model="recordEditorPrompt"
+              class="record-edit-textarea"
+              rows="4"
+              placeholder="修改提示词..."
+            />
+
+            <button class="generate-btn record-edit-generate-btn" @click="generateFromEdit">
+              <span class="btn-glow" />
+              <span class="btn-label">继续生成</span>
+            </button>
           </div>
         </div>
       </main>
@@ -1004,57 +1067,6 @@ async function handleGenerate() {
       @confirm="onEditorConfirmUnified"
       @cancel="onEditorCancel"
     />
-
-    <!-- 历史记录编辑面板 -->
-    <div v-if="showRecordEditor" class="record-edit-overlay" @click.self="showRecordEditor = false">
-      <div class="record-edit-panel">
-        <div class="record-edit-header">
-          <span class="record-edit-title">编辑并继续生成</span>
-          <button class="record-edit-close" @click="showRecordEditor = false">×</button>
-        </div>
-
-        <!-- 输入图预览 + 编辑入口 -->
-        <template v-if="recordEditorInputUrls.length > 0">
-          <div class="record-edit-label">输入素材</div>
-          <div class="record-edit-images">
-            <div
-              v-for="(a, i) in recordEditorInputUrls"
-              :key="i"
-              class="record-edit-img-wrap"
-            >
-              <video v-if="a.type === 'video'" :src="a.url" class="record-edit-img" controls />
-              <img v-else :src="i === 0 && recordEditorEditedPreview ? recordEditorEditedPreview : a.url" class="record-edit-img" />
-              <button
-                v-if="a.type !== 'video'"
-                class="record-edit-img-btn"
-                @click="openRecordImageEditor(i === 0 && recordEditorEditedPreview ? recordEditorEditedPreview : a.url)"
-                title="编辑此图"
-              >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M12 19l7-7-3-3-7 7v3h3z"/>
-                  <path d="M18 13l1.5-1.5a2.12 2.12 0 0 0-3-3L15 10"/>
-                </svg>
-                编辑
-              </button>
-              <span v-if="i === 0 && recordEditorEditedPreview" class="record-edit-badge">已编辑</span>
-            </div>
-          </div>
-        </template>
-
-        <!-- 提示词 -->
-        <div class="record-edit-label">提示词</div>
-        <textarea
-          v-model="recordEditorPrompt"
-          class="record-edit-textarea"
-          rows="4"
-          placeholder="修改提示词..."
-        />
-
-        <button class="record-edit-generate-btn" @click="generateFromEdit">
-          <span>继续生成</span>
-        </button>
-      </div>
-    </div>
 
     <!-- 历史记录图片编辑器 -->
     <ImageEditor
@@ -1526,10 +1538,47 @@ async function handleGenerate() {
   flex: 1;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  justify-content: flex-start;
-  padding: 24px 24px 24px 20px;
+  overflow: hidden;
+  padding: 0;
+}
+
+.right-inner {
+  display: flex;
+  height: 100%;
+  overflow: hidden;
+}
+
+.history-col {
+  flex: 1;
+  min-width: 0;
   overflow-y: auto;
+  padding: 24px 20px;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 内联编辑面板 */
+.inline-edit-panel {
+  width: 320px;
+  flex-shrink: 0;
+  border-left: 1px solid rgba(108,99,255,0.2);
+  background: rgba(16,16,36,0.95);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px 20px;
+  overflow-y: auto;
+  animation: slideInRight 0.2s ease;
+}
+
+@keyframes slideInRight {
+  from { transform: translateX(20px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+.record-edit-generate-btn {
+  margin-top: auto;
+  flex-shrink: 0;
 }
 
 .empty-wrap {
@@ -1699,8 +1748,10 @@ img.input-panel-thumb {
 
 .video-player {
   width: 100%;
-  max-height: 400px;
+  max-width: 560px;
+  max-height: 360px;
   display: block;
+  border-radius: 10px;
 }
 
 .download-btn {
@@ -1814,8 +1865,9 @@ img.hist-input-thumb {
 }
 .input-panel-thumb {
   width: 100%;
-  aspect-ratio: 1;
+  aspect-ratio: 16 / 9;
   object-fit: cover;
+  object-position: center;
   border-radius: 10px;
   border: 1px solid rgba(255,255,255,0.08);
   display: block;
@@ -1829,32 +1881,12 @@ img.input-panel-thumb {
   border-color: rgba(108,99,255,0.4);
 }
 
-/* 历史记录编辑面板 */
-.record-edit-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 1000;
-  background: rgba(0,0,0,0.5);
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-}
-.record-edit-panel {
-  width: 380px;
-  max-width: 95vw;
-  height: 100vh;
-  background: #16162a;
-  border-left: 1px solid rgba(108,99,255,0.2);
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 24px 20px;
-  overflow-y: auto;
-}
+/* 历史记录编辑面板（内联） */
 .record-edit-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-shrink: 0;
 }
 .record-edit-title {
   font-size: 14px;
@@ -1888,10 +1920,11 @@ img.input-panel-thumb {
 .record-edit-img-wrap {
   position: relative;
   flex-shrink: 0;
+  width: 100%;
 }
 .record-edit-img {
-  width: 160px;
-  height: 160px;
+  width: 100%;
+  aspect-ratio: 16 / 9;
   object-fit: cover;
   border-radius: 10px;
   border: 1px solid rgba(255,255,255,0.08);
@@ -1948,34 +1981,16 @@ img.input-panel-thumb {
 .record-edit-textarea:focus {
   border-color: rgba(108,99,255,0.4);
 }
-.record-edit-generate-btn {
-  width: 100%;
-  height: 44px;
-  border-radius: 12px;
-  background: linear-gradient(135deg, rgba(108,99,255,0.8), rgba(167,139,250,0.6));
-  border: 1px solid rgba(108,99,255,0.4);
-  color: white;
-  font-size: 14px;
-  cursor: pointer;
-  transition: all 0.2s;
-  margin-top: auto;
-}
-.record-edit-generate-btn:hover {
-  background: linear-gradient(135deg, rgba(108,99,255,1), rgba(167,139,250,0.8));
+
+.record-row.editing {
+  outline: 1px solid rgba(108,99,255,0.3);
+  border-radius: 16px;
 }
 
 @media (max-width: 900px) {
-  .layout {
-    flex-direction: column;
-    height: auto;
-  }
-  .left-panel {
-    width: 100%;
-    border-right: none;
-    border-bottom: 1px solid rgba(255,255,255,0.06);
-  }
-  .right-panel {
-    padding: 24px 20px;
-  }
+  .layout { flex-direction: column; height: auto; }
+  .left-panel { width: 100%; border-right: none; border-bottom: 1px solid rgba(255,255,255,0.06); }
+  .right-inner { flex-direction: column; }
+  .inline-edit-panel { width: 100%; border-left: none; border-top: 1px solid rgba(108,99,255,0.2); }
 }
 </style>
