@@ -444,6 +444,7 @@ const recordEditorEditedFile = ref<File | null>(null)
 const recordEditorEditedPreview = ref('')
 const recordEditorEditingSrc = ref('')
 const showRecordImageEditor = ref(false)
+const inlineEditorRef = ref<InstanceType<typeof ImageEditor> | null>(null)
 
 function handleRecordEdit(id: string) {
   const rec = (records.value as GenerationRecord[]).find(r => r.id === id)
@@ -453,13 +454,11 @@ function handleRecordEdit(id: string) {
   recordEditorImages.value = rec.images
   recordEditorEditedFile.value = null
   recordEditorEditedPreview.value = ''
-  // 直接打开图片编辑器
-  const src = rec.images[0]
-  if (src) {
-    recordEditorEditingSrc.value = src
+  showRecordEditor.value = true
+  // 同时打开图片编辑器
+  if (rec.images[0]) {
+    recordEditorEditingSrc.value = rec.images[0]
     showRecordImageEditor.value = true
-  } else {
-    showRecordEditor.value = true
   }
 }
 
@@ -472,7 +471,14 @@ function onRecordImageEditorConfirm(file: File) {
   recordEditorEditedFile.value = file
   recordEditorEditedPreview.value = URL.createObjectURL(file)
   showRecordImageEditor.value = false
-  showRecordEditor.value = true
+  // 侧边栏保持打开，不需要重新设置
+}
+
+function onRecordImageEditorGenerate(file: File) {
+  recordEditorEditedFile.value = file
+  recordEditorEditedPreview.value = URL.createObjectURL(file)
+  showRecordImageEditor.value = false
+  generateFromEdit()
 }
 
 function onRecordImageEditorCancel() {
@@ -483,7 +489,14 @@ async function generateFromEdit() {
   if (!apiModel.value) { errorMsg.value = '请先选择 API 模型'; return }
   showRecordEditor.value = false
 
-  const src = recordEditorEditedPreview.value || recordEditorImages.value[0]
+  // 优先从内联编辑器获取最新画布内容
+  let editedFile = recordEditorEditedFile.value
+  if (inlineEditorRef.value) {
+    const canvasFile = await inlineEditorRef.value.getFile()
+    if (canvasFile) editedFile = canvasFile
+  }
+
+  const src = editedFile ? URL.createObjectURL(editedFile) : recordEditorImages.value[0]
   if (!src) return
 
   const record: GenerationRecord = {
@@ -491,7 +504,7 @@ async function generateFromEdit() {
     createdAt: Date.now(),
     prompt: recordEditorPrompt.value,
     inputPreviews: [src],
-    modelName: apiModel.value,   // 传 ID，与 handleGenerate 保持一致
+    modelName: apiModel.value,
     modelId: Number(apiModel.value) || undefined,
     mode: 'api',
     status: 'generating',
@@ -502,8 +515,8 @@ async function generateFromEdit() {
   records.value.unshift(record)
   saveRecords()
 
-  const inputImg: InputImage = recordEditorEditedFile.value
-    ? { file: recordEditorEditedFile.value, preview: src, assetLocation: '' }
+  const inputImg: InputImage = editedFile
+    ? { file: editedFile, preview: src, assetLocation: '' }
     : { file: null, preview: src, assetLocation: '' }
 
   runApiGeneration(record.id, true, [inputImg])
@@ -769,8 +782,8 @@ watch(generating, (val) => {
     <div class="orb orb-2" />
 
     <div class="layout">
-      <!-- ── LEFT PANEL ── -->
-      <aside class="left-panel">
+      <!-- ── LEFT PANEL（编辑模式时隐藏） ── -->
+      <aside class="left-panel" v-show="!showRecordEditor">
 
         <!-- tab bar -->
         <div class="tab-bar">
@@ -1017,8 +1030,42 @@ watch(generating, (val) => {
 
       <!-- ── RIGHT: MESSAGE STREAM ── -->
       <main class="right-panel">
-        <div class="right-inner" :class="{ 'has-editor': showRecordEditor }">
-          <!-- 历史记录列 -->
+        <!-- 编辑模式：编辑器 + 提示词侧边栏 -->
+        <template v-if="showRecordEditor">
+          <!-- 中间：图片编辑器 -->
+          <div class="editor-area">
+            <ImageEditor
+              v-if="recordEditorEditingSrc"
+              ref="inlineEditorRef"
+              :image-src="recordEditorEditedPreview || recordEditorEditingSrc"
+              :visible="true"
+              :inline="true"
+              @confirm="onRecordImageEditorConfirm"
+              @cancel="showRecordEditor = false"
+            />
+          </div>
+          <!-- 右侧：提示词 + 生成按钮 -->
+          <div class="edit-sidebar">
+            <div class="record-edit-header">
+              <span class="record-edit-title">继续生图</span>
+              <button class="record-edit-close" @click="showRecordEditor = false">×</button>
+            </div>
+            <div class="record-edit-label">提示词</div>
+            <textarea
+              v-model="recordEditorPrompt"
+              class="record-edit-textarea"
+              rows="4"
+              placeholder="修改提示词..."
+            />
+            <button class="generate-btn record-edit-generate-btn" @click="generateFromEdit">
+              <span class="btn-glow" />
+              <span class="btn-label">继续生图</span>
+            </button>
+          </div>
+        </template>
+
+        <!-- 正常模式：历史记录 -->
+        <template v-else>
           <div class="history-col">
             <div v-if="filteredRecords.length === 0 && records.length === 0" class="empty-wrap">
               <div class="empty-orb" />
@@ -1031,7 +1078,7 @@ watch(generating, (val) => {
                 <input v-model="searchQuery" class="search-input" placeholder="搜索提示词..." />
               </div>
 
-              <div v-for="rec in filteredRecords" :key="rec.id" class="record-row" :class="{ 'editing': showRecordEditor && editingRecordId === rec.id }">
+              <div v-for="rec in filteredRecords" :key="rec.id" class="record-row">
                 <!-- 左侧输入图 -->
                 <div class="record-input-col">
                   <template v-if="(rec.inputAssetUrls && rec.inputAssetUrls.length) || (rec.inputPreviews && rec.inputPreviews.length)">
@@ -1078,56 +1125,7 @@ watch(generating, (val) => {
               </div>
             </div>
           </div>
-
-          <!-- 内联编辑面板 -->
-          <div v-if="showRecordEditor" class="inline-edit-panel">
-            <div class="record-edit-header">
-              <span class="record-edit-title">编辑并继续生图</span>
-              <button class="record-edit-close" @click="showRecordEditor = false">×</button>
-            </div>
-
-            <!-- 生成结果图预览 + 编辑入口 -->
-            <div class="record-edit-images">
-              <div
-                v-for="(src, i) in recordEditorImages"
-                :key="i"
-                class="record-edit-img-wrap"
-              >
-                <img
-                  :src="i === 0 && recordEditorEditedPreview ? recordEditorEditedPreview : src"
-                  class="record-edit-img"
-                />
-                <button
-                  v-if="i === 0"
-                  class="record-edit-img-btn"
-                  @click="openRecordImageEditor(recordEditorEditedPreview || src)"
-                  title="编辑此图"
-                >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M12 19l7-7-3-3-7 7v3h3z"/>
-                    <path d="M18 13l1.5-1.5a2.12 2.12 0 0 0-3-3L15 10"/>
-                  </svg>
-                  编辑
-                </button>
-                <span v-if="i === 0 && recordEditorEditedPreview" class="record-edit-badge">已编辑</span>
-              </div>
-            </div>
-
-            <!-- 提示词 -->
-            <div class="record-edit-label">提示词</div>
-            <textarea
-              v-model="recordEditorPrompt"
-              class="record-edit-textarea"
-              rows="4"
-              placeholder="修改提示词..."
-            />
-
-            <button class="generate-btn record-edit-generate-btn" @click="generateFromEdit">
-              <span class="btn-glow" />
-              <span class="btn-label">继续生图</span>
-            </button>
-          </div>
-        </div>
+        </template>
       </main>
     </div>
 
@@ -1155,14 +1153,7 @@ watch(generating, (val) => {
       @cancel="onEditorCancel"
     />
 
-    <!-- 历史记录图片编辑器 -->
-    <ImageEditor
-      v-if="showRecordImageEditor"
-      :image-src="recordEditorEditingSrc"
-      :visible="showRecordImageEditor"
-      @confirm="onRecordImageEditorConfirm"
-      @cancel="onRecordImageEditorCancel"
-    />
+    <!-- 历史记录图片编辑器（已内联到侧边栏，此处无需渲染） -->
   </div>
 </template>
 
@@ -1658,15 +1649,9 @@ watch(generating, (val) => {
 .right-panel {
   flex: 1;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   overflow: hidden;
   padding: 0;
-}
-
-.right-inner {
-  display: flex;
-  height: 100%;
-  overflow: hidden;
 }
 
 .history-col {
@@ -1678,16 +1663,24 @@ watch(generating, (val) => {
   flex-direction: column;
 }
 
-/* 内联编辑面板 */
-.inline-edit-panel {
-  width: 320px;
-  flex-shrink: 0;
-  border-left: 1px solid rgba(108,99,255,0.2);
-  background: rgba(16,16,36,0.95);
+/* 编辑模式布局 */
+.editor-area {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding: 24px 20px;
+  overflow: hidden;
+}
+
+.edit-sidebar {
+  width: 280px;
+  flex-shrink: 0;
+  border-left: 1px solid rgba(255,255,255,0.06);
+  background: transparent;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px 16px;
   overflow-y: auto;
   animation: slideInRight 0.2s ease;
 }
@@ -1695,6 +1688,30 @@ watch(generating, (val) => {
 @keyframes slideInRight {
   from { transform: translateX(20px); opacity: 0; }
   to { transform: translateX(0); opacity: 1; }
+}
+
+.record-edit-label {
+  font-size: 11px;
+  color: rgba(255,255,255,0.35);
+  letter-spacing: 1px;
+}
+
+.record-edit-textarea {
+  flex: none;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 10px;
+  color: rgba(255,255,255,0.85);
+  font-size: 13px;
+  line-height: 1.6;
+  padding: 10px 12px;
+  resize: none;
+  outline: none;
+  transition: border-color 0.2s;
+  font-family: inherit;
+}
+.record-edit-textarea:focus {
+  border-color: rgba(108,99,255,0.5);
 }
 
 .record-edit-generate-btn {
@@ -1979,76 +1996,6 @@ img.input-panel-thumb {
   color: #f87171;
 }
 
-.record-edit-images {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-.record-edit-img-wrap {
-  position: relative;
-  flex-shrink: 0;
-}
-.record-edit-img {
-  width: 100%;
-  max-width: 260px;
-  aspect-ratio: 1;
-  object-fit: cover;
-  border-radius: 10px;
-  border: 1px solid rgba(255,255,255,0.08);
-  display: block;
-}
-.record-edit-img-btn {
-  position: absolute;
-  bottom: 8px;
-  right: 8px;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 10px;
-  border-radius: 6px;
-  background: rgba(0,0,0,0.7);
-  border: 1px solid rgba(108,99,255,0.4);
-  color: rgba(167,139,250,0.9);
-  font-size: 11px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-.record-edit-img-btn:hover {
-  background: rgba(108,99,255,0.4);
-}
-.record-edit-badge {
-  position: absolute;
-  top: 6px;
-  left: 6px;
-  font-size: 10px;
-  padding: 2px 6px;
-  border-radius: 4px;
-  background: rgba(108,99,255,0.7);
-  color: white;
-}
-
-.record-edit-label {
-  font-size: 11px;
-  color: rgba(255,255,255,0.35);
-  letter-spacing: 0.5px;
-}
-.record-edit-textarea {
-  width: 100%;
-  background: rgba(255,255,255,0.04);
-  border: 1px solid rgba(255,255,255,0.1);
-  border-radius: 10px;
-  color: rgba(255,255,255,0.8);
-  font-size: 13px;
-  line-height: 1.6;
-  padding: 10px 12px;
-  resize: vertical;
-  outline: none;
-  box-sizing: border-box;
-  transition: border-color 0.2s;
-}
-.record-edit-textarea:focus {
-  border-color: rgba(108,99,255,0.4);
-}
 
 .record-row.editing {
   outline: 1px solid rgba(108,99,255,0.3);
@@ -2058,7 +2005,6 @@ img.input-panel-thumb {
 @media (max-width: 900px) {
   .layout { flex-direction: column; height: auto; }
   .left-panel { width: 100%; border-right: none; border-bottom: 1px solid rgba(255,255,255,0.06); }
-  .right-inner { flex-direction: column; }
-  .inline-edit-panel { width: 100%; border-left: none; border-top: 1px solid rgba(108,99,255,0.2); }
+  .edit-sidebar { width: 100%; border-left: none; border-top: 1px solid rgba(108,99,255,0.2); }
 }
 </style>
