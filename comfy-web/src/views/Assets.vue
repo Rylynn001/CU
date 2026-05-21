@@ -25,6 +25,12 @@ function previewImage(asset: Asset) {
   previewInitialIndex.value = index >= 0 ? index : 0
   previewImageUrl.value = getImageUrl(asset.location)
   showImageViewer.value = true
+  document.documentElement.style.overflow = 'hidden'
+}
+
+function closeImageViewer() {
+  showImageViewer.value = false
+  document.documentElement.style.overflow = ''
 }
 
 async function loadAssets(assetType?: 'picture' | 'video') {
@@ -150,7 +156,7 @@ onMounted(() => {
       v-if="showImageViewer"
       :url-list="assets.map(a => getImageUrl(a.location))"
       :initial-index="previewInitialIndex"
-      @close="showImageViewer = false"
+      @close="closeImageViewer"
       :hide-on-click-modal="true"
     />
   </div>
