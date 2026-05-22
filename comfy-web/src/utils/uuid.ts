@@ -1,3 +1,5 @@
+// 生成 UUID v4
+// 优先使用浏览器原生 crypto.randomUUID()，不支持时降级用 Math.random() 实现
 export function generateUUID(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID()

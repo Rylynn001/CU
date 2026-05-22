@@ -1,70 +1,7 @@
-"""数据库查询函数"""
-from typing import Optional
+"""历史记录数据库操作"""
+import pathlib as _pathlib
 from .database import get_db_connection
 
-
-# ── API Provider 查询 ──────────────────────────────────────────────────────
-
-def get_all_providers() -> list[dict]:
-    """获取所有API提供商"""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM api_providers ORDER BY created_at DESC")
-        return cursor.fetchall()
-
-
-def get_provider_by_id(provider_id: int) -> Optional[dict]:
-    """根据ID获取提供商"""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM api_providers WHERE id = %s", (provider_id,))
-        return cursor.fetchone()
-
-
-def get_default_provider() -> Optional[dict]:
-    """获取默认提供商（返回第一个）"""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM api_providers ORDER BY id ASC LIMIT 1")
-        return cursor.fetchone()
-
-
-# ── API Model 查询 ────────────────────────────────────────────────────────
-
-def get_all_models(provider_id: int | None = None) -> list[dict]:
-    """获取所有模型"""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        if provider_id:
-            cursor.execute("SELECT * FROM api_models WHERE rfid = %s ORDER BY id DESC", (provider_id,))
-        else:
-            cursor.execute("SELECT * FROM api_models ORDER BY id DESC")
-        return cursor.fetchall()
-
-
-def get_model_by_id(model_id: int) -> Optional[dict]:
-    """根据ID获取模型"""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM api_models WHERE id = %s", (model_id,))
-        return cursor.fetchone()
-
-
-def get_model_by_name(name: str, provider_id: int | None = None) -> Optional[dict]:
-    """根据name获取模型（可选指定provider）"""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        if provider_id:
-            cursor.execute(
-                "SELECT * FROM api_models WHERE name = %s AND rfid = %s LIMIT 1",
-                (name, provider_id)
-            )
-        else:
-            cursor.execute("SELECT * FROM api_models WHERE name = %s LIMIT 1", (name,))
-        return cursor.fetchone()
-
-
-# ── History 查询 ──────────────────────────────────────────────────────────
 
 def save_history(
     user_id: int,
@@ -78,7 +15,7 @@ def save_history(
     message: str | None = None,
     model_id: int | None = None,
 ) -> int:
-    """保存一条历史记录，返回新记录的 id"""
+    """保存一条历史记录，返回新记录 id"""
     input_file = ','.join(str(i) for i in input_asset_ids) if input_asset_ids else None
     output_file = ','.join(str(i) for i in output_asset_ids) if output_asset_ids else None
     with get_db_connection() as conn:
@@ -94,9 +31,7 @@ def save_history(
 
 
 def get_user_history(user_id: int, type_filter: str | None = None) -> list[dict]:
-    """获取用户历史记录，关联 assets / input_assets 表返回可访问的 URL。
-    type_filter: 'img' 或 'video'，用 LIKE 模糊匹配 type 字段末尾"""
-    import pathlib as _pathlib
+    """获取用户历史记录，关联 assets / input_assets 表返回可访问的 URL"""
     with get_db_connection() as conn:
         cursor = conn.cursor()
         if type_filter:
@@ -133,7 +68,6 @@ def get_user_history(user_id: int, type_filter: str | None = None) -> list[dict]
             'input_asset_urls': [],
         }
 
-        # 解析 output_file 字段，查询 assets 表获取 location
         if row['output_file']:
             ids = [int(x) for x in row['output_file'].split(',') if x.strip()]
             if ids:
@@ -144,17 +78,17 @@ def get_user_history(user_id: int, type_filter: str | None = None) -> list[dict]
                         f"SELECT id, location, asset_type FROM assets WHERE id IN ({placeholders})",
                         ids
                     )
-                    assets = {a['id']: a for a in cursor.fetchall()}
+                    out_assets = {a['id']: a for a in cursor.fetchall()}
                 for aid in ids:
-                    if aid in assets:
-                        a = assets[aid]
-                        filename = _pathlib.Path(a['location']).name
+                    if aid in out_assets:
+                        filename = _pathlib.Path(out_assets[aid]['location']).name
+                        ext = _pathlib.Path(filename).suffix.lower()
+                        asset_type = 'video' if ext in ('.mp4', '.mov', '.avi', '.webm') else 'image'
                         item['output_urls'].append({
                             'url': f'/api/api-proxy/output/{filename}',
-                            'type': a['asset_type'],
+                            'type': asset_type,
                         })
 
-        # 解析 input_file 字段，查询 input_assets 表获取预览 URL
         if row['input_file']:
             ids = [int(x) for x in row['input_file'].split(',') if x.strip()]
             item['input_asset_ids'] = ids
@@ -182,7 +116,7 @@ def get_user_history(user_id: int, type_filter: str | None = None) -> list[dict]
 
 
 def delete_history(history_id: int, user_id: int) -> bool:
-    """软删除单条历史记录（校验 user_id 防止越权）"""
+    """软删除单条历史记录"""
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(

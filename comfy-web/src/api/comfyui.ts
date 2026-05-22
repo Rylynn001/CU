@@ -1,23 +1,24 @@
 import { getBaseUrl } from '../config'
 
+// 提交给 ComfyUI /prompt 接口的参数
 export interface PromptParams {
-  ckpt_name: string
-  positive_prompt: string
-  negative_prompt: string
+  ckpt_name: string        // 模型文件名
+  positive_prompt: string  // 正向提示词
+  negative_prompt: string  // 反向提示词
   width: number
   height: number
   seed: number
-  steps: number
-  cfg: number
+  steps: number            // 采样步数
+  cfg: number              // 提示词引导强度
   sampler_name: string
   scheduler: string
-  denoise: number
-  batch_size: number
+  denoise: number          // 去噪强度（图生图时 <1 保留原图结构）
+  batch_size: number       // 一次生成几张
   // 图生图：上传后 ComfyUI 返回的文件名
   input_image?: string
 }
 
-// 文生图工作流
+// 文生图工作流：EmptyLatentImage 生成空白潜空间 → KSampler 采样 → VAEDecode 解码
 function buildTxt2ImgWorkflow(p: PromptParams) {
   return {
     '4': { class_type: 'CheckpointLoaderSimple', inputs: { ckpt_name: p.ckpt_name } },
@@ -37,7 +38,7 @@ function buildTxt2ImgWorkflow(p: PromptParams) {
   }
 }
 
-// 图生图工作流：LoadImage → VAEEncode 替代 EmptyLatentImage
+// 图生图工作流：LoadImage 加载参考图 → VAEEncode 编码为潜空间，替代 EmptyLatentImage
 function buildImg2ImgWorkflow(p: PromptParams) {
   return {
     '4':  { class_type: 'CheckpointLoaderSimple', inputs: { ckpt_name: p.ckpt_name } },
@@ -58,11 +59,13 @@ function buildImg2ImgWorkflow(p: PromptParams) {
   }
 }
 
+// 获取本地 ComfyUI 已安装的 checkpoint 模型列表
 export async function getModels(): Promise<string[]> {
   const res = await fetch(`${getBaseUrl()}/models/checkpoints`)
   return res.json()
 }
 
+// 获取 KSampler 节点支持的采样器和调度器列表
 export async function getKSamplerInfo(): Promise<{ samplers: string[]; schedulers: string[] }> {
   const res = await fetch(`${getBaseUrl()}/object_info/KSampler`)
   const data = await res.json()
@@ -73,7 +76,7 @@ export async function getKSamplerInfo(): Promise<{ samplers: string[]; scheduler
   }
 }
 
-// 上传图片到 ComfyUI input 目录，返回文件名
+// 上传图片到 ComfyUI input 目录，返回文件名（供 LoadImage 节点使用）
 export async function uploadImage(file: File): Promise<string> {
   const formData = new FormData()
   formData.append('image', file)
@@ -88,6 +91,8 @@ export async function uploadImage(file: File): Promise<string> {
   return data.subfolder ? `${data.subfolder}/${data.name}` : data.name
 }
 
+// 提交工作流到 ComfyUI 执行队列
+// 根据是否有 input_image 自动选择文生图或图生图工作流
 export async function submitPrompt(params: PromptParams, clientId: string): Promise<{ prompt_id: string }> {
   const workflow = params.input_image
     ? buildImg2ImgWorkflow(params)
@@ -106,14 +111,13 @@ export async function submitPrompt(params: PromptParams, clientId: string): Prom
       client_id: clientId,
       extra_data: {
         user_id: userId,  // 传递 user_id 到后端
-        // 可以在这里添加其他元数据，比如：
-        // extra_pnginfo: { workflow: workflow }
       }
     }),
   })
   return res.json()
 }
 
+// 拼接 ComfyUI 图片预览 URL（/api/view?filename=...）
 export function getImageUrl(filename: string, subfolder = '', type = 'output'): string {
   const params = new URLSearchParams({ filename, subfolder, type })
   return `${getBaseUrl()}/view?${params}`

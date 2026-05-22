@@ -6,25 +6,33 @@ export interface MediaPreview {
 }
 
 export interface AssetPreview extends MediaPreview {
-  id: number
+  id: number  // 资产库中的 id，提交时传给后端
 }
 
+/**
+ * 管理生成任务的输入素材（本地上传文件 + 从资产库选择的素材）。
+ * onError: 超出数量限制时的错误回调
+ * maxImages/maxVideos/maxTotal: 各类型和总数上限
+ */
 export function useInputMedia(
   onError: (msg: string) => void,
   maxImages = 9,
   maxVideos = 3,
   maxTotal = 12,
 ) {
-  const inputFiles = ref<File[]>([])
-  const inputPreviews = ref<MediaPreview[]>([])
-  const selectedAssetIds = ref<number[]>([])
-  const selectedAssetPreviews = ref<AssetPreview[]>([])
+  const inputFiles = ref<File[]>([])                      // 本地上传的文件对象
+  const inputPreviews = ref<MediaPreview[]>([])           // 本地上传文件的预览 URL
+  const selectedAssetIds = ref<number[]>([])              // 从资产库选中的素材 id 列表
+  const selectedAssetPreviews = ref<AssetPreview[]>([])   // 从资产库选中的素材预览
 
+  // 合并本地上传和资产库素材，供 @ 提及功能使用
   const allMediaItems = computed<MediaPreview[]>(() => [
     ...inputPreviews.value,
     ...selectedAssetPreviews.value,
   ])
 
+  // 处理文件选择（input[type=file] 的 change 事件）
+  // 过滤非图片/视频文件，校验数量上限后追加到列表
   function handleFilesChange(files: FileList | null) {
     if (!files || files.length === 0) return
     const newFiles: File[] = []
@@ -51,17 +59,20 @@ export function useInputMedia(
     inputPreviews.value.push(...newPreviews)
   }
 
+  // 移除本地上传的文件，同时释放 Object URL 避免内存泄漏
   function removeFile(index: number) {
     URL.revokeObjectURL(inputPreviews.value[index].url)
     inputFiles.value.splice(index, 1)
     inputPreviews.value.splice(index, 1)
   }
 
+  // 移除从资产库选中的素材
   function removeAsset(index: number) {
     selectedAssetIds.value.splice(index, 1)
     selectedAssetPreviews.value.splice(index, 1)
   }
 
+  // 清空所有输入素材，释放所有 Object URL
   function clearAllInputs() {
     inputPreviews.value.forEach(p => URL.revokeObjectURL(p.url))
     inputFiles.value = []
@@ -70,6 +81,7 @@ export function useInputMedia(
     selectedAssetPreviews.value = []
   }
 
+  // 从资产库选择素材，过滤已选中的，校验数量上限后追加
   function handleAssetSelect(assets: Array<{ id: number; location: string; asset_type?: string }>) {
     const newAssets = assets.filter(a => !selectedAssetIds.value.includes(a.id))
 
@@ -101,7 +113,7 @@ export function useInputMedia(
     }
   }
 
-  // 编辑器相关：将资产转为本地文件（编辑后从资产列表移除，加入本地文件列表）
+  // 将资产库素材替换为本地编辑后的文件（编辑器修改后调用）
   function replaceAssetWithFile(index: number, file: File) {
     selectedAssetIds.value.splice(index, 1)
     selectedAssetPreviews.value.splice(index, 1)
@@ -109,6 +121,7 @@ export function useInputMedia(
     inputPreviews.value.push({ url: URL.createObjectURL(file), type: 'image' })
   }
 
+  // 替换本地上传列表中某个文件（编辑器修改后调用）
   function replaceFile(index: number, file: File) {
     URL.revokeObjectURL(inputPreviews.value[index].url)
     inputFiles.value[index] = file

@@ -6,16 +6,24 @@ interface MediaItem {
   type: 'image' | 'video'
 }
 
+/**
+ * 处理提示词输入框中的 @ 提及功能。
+ * 用户输入 @ 时弹出媒体列表，选择后插入 "@图1" / "@视频1" 等标签。
+ * getText/setText: 读写提示词内容
+ * getItems: 获取当前可引用的媒体列表
+ * textareaRef: 提示词输入框的 ref，用于获取光标位置
+ */
 export function useAtMention(
   getText: () => string,
   setText: (v: string) => void,
   getItems: () => MediaItem[],
   textareaRef: Ref<{ textarea?: HTMLTextAreaElement } | null>,
 ) {
-  const atMentionActive = ref(false)
-  const atMentionStartIdx = ref(-1)
-  const atMentionIndex = ref(-1)
+  const atMentionActive = ref(false)   // 是否显示 @ 选择弹窗
+  const atMentionStartIdx = ref(-1)    // @ 符号在文本中的位置，用于替换
+  const atMentionIndex = ref(-1)       // 当前键盘高亮的列表项索引
 
+  // keyup 时检测 @ 触发和 Escape 关闭
   function onPromptKeyup(e: KeyboardEvent) {
     if (e.key === '@') {
       if (getItems().length === 0) return
@@ -29,6 +37,7 @@ export function useAtMention(
     }
   }
 
+  // keydown 时处理上下箭头导航和 Enter 确认选择
   function onPromptKeydown(e: KeyboardEvent | Event) {
     if (!(e instanceof KeyboardEvent)) return
     if (!atMentionActive.value) return
@@ -45,6 +54,7 @@ export function useAtMention(
     }
   }
 
+  // 将选中的媒体项插入到提示词中，替换 @ 符号
   function insertMention(idx: number) {
     const textarea = textareaRef.value?.textarea
     if (!textarea) return
@@ -61,6 +71,7 @@ export function useAtMention(
     textarea.focus()
   }
 
+  // 关闭 @ 选择弹窗
   function closeMention() {
     atMentionActive.value = false
   }

@@ -211,7 +211,7 @@ async function runApiGeneration(recordId: string, img2img: boolean, snapshotImag
   try {
     const userId = getCurrentUserId()
     const result = await submitImageGeneration({
-      modelId: rec.modelName,
+      modelId: rec.modelId,
       prompt: rec.prompt,
       width: form.value.width,
       height: form.value.height,

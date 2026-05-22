@@ -14,13 +14,21 @@ export type PollResultHandler<T extends BaseRecord> = (rec: T, result: {
 }) => void
 
 /**
- * 通用任务轮询。先查一次状态，若已完成直接处理；否则开始轮询。
- * 结果如何写回 record 由调用方通过 onDone 回调决定。
+ * 通用任务轮询 composable。
+ * 先查一次任务状态，若已完成直接处理结果；否则开始轮询直到完成。
+ * 结果如何写回 record 由调用方通过 onDone 回调决定，保持灵活性。
  */
 export function useTaskPolling<T extends BaseRecord>(
   getRecords: () => T[],
   saveRecords: () => void,
 ) {
+  /**
+   * 恢复对某个任务的轮询（页面刷新后调用）。
+   * record: 需要恢复的记录
+   * userId: 当前用户 id
+   * onDone: 任务完成时的回调，负责将结果写入 record
+   * expectedType: 期望的结果类型（image / video）
+   */
   async function resumeTaskPolling(
     record: T,
     userId: number | undefined,
@@ -29,9 +37,11 @@ export function useTaskPolling<T extends BaseRecord>(
   ) {
     if (!record.taskId) return
 
+    // 每次操作前重新从 records 中查找，避免持有过期引用
     const getRecord = () => getRecords().find(r => r.id === record.id)
 
     try {
+      // 先查一次当前状态，避免任务已完成还走完整轮询
       const checkUrl = userId
         ? `/api/api-proxy/task/${record.taskId}?user_id=${userId}`
         : `/api/api-proxy/task/${record.taskId}`
@@ -62,6 +72,7 @@ export function useTaskPolling<T extends BaseRecord>(
         }
       }
 
+      // 任务仍在进行中，开始完整轮询
       const result = await pollTaskUntilDone(record.taskId, userId, expectedType)
       const rec = getRecord()
       if (rec) {

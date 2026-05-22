@@ -3,11 +3,12 @@ import { saveHistory, fetchHistory, deleteHistory, clearHistory, type HistoryRec
 export type { HistoryRecord }
 
 /**
- * 封装历史记录的数据库操作。
- * 视图层负责将 DB 记录合并到本地 records 中，
- * 本 composable 只负责与后端通信。
+ * 封装历史记录的后端数据库操作。
+ * 只负责与后端通信，不持有状态。
+ * 视图层负责将 DB 记录合并到本地 records 中。
  */
 export function useHistoryDb() {
+  // 拉取指定用户的历史记录，失败时返回空数组（不阻断页面）
   async function load(userId: number, type?: 'img' | 'video'): Promise<HistoryRecord[]> {
     try {
       return await fetchHistory(userId, type)
@@ -17,6 +18,7 @@ export function useHistoryDb() {
     }
   }
 
+  // 保存一条历史记录到后端，返回新记录的 id；失败时返回 null
   async function persist(params: {
     userId: number
     prompt: string
@@ -49,6 +51,7 @@ export function useHistoryDb() {
     }
   }
 
+  // 删除单条历史记录，失败时静默处理
   async function remove(dbId: number, userId: number): Promise<void> {
     try {
       await deleteHistory(dbId, userId)
@@ -57,6 +60,7 @@ export function useHistoryDb() {
     }
   }
 
+  // 清空指定用户的所有历史记录，失败时静默处理
   async function clear(userId: number): Promise<void> {
     try {
       await clearHistory(userId)
