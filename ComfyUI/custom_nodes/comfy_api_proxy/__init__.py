@@ -20,13 +20,13 @@ try:
         from . import worker
         worker_thread = threading.Thread(target=worker.main, daemon=True, name='RedisWorker')
         worker_thread.start()
-        logger.info('[comfy_api_proxy] Redis worker started in background')
+        logger.info('[comfy_api_proxy] Redis worker 已在后台启动')
     else:
-        logger.warning('[comfy_api_proxy] Redis not available, worker not started')
+        logger.warning('[comfy_api_proxy] Redis 不可用，worker 未启动')
 
-    logger.info('[comfy_api_proxy] routes registered: /api-proxy/*, /auth/*')
+    logger.info('[comfy_api_proxy] 路由已注册: /api-proxy/*, /auth/*')
 except Exception as e:
-    logger.error(f'[comfy_api_proxy] failed to register routes: {e}')
+    logger.error(f'[comfy_api_proxy] 路由注册失败: {e}')
 
 NODE_CLASS_MAPPINGS = {}
 NODE_DISPLAY_NAME_MAPPINGS = {}

@@ -32,7 +32,7 @@ def _import_workers():
 
 def worker_loop(worker_id: int, redis_client) -> None:
     """单个 worker 线程主循环"""
-    logger.info(f'[Worker-{worker_id}] Started')
+    logger.info(f'[Worker-{worker_id}] 已启动')
 
     openai_worker, gemini_worker, ark_worker = _import_workers()
 
@@ -50,7 +50,7 @@ def worker_loop(worker_id: int, redis_client) -> None:
             task_id = task.get('task_id', 'unknown')
             provider = task.get('provider', 'unknown')
 
-            logger.info(f'[Worker-{worker_id}] Processing {task_id} from {queue_name}')
+            logger.info(f'[Worker-{worker_id}] 正在处理 {task_id}，来自队列 {queue_name}')
 
             if queue_name == b'queue:txt2img' or queue_name == 'queue:txt2img':
                 if provider == 'gemini':
@@ -58,25 +58,25 @@ def worker_loop(worker_id: int, redis_client) -> None:
                 elif provider == 'openai':
                     openai_worker.process(task)
                 else:
-                    logger.warning(f'[Worker-{worker_id}] Unknown provider: {provider}')
+                    logger.warning(f'[Worker-{worker_id}] 未知提供商: {provider}')
 
             elif queue_name in (b'queue:txt2video', 'queue:txt2video'):
                 if provider == 'ark':
                     ark_worker.process_txt2video(task)
                 else:
-                    logger.warning(f'[Worker-{worker_id}] Unknown video provider: {provider}')
+                    logger.warning(f'[Worker-{worker_id}] 未知视频提供商: {provider}')
 
             elif queue_name in (b'queue:img2video', 'queue:img2video'):
                 if provider == 'ark':
                     ark_worker.process_img2video(task)
                 else:
-                    logger.warning(f'[Worker-{worker_id}] Unknown img2video provider: {provider}')
+                    logger.warning(f'[Worker-{worker_id}] 未知图生视频提供商: {provider}')
 
         except KeyboardInterrupt:
-            logger.info(f'[Worker-{worker_id}] Stopped by user')
+            logger.info(f'[Worker-{worker_id}] 已被用户停止')
             break
         except Exception as e:
-            logger.error(f'[Worker-{worker_id}] Error: {e}')
+            logger.error(f'[Worker-{worker_id}] 错误: {e}')
             time.sleep(1)
 
 
@@ -84,7 +84,7 @@ def main():
     logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s: %(message)s')
     redis_client = _get_redis()
     num_workers = 4
-    logger.info(f'Starting {num_workers} worker threads...')
+    logger.info(f'正在启动 {num_workers} 个 worker 线程...')
 
     threads = []
     for i in range(num_workers):
@@ -97,12 +97,12 @@ def main():
         t.start()
         threads.append(t)
 
-    logger.info(f'{num_workers} workers started, waiting for tasks...')
+    logger.info(f'{num_workers} 个 worker 已启动，等待任务...')
     try:
         for t in threads:
             t.join()
     except KeyboardInterrupt:
-        logger.info('Main thread stopped by user')
+        logger.info('主线程已被用户停止')
 
 
 if __name__ == '__main__':

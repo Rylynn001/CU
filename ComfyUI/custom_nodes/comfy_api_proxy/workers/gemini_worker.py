@@ -18,7 +18,7 @@ def process(task: dict) -> None:
     task_id = task['task_id']
     try:
         task_queue.set_status(task_id, 'processing')
-        logger.info(f'[{task_id}] Processing Gemini task')
+        logger.info(f'[{task_id}] 正在处理 Gemini 任务')
 
         from google import genai
         from google.genai import types as genai_types
@@ -83,7 +83,7 @@ def process(task: dict) -> None:
                 aid = asset_repo.save_output_asset(str(result_paths[0]), int(user_id), 'picture')
                 output_asset_ids.append(aid)
             except Exception as e:
-                logger.error(f'[{task_id}] DB insert failed: {e}')
+                logger.error(f'[{task_id}] 数据库写入失败: {e}')
 
         type_ = 'img2img' if task.get('input_asset_ids') else 'txt2img'
         history_id = history_repo.save_history(
@@ -100,10 +100,10 @@ def process(task: dict) -> None:
 
         task_queue.set_status(task_id, 'completed')
         task_queue.set_result(task_id, {'result': result_images, 'history_id': history_id})
-        logger.info(f'[{task_id}] Completed, {len(result_images)} image(s)')
+        logger.info(f'[{task_id}] 已完成，共 {len(result_images)} 张图片')
 
     except Exception as e:
-        logger.error(f'[{task_id}] Failed: {e}')
+        logger.error(f'[{task_id}] 任务失败: {e}')
         type_ = 'img2img' if task.get('input_asset_ids') else 'txt2img'
         history_repo.save_history(
             task_id=task_id,

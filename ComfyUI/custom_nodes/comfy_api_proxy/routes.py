@@ -63,7 +63,7 @@ async def get_models(request: web.Request):
             models = [m for m in models if m.get('type') == model_type]
         return web.json_response({'models': models})
     except Exception as e:
-        logger.error(f'[api-proxy] get_models error: {e}')
+        logger.error(f'[api-proxy] 获取模型列表失败: {e}')
         raise web.HTTPInternalServerError(reason=str(e))
 
 
@@ -75,7 +75,7 @@ async def get_providers(request: web.Request):
         providers = provider_repo.get_all_providers()
         return web.json_response({'providers': providers})
     except Exception as e:
-        logger.error(f'[api-proxy] get_providers error: {e}')
+        logger.error(f'[api-proxy] 获取提供商列表失败: {e}')
         raise web.HTTPInternalServerError(reason=str(e))
 
 
@@ -86,7 +86,7 @@ async def get_provider_models(request: web.Request):
         models = provider_repo.get_all_models(provider_id=int(provider_id))
         return web.json_response({'models': models})
     except Exception as e:
-        logger.error(f'[api-proxy] get_provider_models error: {e}')
+        logger.error(f'[api-proxy] 获取提供商模型失败: {e}')
         raise web.HTTPInternalServerError(reason=str(e))
 
 
@@ -134,7 +134,7 @@ async def get_user_assets(request: web.Request):
         assets = asset_repo.get_user_assets(user_id, asset_type)
         return web.json_response({'assets': assets})
     except Exception as e:
-        logger.error(f'[api-proxy] get_user_assets error: {e}')
+        logger.error(f'[api-proxy] 获取用户资产失败: {e}')
         raise web.HTTPInternalServerError(reason=str(e))
 
 
@@ -173,10 +173,10 @@ async def upload_input_image(request: web.Request):
     try:
         asset_id = asset_repo.save_input_asset(user_id, unique_filename, location)
     except Exception as e:
-        logger.error(f'[api-proxy] upload_input_image db error: {e}')
+        logger.error(f'[api-proxy] 上传输入图片数据库错误: {e}')
         raise web.HTTPInternalServerError(reason=str(e))
 
-    logger.info(f'[api-proxy] uploaded input image: id={asset_id} location={location}')
+    logger.info(f'[api-proxy] 输入图片已上传: id={asset_id} location={location}')
     return web.json_response({'id': asset_id, 'location': location})
 
 
@@ -240,7 +240,7 @@ async def save_history(request: web.Request):
         )
         return web.json_response({'id': history_id})
     except Exception as e:
-        logger.error(f'[api-proxy] save_history error: {e}')
+        logger.error(f'[api-proxy] 保存历史记录失败: {e}')
         raise web.HTTPInternalServerError(reason=str(e))
 
 
@@ -255,7 +255,7 @@ async def get_history(request: web.Request):
         records = history_repo.get_user_history(int(user_id), type_filter=type_filter or None)
         return web.json_response({'records': records})
     except Exception as e:
-        logger.error(f'[api-proxy] get_history error: {e}')
+        logger.error(f'[api-proxy] 获取历史记录失败: {e}')
         raise web.HTTPInternalServerError(reason=str(e))
 
 
@@ -270,7 +270,7 @@ async def delete_history(request: web.Request):
         deleted = history_repo.delete_history(int(history_id), int(user_id))
         return web.json_response({'ok': deleted})
     except Exception as e:
-        logger.error(f'[api-proxy] delete_history error: {e}')
+        logger.error(f'[api-proxy] 删除历史记录失败: {e}')
         raise web.HTTPInternalServerError(reason=str(e))
 
 
@@ -284,7 +284,7 @@ async def clear_history(request: web.Request):
         count = history_repo.clear_user_history(int(user_id))
         return web.json_response({'deleted': count})
     except Exception as e:
-        logger.error(f'[api-proxy] clear_history error: {e}')
+        logger.error(f'[api-proxy] 清空历史记录失败: {e}')
         raise web.HTTPInternalServerError(reason=str(e))
 
 
@@ -299,9 +299,9 @@ async def test_save_asset(request: web.Request):
     asset_type = body.get('asset_type', 'picture')
     try:
         asset_repo.save_output_asset(location, user_id, asset_type)
-        logger.info(f'[test] saved: user_id={user_id}, location={location}, type={asset_type}')
+        logger.info(f'[test] 已保存: user_id={user_id}, location={location}, type={asset_type}')
         return web.json_response({'ok': True, 'message': 'Asset saved'})
     except Exception as e:
-        logger.error(f'[test] save failed: {e}')
+        logger.error(f'[test] 保存失败: {e}')
         raise web.HTTPInternalServerError(reason=str(e))
 

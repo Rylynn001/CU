@@ -80,7 +80,7 @@ class SaveImageUser:
             try:
                 save_output_asset(relative_path, int(user_id), 'picture')
             except Exception as e:
-                print(f"[SaveImageUser] Failed to insert asset: {e}")
+                print(f"[SaveImageUser] 写入资产失败: {e}")
 
             results.append({
                 "filename": file,

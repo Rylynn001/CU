@@ -17,10 +17,10 @@ def get_client() -> redis.Redis:
         try:
             _client.ping()
             AVAILABLE = True
-            logger.info('[task_queue] Redis connected')
+            logger.info('[task_queue] Redis 已连接')
         except Exception as e:
             AVAILABLE = False
-            logger.warning(f'[task_queue] Redis not available: {e}')
+            logger.warning(f'[task_queue] Redis 不可用: {e}')
     return _client
 
 

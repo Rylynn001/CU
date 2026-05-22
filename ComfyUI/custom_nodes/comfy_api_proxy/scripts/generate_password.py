@@ -22,9 +22,9 @@ def create_user(username: str, password: str = '123456'):
             )
             conn.commit()
         conn.close()
-        print(f"User '{username}' created successfully")
+        print(f"用户 '{username}' 创建成功")
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"错误: {e}")
 
 
 if __name__ == '__main__':

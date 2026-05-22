@@ -63,6 +63,10 @@ def save_env(api_key: str | None, base_url: str | None):
 
 # ── 数据库配置 ────────────────────────────────────────────────────────────
 
+def get_encryption_key() -> str:
+    return os.environ.get('ENCRYPTION_KEY', '')
+
+
 def get_db_config() -> dict:
     return {
         'host': os.environ.get('DB_HOST', ''),

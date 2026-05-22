@@ -14,7 +14,7 @@ def process_txt2video(task: dict) -> None:
     task_id = task['task_id']
     try:
         task_queue.set_status(task_id, 'processing')
-        logger.info(f'[{task_id}] Processing Ark txt2video task')
+        logger.info(f'[{task_id}] 正在处理 Ark 文生视频任务')
 
         from openai import OpenAI
 
@@ -32,7 +32,7 @@ def process_txt2video(task: dict) -> None:
         )
 
         remote_task_id = resp["id"]
-        logger.info(f'[{task_id}] Ark txt2video task created: {remote_task_id}')
+        logger.info(f'[{task_id}] Ark 文生视频任务已创建: {remote_task_id}')
 
         task_queue.set_meta(task_id, 'remote_id', remote_task_id)
         task_queue.set_meta(task_id, 'api_key', task['api_key'])
@@ -43,10 +43,10 @@ def process_txt2video(task: dict) -> None:
         task_queue.set_meta(task_id, 'model_id', str(task.get('model_id', '')))
         task_queue.set_meta(task_id, 'type', 'txt2video')
         task_queue.set_status(task_id, 'processing')
-        logger.info(f'[{task_id}] Ark txt2video submitted, waiting for polling')
+        logger.info(f'[{task_id}] Ark 文生视频已提交，等待轮询')
 
     except Exception as e:
-        logger.error(f'[{task_id}] Failed to submit Ark txt2video: {e}')
+        logger.error(f'[{task_id}] 提交 Ark 文生视频失败: {e}')
         history_repo.save_history(
             task_id=task_id,
             prompt=task.get('prompt', ''),
@@ -68,7 +68,7 @@ def process_img2video(task: dict) -> None:
     task_id = task['task_id']
     try:
         task_queue.set_status(task_id, 'processing')
-        logger.info(f'[{task_id}] Processing Ark img2video task')
+        logger.info(f'[{task_id}] 正在处理 Ark 图生视频任务')
 
         from volcenginesdkarkruntime import Ark
         import oss2
@@ -99,7 +99,7 @@ def process_img2video(task: dict) -> None:
                             object_name = f"seedance/{int(time.time())}_{asset_id}.{ext}"
                             bucket.put_object(object_name, file_data)
                             file_url = f"https://{oss_config['bucket_name']}.{oss_config['endpoint'].replace('https://', '')}/{object_name}"
-                            logger.info(f'[{task_id}] Uploaded asset {asset_id} to OSS: {file_url}')
+                            logger.info(f'[{task_id}] 资产 {asset_id} 已上传至 OSS: {file_url}')
                             all_media.append({'url': file_url, 'is_video': is_video})
             finally:
                 conn.close()
@@ -122,7 +122,7 @@ def process_img2video(task: dict) -> None:
         )
 
         remote_task_id = resp.id
-        logger.info(f'[{task_id}] Ark img2video task created: {remote_task_id}')
+        logger.info(f'[{task_id}] Ark 图生视频任务已创建: {remote_task_id}')
 
         task_queue.set_meta(task_id, 'remote_id', remote_task_id)
         task_queue.set_meta(task_id, 'api_key', task['api_key'])
@@ -133,10 +133,10 @@ def process_img2video(task: dict) -> None:
         task_queue.set_meta(task_id, 'input_asset_ids', json.dumps(task.get('input_asset_ids', [])))
         task_queue.set_meta(task_id, 'type', 'img2video')
         task_queue.set_status(task_id, 'processing')
-        logger.info(f'[{task_id}] Ark img2video submitted, waiting for polling')
+        logger.info(f'[{task_id}] Ark 图生视频已提交，等待轮询')
 
     except Exception as e:
-        logger.error(f'[{task_id}] Failed to submit Ark img2video: {e}')
+        logger.error(f'[{task_id}] 提交 Ark 图生视频失败: {e}')
         history_repo.save_history(
             task_id=task_id,
             prompt=task.get('prompt', ''),

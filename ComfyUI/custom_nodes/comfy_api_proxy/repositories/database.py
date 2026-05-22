@@ -12,5 +12,5 @@ def get_db_connection():
         config['cursorclass'] = pymysql.cursors.DictCursor
         return pymysql.connect(**config)
     except Exception as e:
-        logger.error(f'[database] Failed to connect: {e}')
+        logger.error(f'[database] 连接失败: {e}')
         raise

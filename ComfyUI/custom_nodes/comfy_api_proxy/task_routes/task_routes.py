@@ -59,7 +59,7 @@ def _save_history_from_redis(task_id: str, output_asset_ids: list, status: str, 
             message=message,
         )
     except Exception as e:
-        logger.error(f'[history] save failed for task {task_id}: {e}')
+        logger.error(f'[history] 任务 {task_id} 保存历史记录失败: {e}')
         return None
 
 
@@ -77,15 +77,15 @@ async def _download_video(task_id: str, video_url: str, stored_user_id: str | No
                 f.write(await resp.read())
 
     local_url = f'/api/api-proxy/output/{filename}'
-    logger.info(f'[{task_id}] Video saved to {save_path}')
+    logger.info(f'[{task_id}] 视频已保存至 {save_path}')
 
     output_asset_id = None
     if stored_user_id:
         try:
             output_asset_id = asset_repo.save_output_asset(str(save_path), int(stored_user_id), 'video')
-            logger.info(f'[{task_id}] Saved to assets table as video')
+            logger.info(f'[{task_id}] 已写入资产表（视频）')
         except Exception as e:
-            logger.error(f'[{task_id}] DB insert failed: {e}')
+            logger.error(f'[{task_id}] 数据库写入失败: {e}')
 
     return local_url, output_asset_id
 
@@ -97,7 +97,7 @@ async def _poll_ark_task(task_id: str, remote_id: str, api_key: str, base_url: s
         client = OpenAI(api_key=api_key, base_url=base_url)
         result = client.get(f"/contents/generations/tasks/{remote_id}", cast_to=object)
         remote_status = result.get("status")
-        logger.info(f'[{task_id}] Ark status: {remote_status}')
+        logger.info(f'[{task_id}] Ark 状态: {remote_status}')
 
         if remote_status == "succeeded":
             video_url = result.get("content", {}).get("video_url")
@@ -136,7 +136,7 @@ async def _poll_ark_task(task_id: str, remote_id: str, api_key: str, base_url: s
             return web.json_response({'status': 'failed', 'error': {'error_message': error_msg}})
 
     except Exception as e:
-        logger.error(f'[{task_id}] Error querying Ark: {e}')
+        logger.error(f'[{task_id}] 查询 Ark 状态失败: {e}')
 
     return None
 
@@ -167,7 +167,9 @@ async def txt2img(request: web.Request):
 
     image_b64_list = _load_input_assets_as_b64(input_asset_ids) if input_asset_ids else []
 
-    provider = provider_service.detect_provider(model_name)
+    provider = model_info.get('provider', '')
+    if not provider:
+        raise web.HTTPBadRequest(reason=f'model {model_id} 未配置 provider 字段')
     logger.info(f'[api-proxy] txt2img model={model_name} provider={provider} prompt={prompt[:50]}')
 
     if provider not in ('openai', 'gemini'):
@@ -198,7 +200,7 @@ async def txt2img(request: web.Request):
 
     task_queue.enqueue('queue:txt2img', task_payload)
     task_queue.mark_pending(task_id)
-    logger.info(f'[api-proxy] txt2img task queued: {task_id}')
+    logger.info(f'[api-proxy] txt2img 任务已入队: {task_id}')
     return web.json_response({'task_id': task_id})
 
 
@@ -246,7 +248,7 @@ async def txt2video(request: web.Request):
 
     task_queue.enqueue('queue:txt2video', task_payload)
     task_queue.mark_pending(task_id)
-    logger.info(f'[api-proxy] txt2video task queued: {task_id}')
+    logger.info(f'[api-proxy] txt2video 任务已入队: {task_id}')
     return web.json_response({'task_id': task_id})
 
 
@@ -323,7 +325,7 @@ async def img2video(request: web.Request):
 
     task_queue.enqueue('queue:img2video', task_payload)
     task_queue.mark_pending(task_id)
-    logger.info(f'[api-proxy] img2video task queued: {task_id}, files: {len(input_files)}')
+    logger.info(f'[api-proxy] img2video 任务已入队: {task_id}, 文件数: {len(input_files)}')
     return web.json_response({'task_id': task_id})
 
 
@@ -340,7 +342,7 @@ async def get_task_status(request: web.Request):
     if not status:
         raise web.HTTPNotFound(reason=f'Task {task_id} not found or expired.')
 
-    logger.info(f'[api-proxy] task {task_id} status: {status}')
+    logger.info(f'[api-proxy] 任务 {task_id} 状态: {status}')
 
     if status == 'processing':
         remote_id = task_queue.get_meta(task_id, 'remote_id')
@@ -382,7 +384,7 @@ async def cancel_task(request: web.Request):
 
     task_queue.set_status(task_id, 'failed')
     task_queue.set_result(task_id, {'error': {'error_message': '任务已被用户取消'}})
-    logger.info(f'[api-proxy] Task {task_id} cancelled')
+    logger.info(f'[api-proxy] 任务 {task_id} 已取消')
     return web.json_response({'ok': True})
 
 
@@ -416,7 +418,7 @@ async def prioritize_task(request: web.Request):
             task_queue.remove_from_queue(queue_name, item_json)
             task_queue.push_to_front(queue_name, item_json)
             found = True
-            logger.info(f'[api-proxy] Task {task_id} prioritized in {queue_name}')
+            logger.info(f'[api-proxy] 任务 {task_id} 已提升优先级至队列 {queue_name}')
             break
 
     if not found:

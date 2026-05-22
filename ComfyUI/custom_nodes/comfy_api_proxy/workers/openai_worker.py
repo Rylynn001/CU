@@ -19,7 +19,7 @@ def process(task: dict) -> None:
     task_id = task['task_id']
     try:
         task_queue.set_status(task_id, 'processing')
-        logger.info(f'[{task_id}] Processing OpenAI task')
+        logger.info(f'[{task_id}] 正在处理 OpenAI 任务')
 
         from openai import OpenAI
 
@@ -58,7 +58,7 @@ def process(task: dict) -> None:
                     )
                 break
             except Exception as e:
-                logger.warning(f'[{task_id}] Attempt {attempt+1} failed: {e}')
+                logger.warning(f'[{task_id}] 第 {attempt+1} 次尝试失败: {e}')
                 if attempt < 2:
                     time.sleep(3)
                 else:
@@ -95,7 +95,7 @@ def process(task: dict) -> None:
                     aid = asset_repo.save_output_asset(str(save_path), int(user_id), 'picture')
                     output_asset_ids.append(aid)
                 except Exception as e:
-                    logger.error(f'[{task_id}] DB insert failed: {e}')
+                    logger.error(f'[{task_id}] 数据库写入失败: {e}')
 
         type_ = 'img2img' if task.get('input_asset_ids') else 'txt2img'
         history_id = history_repo.save_history(
@@ -112,10 +112,10 @@ def process(task: dict) -> None:
 
         task_queue.set_status(task_id, 'completed')
         task_queue.set_result(task_id, {'result': images, 'history_id': history_id})
-        logger.info(f'[{task_id}] Completed, {len(images)} image(s)')
+        logger.info(f'[{task_id}] 已完成，共 {len(images)} 张图片')
 
     except Exception as e:
-        logger.error(f'[{task_id}] Failed: {e}')
+        logger.error(f'[{task_id}] 任务失败: {e}')
         type_ = 'img2img' if task.get('input_asset_ids') else 'txt2img'
         history_repo.save_history(
             task_id=task_id,
