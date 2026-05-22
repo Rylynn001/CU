@@ -126,6 +126,7 @@ def process_img2video(task: dict) -> None:
 
         task_queue.set_meta(task_id, 'remote_id', remote_task_id)
         task_queue.set_meta(task_id, 'api_key', task['api_key'])
+        task_queue.set_meta(task_id, 'base_url', task.get('base_url', ''))
         task_queue.set_meta(task_id, 'provider', 'ark')
         task_queue.set_meta(task_id, 'user_id', str(task.get('user_id', '')))
         task_queue.set_meta(task_id, 'prompt', task.get('prompt', ''))
