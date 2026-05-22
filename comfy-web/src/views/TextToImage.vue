@@ -8,24 +8,27 @@ import RecordCard from '../components/RecordCard.vue'
 import ImageEditor from '../components/ImageEditor.vue'
 import { getModels, getKSamplerInfo, submitPrompt, uploadImage, type PromptParams } from '../api/comfyui'
 import { useComfyWebSocket } from '../composables/useComfyWebSocket'
-import { getApiModels, apiGenerate, pollTaskUntilDone, resolveImageSrc, uploadInputImage, type ApiModel } from '../api/apiService'
-import { useTaskHistory } from '../composables/useTaskHistory'
-import { useHistoryDb } from '../composables/useHistoryDb'
+import { getApiModels, type ApiModel } from '../api/apiService'
+import { useGenerationHistory } from '../composables/useGenerationHistory'
+import { useTaskPolling } from '../composables/useTaskPolling'
+import { useAtMention } from '../composables/useAtMention'
+import { useImageSizeControl } from '../composables/useImageSizeControl'
+import { useRecordEditor } from '../composables/useRecordEditor'
+import { submitImageGeneration, type InputImage } from '../services/imageGenerationService'
 import { getCurrentUserId } from '../utils/user'
 import { generateUUID } from '../utils/uuid'
 
 const { clientId, progress, generating, imageUrl, connect, startGeneration } = useComfyWebSocket()
 
-// 图片预览
+// ── 图片预览 ──────────────────────────────────────────────
 const showImageViewer = ref(false)
 const previewImageUrl = ref('')
-
 function previewImage(url: string) {
   previewImageUrl.value = url
   showImageViewer.value = true
 }
 
-// ── 生成记录 ──────────────────────────────────────────────
+// ── 生成记录类型 ──────────────────────────────────────────
 interface GenerationRecord {
   id: string
   createdAt: number
@@ -40,174 +43,47 @@ interface GenerationRecord {
   errorMsg?: string
   taskId?: string
   isImg2Img?: boolean
-  dbId?: number        // 数据库 history 表的主键，用于删除/同步
+  dbId?: number
   inputAssetIds?: number[]
   modelId?: number
 }
 
-const HISTORY_KEY = 'generation_history'
-const MAX_RECORDS = 50
-
-const { records, saveRecords, clearAll: clearAllLocal, formatTime, deleteRecord: deleteRecordLocal } = useTaskHistory<GenerationRecord>(
-  HISTORY_KEY,
-  MAX_RECORDS,
-  (r) => ({ images: r.images.filter(img => img.startsWith('http') || img.startsWith('/')) }),
+// ── 历史记录 ──────────────────────────────────────────────
+const {
+  records, saveRecords, searchQuery, expandedInputs, filteredRecords,
+  toggleInputExpand, deleteRecord, clearAll, loadFromDb, markStaleRecords,
+} = useGenerationHistory<GenerationRecord>(
+  'generation_history',
+  'img',
+  (r) => ({ images: r.images.filter((img: string) => img.startsWith('http') || img.startsWith('/')) }),
 )
 
-const historyDb = useHistoryDb()
+// ── 任务轮询 ──────────────────────────────────────────────
+const { resumeTaskPolling } = useTaskPolling<GenerationRecord>(
+  () => records.value as GenerationRecord[],
+  saveRecords,
+)
 
-const searchQuery = ref('')
-const expandedInputs = ref<Set<string>>(new Set())
-function toggleInputExpand(id: string) {
-  if (expandedInputs.value.has(id)) expandedInputs.value.delete(id)
-  else expandedInputs.value.add(id)
-}
-const filteredRecords = computed(() => {
-  if (!searchQuery.value.trim()) return records.value as GenerationRecord[]
-  const q = searchQuery.value.trim().toLowerCase()
-  return (records.value as GenerationRecord[]).filter(r => r.prompt.toLowerCase().includes(q))
-})
-
-// 包装删除：同时删除 DB 记录
-async function deleteRecord(id: string) {
-  const rec = (records.value as GenerationRecord[]).find(r => r.id === id)
-  if (rec?.dbId) {
-    const userId = getCurrentUserId()
-    if (userId) await historyDb.remove(rec.dbId, userId)
-  }
-  await deleteRecordLocal(id)
+function pollImage(record: GenerationRecord, userId?: number) {
+  return resumeTaskPolling(record, userId, (rec, result) => {
+    rec.images = result.images.map((i: any) => i.url).filter(Boolean) as string[]
+  })
 }
 
-// 包装清空：同时清空 DB
-async function clearAll() {
-  const userId = getCurrentUserId()
-  if (userId) await historyDb.clear(userId)
-  clearAllLocal()
-}
-
-async function retryRecord(record: GenerationRecord) {
-  // 软删除旧记录
-  if (record.dbId) {
-    const userId = getCurrentUserId()
-    if (userId) await historyDb.remove(record.dbId, userId)
-  }
-  const newRecord: GenerationRecord = {
-    id: generateUUID(),
-    createdAt: Date.now(),
-    mode: record.mode,
-    prompt: record.prompt,
-    modelName: record.modelName,
-    status: 'generating',
-    inputPreviews: record.inputPreviews,
-    progress: 0,
-    images: [],
-    isImg2Img: record.isImg2Img,
-  }
-  records.value.unshift(newRecord)
-  records.value = records.value.filter(r => r.id !== record.id) as any
-  saveRecords()
-
-  if (record.mode === 'api') {
-    const model = apiModels.value.find(m => m.id === record.modelName)
-    if (!model) {
-      newRecord.status = 'error'
-      newRecord.errorMsg = '找不到对应的模型'
-      saveRecords()
-      return
-    }
-
-    if (record.isImg2Img) {
-      // 从存储的预览 URL 中还原资产路径（仅支持资产图片，本地上传的 blob URL 已失效）
-      const snapshotImages: InputImage[] = (record.inputPreviews || []).map(url => {
-        const match = url.match(/\/api\/view\?filename=([^&]+)/)
-        const assetLocation = match ? decodeURIComponent(match[1]) : ''
-        return { file: null, preview: url, assetLocation }
-      }).filter(img => img.assetLocation)
-
-      if (snapshotImages.length === 0) {
-        newRecord.status = 'error'
-        newRecord.errorMsg = '无法重试：本地上传的图片不支持重试，请重新上传'
-        saveRecords()
-        return
-      }
-
-      runApiGeneration(newRecord.id, true, snapshotImages)
-    } else {
-      const userId = getCurrentUserId()
-      try {
-        const result = await apiGenerate({
-          model: model.id,
-          prompt: record.prompt,
-          width: form.value.width,
-          height: form.value.height,
-          n: form.value.batch_size,
-          user_id: userId,
-        })
-
-        if ('taskId' in result) {
-          newRecord.taskId = result.taskId
-          saveRecords()
-          resumeTaskPolling(newRecord, userId).catch(err => {
-            console.error('Polling error:', err)
-          })
-        }
-      } catch (e: any) {
-        newRecord.status = 'error'
-        newRecord.errorMsg = e.message
-        saveRecords()
-      }
-    }
-  } else {
-    newRecord.status = 'error'
-    newRecord.errorMsg = '本地模式不支持重试'
-    saveRecords()
-  }
-}
-
-
-
-
-function downloadImage(url: string, filename?: string) {
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename || url.split('/').pop() || 'image.png'
-  a.click()
-}
-
-// API 模式状态（保留用于按钮禁用判断）
+// ── 模型 ──────────────────────────────────────────────────
 const apiModels = ref<ApiModel[]>([])
 const apiModel = ref('')
-
-// tabs: txt2img | img2img
-const activeTab = ref<'txt2img' | 'img2img'>('txt2img')
-
-// model source: local | api
-const modelSource = ref<'local' | 'api'>('local')
-
 const models = ref<string[]>([])
 const samplers = ref<string[]>([])
 const schedulers = ref<string[]>([])
-const showAdvanced = ref(false)
+const modelSource = ref<'local' | 'api'>('local')
 
-// 多图上传（img2img）
-interface InputImage {
-  file: File | null
-  preview: string
-  assetLocation: string
-}
-const inputImages = ref<InputImage[]>([])
-const showAssetPicker = ref(false)
-const assetPickerTargetIndex = ref(-1)  // 当前要替换的图片索引，-1 表示新增
-const promptInputRef = ref<InstanceType<typeof ElInput> | null>(null)
-const atMentionActive = ref(false)  // 是否由 @ 触发的资产选择
-const atMentionStartIdx = ref(-1)   // @ 在 prompt 中的位置
-
-// 兼容旧的单图逻辑（本地 ComfyUI 模式）
-const inputImageFile = ref<File | null>(null)
-const inputImagePreview = ref('')
-const selectedAssetLocation = ref('')
-
+// ── 表单参数 ──────────────────────────────────────────────
+const activeTab = ref<'txt2img' | 'img2img'>('txt2img')
 const isImg2Img = computed(() => activeTab.value === 'img2img')
+const showAdvanced = ref(false)
+const errorMsg = ref('')
+const justSubmitted = ref(false)
 
 const form = ref<PromptParams>({
   ckpt_name: '',
@@ -224,199 +100,55 @@ const form = ref<PromptParams>({
   batch_size: 1,
 })
 
-const errorMsg = ref('')
-const justSubmitted = ref(false)
+// ── 尺寸控制 ──────────────────────────────────────────────
+const { ratios, resolutions, activeRatio, activeResolution, ratioOpen, sizeCustomized,
+  setRatio, setResolution, startStep, stopStep } =
+  useImageSizeControl(
+    () => ({ width: form.value.width, height: form.value.height }),
+    (w, h) => { form.value.width = w; form.value.height = h },
+  )
 
-const ratios = [
-  { label: '1:1',  w: 1,  h: 1,  icon: '⬜' },
-  { label: '16:9', w: 16, h: 9,  icon: '▬' },
-  { label: '9:16', w: 9,  h: 16, icon: '▮' },
-  { label: '4:3',  w: 4,  h: 3,  icon: '▭' },
-  { label: '3:4',  w: 3,  h: 4,  icon: '▯' },
-]
-const activeRatio = ref(ratios[0])
-
-const resolutions = [
-  { label: '512',  base: 512 },
-  { label: '768',  base: 768 },
-  { label: '1024', base: 1024 },
-  { label: '1080p', base: 1920 },
-]
-const activeResolution = ref(resolutions[0])
-const ratioOpen = ref(false)
-const sizeCustomized = ref(false)
-
-function applyRatioAndRes() {
-  const { w, h } = activeRatio.value
-  const base = activeResolution.value.base
-  if (w >= h) {
-    form.value.width  = Math.round(base / 8) * 8
-    form.value.height = Math.round(base * h / w / 8) * 8
-  } else {
-    form.value.height = Math.round(base / 8) * 8
-    form.value.width  = Math.round(base * w / h / 8) * 8
-  }
-  sizeCustomized.value = false
-}
-
-function setRatio(r: typeof ratios[0]) {
-  activeRatio.value = r
-  applyRatioAndRes()
-}
-function setResolution(r: typeof resolutions[0]) {
-  activeResolution.value = r
-  applyRatioAndRes()
-}
-
-let stepTimer: ReturnType<typeof setTimeout> | null = null
-let stepInterval: ReturnType<typeof setInterval> | null = null
-
-function startStep(field: 'width' | 'height', delta: number) {
-  applyStep(field, delta)
-  stepTimer = setTimeout(() => {
-    stepInterval = setInterval(() => applyStep(field, delta), 80)
-  }, 500)
-}
-function applyStep(field: 'width' | 'height', delta: number) {
-  form.value[field] = Math.min(2048, Math.max(16, form.value[field] + delta))
-  sizeCustomized.value = true
-}
-function stopStep() {
-  if (stepTimer) { clearTimeout(stepTimer); stepTimer = null }
-  if (stepInterval) { clearInterval(stepInterval); stepInterval = null }
-}
-
-watch(isImg2Img, (val) => { form.value.denoise = val ? 0.75 : 1 })
-
-const atMentionIndex = ref(-1) // 键盘高亮项
-
-function onPromptKeyup(e: KeyboardEvent) {
-  if (e.key === '@') {
-    if (inputImages.value.length === 0) return
-    const textarea = promptInputRef.value?.textarea
-    if (!textarea) return
-    atMentionStartIdx.value = textarea.selectionStart - 1
-    atMentionActive.value = true
-    atMentionIndex.value = -1
-  } else if (e.key === 'Escape') {
-    atMentionActive.value = false
-  }
-}
-
-function onPromptKeydown(e: KeyboardEvent | Event) {
-  if (!(e instanceof KeyboardEvent)) return
-  if (!atMentionActive.value) return
-  const count = inputImages.value.length
-  if (e.key === 'ArrowDown') {
-    e.preventDefault()
-    atMentionIndex.value = (atMentionIndex.value + 1) % count
-  } else if (e.key === 'ArrowUp') {
-    e.preventDefault()
-    atMentionIndex.value = (atMentionIndex.value - 1 + count) % count
-  } else if (e.key === 'Enter') {
-    e.preventDefault()
-    if (atMentionIndex.value >= 0) insertMention(atMentionIndex.value)
-  }
-}
-
-function insertMention(idx: number) {
-  const textarea = promptInputRef.value?.textarea
-  if (!textarea) return
-  const label = `@图${idx + 1}`
-  const start = atMentionStartIdx.value
-  const before = form.value.positive_prompt.slice(0, start)
-  const after = form.value.positive_prompt.slice(start + 1) // 跳过 @
-  form.value.positive_prompt = `${before}${label} ${after}`
-  atMentionActive.value = false
-  atMentionIndex.value = -1
-  textarea.focus()
-}
-
-onMounted(async () => {
-  connect()
-  // 加载本地模型
-  try {
-    const [modelList, ksInfo] = await Promise.all([getModels(), getKSamplerInfo()])
-    models.value = modelList
-    samplers.value = ksInfo.samplers
-    schedulers.value = ksInfo.schedulers
-    if (modelList.length > 0) form.value.ckpt_name = modelList[0]
-    else errorMsg.value = '未找到任何 checkpoint 模型'
-  } catch {
-    errorMsg.value = '无法连接 ComfyUI 后端（默认 127.0.0.1:8188）'
-  }
-  // 加载 API 模型
-  try {
-    apiModels.value = await getApiModels('image')
-    if (apiModels.value.length > 0) apiModel.value = apiModels.value[0].id
-  } catch {}
-
-  const userId = getCurrentUserId()
-
-  // 从数据库加载历史，合并到 records（以 DB 为准，保留本地进行中的任务）
-  if (userId) {
-    const dbRecords = await historyDb.load(userId, 'img')
-    const localPending = (records.value as GenerationRecord[]).filter(r => r.status === 'generating')
-    // 本地已完成记录若 DB 中存在对应条目则跳过（避免重复）
-    const fromDb: GenerationRecord[] = dbRecords.map(r => ({
-      id: String(r.id),
-      dbId: r.id,
-      createdAt: 0,
-      prompt: r.prompt || '',
-      inputPreviews: [],
-      inputAssetUrls: r.input_asset_urls || [],
-      modelName: r.model_name || '',
-      mode: 'api' as const,
-      status: 'done' as const,
-      progress: 100,
-      images: r.output_urls.map(o => o.url),
-      inputAssetIds: r.input_asset_ids,
-    }))
-    records.value = [...localPending, ...fromDb] as any
-    saveRecords()
-  }
-
-  // 恢复刷新前未完成的 API 任务
-  const pending = (records.value as GenerationRecord[]).filter(r => r.mode === 'api' && r.status === 'generating' && r.taskId)
-  for (const rec of pending) {
-    resumeTaskPolling(rec, userId)
-  }
-  // API 任务没有 taskId 的（直接返回结果但 base64 被过滤掉了）→ 标记失败
-  ;(records.value as GenerationRecord[]).filter(r => r.mode === 'api' && r.status === 'generating' && !r.taskId).forEach(r => {
-    r.status = 'error'
-    r.errorMsg = '页面刷新，结果已丢失（base64 图片无法持久化）'
-  })
-  // 本地模式刷新后无法恢复，标记为失败
-  ;(records.value as GenerationRecord[]).filter(r => r.mode === 'local' && r.status === 'generating').forEach(r => {
-    r.status = 'error'
-    r.errorMsg = '页面刷新，生成中断'
-  })
-  saveRecords()
-})
-
-function handleImageChange(file: any) {
-  inputImageFile.value = file.raw
-  inputImagePreview.value = URL.createObjectURL(file.raw)
-  selectedAssetLocation.value = ''
-}
-function clearInputImage() {
-  inputImageFile.value = null
-  inputImagePreview.value = ''
-  selectedAssetLocation.value = ''
-}
-
-function openAssetPicker() {
-  showAssetPicker.value = true
-}
+// ── 输入图片 ──────────────────────────────────────────────
+const inputImages = ref<InputImage[]>([])
+const showAssetPicker = ref(false)
+const selectedAssetLocation = ref('')
 
 function addLocalImage(file: File) {
   if (inputImages.value.length >= 4) return
   inputImages.value.push({ file, preview: URL.createObjectURL(file), assetLocation: '' })
 }
 
-// 图片编辑器
+function handleAssetSelect(assets: Array<{ id: number; location: string; asset_type?: string }>) {
+  if (activeTab.value === 'img2img') {
+    const maxImages = modelSource.value === 'api' ? 4 : 1
+    for (const asset of assets) {
+      if (inputImages.value.length >= maxImages) break
+      const filename = asset.location.replace(/\\/g, '/').split('/').pop()!
+      inputImages.value.push({
+        file: null,
+        preview: `/api/view?filename=${encodeURIComponent(filename)}&type=output`,
+        assetLocation: asset.location,
+      })
+    }
+  } else {
+    if (assets.length > 0) selectedAssetLocation.value = assets[0].location
+  }
+}
+
+// ── @mention ──────────────────────────────────────────────
+const promptInputRef = ref<InstanceType<typeof ElInput> | null>(null)
+const { atMentionActive, atMentionIndex, onPromptKeyup, onPromptKeydown, insertMention } =
+  useAtMention(
+    () => form.value.positive_prompt,
+    (v) => { form.value.positive_prompt = v },
+    () => inputImages.value.map(img => ({ url: img.preview, type: 'image' as const })),
+    promptInputRef,
+  )
+
+// ── 图片编辑器（输入图） ──────────────────────────────────
 const showEditor = ref(false)
 const editingIndex = ref(-1)
+const assetPickerTargetIndex = ref(-1)
 
 function openEditor(idx: number) {
   editingIndex.value = idx
@@ -431,86 +163,34 @@ function onEditorConfirm(file: File) {
   showEditor.value = false
 }
 
-function onEditorCancel() {
-  showEditor.value = false
-}
-
-// 历史记录编辑面板
-const showRecordEditor = ref(false)
-const editingRecordId = ref('')
-const recordEditorPrompt = ref('')
-const recordEditorImages = ref<string[]>([])
-const recordEditorEditedFile = ref<File | null>(null)
-const recordEditorEditedPreview = ref('')
-const recordEditorEditingSrc = ref('')
-const showRecordImageEditor = ref(false)
+// ── 历史记录编辑面板 ──────────────────────────────────────
 const inlineEditorRef = ref<InstanceType<typeof ImageEditor> | null>(null)
+const {
+  showRecordEditor, editingRecordId, recordEditorPrompt, recordEditorImages,
+  recordEditorEditedPreview, recordEditorEditingSrc, showRecordImageEditor,
+  openEditor: openRecordEditor, onImageEditorConfirm: onRecordImageEditorConfirm,
+  onImageEditorCancel: onRecordImageEditorCancel, closeEditor: closeRecordEditor, getEditedFile,
+} = useRecordEditor(inlineEditorRef)
 
 function handleRecordEdit(id: string) {
   const rec = (records.value as GenerationRecord[]).find(r => r.id === id)
   if (!rec || rec.status !== 'done') return
-  editingRecordId.value = id
-  recordEditorPrompt.value = rec.prompt
-  recordEditorImages.value = rec.images
-  recordEditorEditedFile.value = null
-  recordEditorEditedPreview.value = ''
-  showRecordEditor.value = true
-  // 同时打开图片编辑器
-  if (rec.images[0]) {
-    recordEditorEditingSrc.value = rec.images[0]
-    showRecordImageEditor.value = true
-  }
-}
-
-function openRecordImageEditor(src: string) {
-  recordEditorEditingSrc.value = src
-  showRecordImageEditor.value = true
-}
-
-function onRecordImageEditorConfirm(file: File) {
-  recordEditorEditedFile.value = file
-  recordEditorEditedPreview.value = URL.createObjectURL(file)
-  showRecordImageEditor.value = false
-  // 侧边栏保持打开，不需要重新设置
-}
-
-function onRecordImageEditorGenerate(file: File) {
-  recordEditorEditedFile.value = file
-  recordEditorEditedPreview.value = URL.createObjectURL(file)
-  showRecordImageEditor.value = false
-  generateFromEdit()
-}
-
-function onRecordImageEditorCancel() {
-  showRecordImageEditor.value = false
+  openRecordEditor(rec)
 }
 
 async function generateFromEdit() {
   if (!apiModel.value) { errorMsg.value = '请先选择 API 模型'; return }
-  showRecordEditor.value = false
+  closeRecordEditor()
 
-  // 优先从内联编辑器获取最新画布内容
-  let editedFile = recordEditorEditedFile.value
-  if (inlineEditorRef.value) {
-    const canvasFile = await inlineEditorRef.value.getFile()
-    if (canvasFile) editedFile = canvasFile
-  }
-
+  const editedFile = await getEditedFile()
   const src = editedFile ? URL.createObjectURL(editedFile) : recordEditorImages.value[0]
   if (!src) return
 
   const record: GenerationRecord = {
-    id: generateUUID(),
-    createdAt: Date.now(),
-    prompt: recordEditorPrompt.value,
-    inputPreviews: [src],
-    modelName: apiModel.value,
-    modelId: Number(apiModel.value) || undefined,
-    mode: 'api',
-    status: 'generating',
-    progress: 0,
-    images: [],
-    isImg2Img: true,
+    id: generateUUID(), createdAt: Date.now(),
+    prompt: recordEditorPrompt.value, inputPreviews: [src],
+    modelName: apiModel.value, modelId: Number(apiModel.value) || undefined,
+    mode: 'api', status: 'generating', progress: 0, images: [], isImg2Img: true,
   }
   records.value.unshift(record)
   saveRecords()
@@ -522,194 +202,119 @@ async function generateFromEdit() {
   runApiGeneration(record.id, true, [inputImg])
 }
 
-function handleAssetSelect(assets: Array<{ id: number; location: string; asset_type?: string }>) {
-  if (activeTab.value === 'img2img') {
-    const maxImages = modelSource.value === 'api' ? 4 : 1
-    for (const asset of assets) {
-      if (inputImages.value.length >= maxImages) break
-      inputImages.value.push({
-        file: null,
-        preview: `/api/view?filename=${encodeURIComponent(asset.location.replace(/\\/g, '/').split('/').pop()!)}&type=output`,
-        assetLocation: asset.location,
-      })
-    }
-  } else {
-    // txt2img 模式，只取第一个
-    if (assets.length > 0) {
-      selectedAssetLocation.value = assets[0].location
-    }
-  }
-}
+// ── 核心生成逻辑 ──────────────────────────────────────────
+async function runApiGeneration(recordId: string, img2img: boolean, snapshotImages: InputImage[]) {
+  const getRecord = () => (records.value as GenerationRecord[]).find(r => r.id === recordId)
+  const rec = getRecord()
+  if (!rec) return
 
-async function runApiGeneration(
-  recordId: string,
-  img2img: boolean,
-  snapshotImages: InputImage[],
-) {
-  const getRecord = () => records.value.find(r => r.id === recordId)
   try {
-    let input_asset_ids: number[] | undefined
-    if (img2img) {
-      if (snapshotImages.length === 0) {
-        const rec = getRecord(); if (rec) { rec.status = 'error'; rec.errorMsg = '请先上传或选择参考图片' }
-        saveRecords()
-        return
-      }
-      const userId = getCurrentUserId() ?? 1
-      const ids: number[] = []
-      for (const img of snapshotImages) {
-        if (img.file) {
-          const uploaded = await uploadInputImage(img.file, userId)
-          ids.push(uploaded.id)
-        } else if (img.assetLocation) {
-          const imgRes = await fetch(`/api/view?filename=${encodeURIComponent(img.assetLocation.replace(/\\/g, '/').split('/').pop()!)}&type=output`)
-          const blob = await imgRes.blob()
-          const file = new File([blob], img.assetLocation, { type: blob.type })
-          const uploaded = await uploadInputImage(file, userId)
-          ids.push(uploaded.id)
-        } else if (img.preview) {
-          // 来自历史记录编辑面板的 URL（blob 或 http）
-          const imgRes = await fetch(img.preview)
-          const blob = await imgRes.blob()
-          const file = new File([blob], 'input.png', { type: blob.type || 'image/png' })
-          const uploaded = await uploadInputImage(file, userId)
-          ids.push(uploaded.id)
-        }
-      }
-      input_asset_ids = ids
-    }
-    const rec = getRecord()
-    // 把 input_asset_ids 存到 record，轮询完成后持久化时能拿到
-    if (rec && input_asset_ids) rec.inputAssetIds = input_asset_ids
     const userId = getCurrentUserId()
-    const submitted = await apiGenerate({
-      model: rec ? rec.modelName : apiModel.value,
-      prompt: rec ? rec.prompt : form.value.positive_prompt,
+    const result = await submitImageGeneration({
+      modelId: rec.modelName,
+      prompt: rec.prompt,
       width: form.value.width,
       height: form.value.height,
-      n: form.value.batch_size,
-      input_asset_ids,
-      user_id: userId,
+      batchSize: form.value.batch_size,
+      img2img,
+      inputImages: snapshotImages,
+      userId: userId ?? undefined,
     })
 
-    if (submitted.taskId) {
-      const r = getRecord(); if (r) { r.taskId = submitted.taskId }
+    if (result.taskId) {
+      rec.taskId = result.taskId
       saveRecords()
-      const r2 = getRecord(); if (r2) await resumeTaskPolling(r2, userId)
+      pollImage(rec, userId ?? undefined).catch(console.error)
     } else {
-      const r = getRecord()
-      if (r) {
-        r.images = submitted.images.map(resolveImageSrc).filter(Boolean)
-        r.status = 'done'
-      }
+      rec.images = result.images || []
+      rec.status = 'done'
       saveRecords()
     }
   } catch (e: any) {
     const r = getRecord()
-    if (r) { r.status = 'error'; r.errorMsg = (e as any).message }
+    if (r) { r.status = 'error'; r.errorMsg = e.message }
     saveRecords()
   }
 }
 
-async function resumeTaskPolling(record: GenerationRecord, userId?: number) {
-  if (!record.taskId) return
-  try {
-    // 先查一次状态，避免重复轮询已完成的任务
-    const checkUrl = userId ? `/api/api-proxy/task/${record.taskId}?user_id=${userId}` : `/api/api-proxy/task/${record.taskId}`
-    const checkRes = await fetch(checkUrl)
-    if (checkRes.ok) {
-      const checkData = await checkRes.json()
-      if (checkData.status === 'completed' && checkData.result) {
-        const rec = records.value.find(r => r.id === record.id)
-        if (rec) {
-          rec.images = checkData.result.map((item: any) => item.url).filter(Boolean)
-          rec.status = 'done'
-          if (checkData.history_id) rec.dbId = checkData.history_id
-          saveRecords()
-        }
-        return
-      } else if (checkData.status === 'failed') {
-        const rec = records.value.find(r => r.id === record.id)
-        if (rec) {
-          rec.status = 'error'
-          rec.errorMsg = checkData.error?.error_message || '任务失败'
-          saveRecords()
-        }
-        return
-      }
+async function retryRecord(record: GenerationRecord) {
+  if (record.dbId) {
+    const userId = getCurrentUserId()
+    if (userId) {
+      const { useHistoryDb } = await import('../composables/useHistoryDb')
+      await useHistoryDb().remove(record.dbId, userId)
     }
-    // 任务还在进行中，开始轮询
-    const result = await pollTaskUntilDone(record.taskId, userId)
-    const rec = records.value.find(r => r.id === record.id)
-    if (rec) {
-      rec.images = result.images.map(resolveImageSrc).filter(Boolean)
-      rec.status = 'done'
-      if ((result as any).historyId) rec.dbId = (result as any).historyId
+  }
+
+  const newRecord: GenerationRecord = {
+    id: generateUUID(), createdAt: Date.now(),
+    mode: record.mode, prompt: record.prompt, modelName: record.modelName,
+    status: 'generating', inputPreviews: record.inputPreviews,
+    progress: 0, images: [], isImg2Img: record.isImg2Img,
+  }
+  records.value = [newRecord, ...(records.value as GenerationRecord[]).filter(r => r.id !== record.id)] as any
+  saveRecords()
+
+  if (record.mode !== 'api') {
+    newRecord.status = 'error'; newRecord.errorMsg = '本地模式不支持重试'; saveRecords(); return
+  }
+  const model = apiModels.value.find(m => m.id === record.modelName)
+  if (!model) {
+    newRecord.status = 'error'; newRecord.errorMsg = '找不到对应的模型'; saveRecords(); return
+  }
+
+  if (record.isImg2Img) {
+    const snapshotImages: InputImage[] = (record.inputPreviews || []).map(url => {
+      const match = url.match(/\/api\/view\?filename=([^&]+)/)
+      const assetLocation = match ? decodeURIComponent(match[1]) : ''
+      return { file: null, preview: url, assetLocation }
+    }).filter(img => img.assetLocation)
+
+    if (snapshotImages.length === 0) {
+      newRecord.status = 'error'
+      newRecord.errorMsg = '无法重试：本地上传的图片不支持重试，请重新上传'
+      saveRecords(); return
     }
-  } catch (e: any) {
-    const rec = records.value.find(r => r.id === record.id)
-    if (rec) {
-      rec.status = 'error'
-      rec.errorMsg = (e as any).message
-    }
-  } finally {
-    saveRecords()
+    runApiGeneration(newRecord.id, true, snapshotImages)
+  } else {
+    runApiGeneration(newRecord.id, false, [])
   }
 }
 
+// ── 主生成入口 ────────────────────────────────────────────
 async function handleGenerate() {
   errorMsg.value = ''
-
-  const modelName = modelSource.value === 'api' ? apiModel.value : form.value.ckpt_name
+  const modelName = modelSource.value === 'api'
+    ? (apiModels.value.find(m => m.id === apiModel.value)?.name || apiModel.value)
+    : form.value.ckpt_name
   const inputPreviews = inputImages.value.map(img => img.preview)
 
-  // ── API 调用模式 ──
   if (modelSource.value === 'api') {
     if (!apiModel.value) { errorMsg.value = '请先在模型管理中添加 API 模型'; return }
-
-    // 图生图：提前校验图片
     if (isImg2Img.value && inputImages.value.length === 0) {
-      errorMsg.value = '请先上传或选择参考图片'
-      return
+      errorMsg.value = '请先上传或选择参考图片'; return
     }
-
     const record: GenerationRecord = {
-      id: generateUUID(),
-      createdAt: Date.now(),
-      prompt: form.value.positive_prompt,
-      inputPreviews,
-      modelName,
+      id: generateUUID(), createdAt: Date.now(),
+      prompt: form.value.positive_prompt, inputPreviews, modelName,
       modelId: Number(apiModel.value) || undefined,
-      mode: 'api',
-      status: 'generating',
-      progress: 0,
-      images: [],
+      mode: 'api', status: 'generating', progress: 0, images: [],
       isImg2Img: isImg2Img.value,
     }
     records.value.unshift(record)
     saveRecords()
-
     justSubmitted.value = true
     setTimeout(() => justSubmitted.value = false, 1000)
-
-    // 快照当前图片列表，fire-and-forget
     runApiGeneration(record.id, isImg2Img.value, [...inputImages.value])
     return
   }
 
-  // ── 本地 ComfyUI 模式 ──
+  // 本地 ComfyUI 模式
   if (!form.value.ckpt_name) { errorMsg.value = '请先选择模型'; return }
-
   const record: GenerationRecord = {
-    id: generateUUID(),
-    createdAt: Date.now(),
-    prompt: form.value.positive_prompt,
-    inputPreviews,
-    modelName,
-    mode: 'local',
-    status: 'generating',
-    progress: 0,
-    images: [],
+    id: generateUUID(), createdAt: Date.now(),
+    prompt: form.value.positive_prompt, inputPreviews, modelName,
+    mode: 'local', status: 'generating', progress: 0, images: [],
   }
   records.value.unshift(record)
   saveRecords()
@@ -718,22 +323,14 @@ async function handleGenerate() {
     if (isImg2Img.value) {
       const firstImg = inputImages.value[0]
       if (!firstImg) {
-        errorMsg.value = '请先上传或选择参考图片'
-        record.status = 'error'
-        record.errorMsg = '请先上传或选择参考图片'
-        saveRecords()
-        return
+        record.status = 'error'; record.errorMsg = '请先上传或选择参考图片'; saveRecords(); return
       }
       if (firstImg.file) {
         form.value.input_image = await uploadImage(firstImg.file)
       } else if (firstImg.assetLocation) {
         form.value.input_image = firstImg.assetLocation
       } else {
-        errorMsg.value = '请先上传或选择参考图片'
-        record.status = 'error'
-        record.errorMsg = '请先上传或选择参考图片'
-        saveRecords()
-        return
+        record.status = 'error'; record.errorMsg = '请先上传或选择参考图片'; saveRecords(); return
       }
     } else {
       form.value.input_image = undefined
@@ -742,39 +339,87 @@ async function handleGenerate() {
     startGeneration(res.prompt_id)
   } catch {
     errorMsg.value = '提交失败，请检查 ComfyUI 后端'
-    const rec = records.value.find(r => r.mode === 'local' && r.status === 'generating')
-    if (rec) { rec.status = 'error'; rec.errorMsg = '提交失败，请检查 ComfyUI 后端'; saveRecords() }
+    const rec = (records.value as GenerationRecord[]).find(r => r.mode === 'local' && r.status === 'generating')
+    if (rec) { rec.status = 'error'; rec.errorMsg = '提交失败'; saveRecords() }
     generating.value = false
   }
 }
 
-// 本地模式：WebSocket 进度更新到当前 record
+function downloadImage(url: string, filename?: string) {
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename || url.split('/').pop() || 'image.png'
+  a.click()
+}
+
+// ── 本地模式 WebSocket 进度 ───────────────────────────────
 watch(progress, (val) => {
-  const rec = records.value.find(r => r.mode === 'local' && r.status === 'generating')
+  const rec = (records.value as GenerationRecord[]).find(r => r.mode === 'local' && r.status === 'generating')
   if (rec) rec.progress = val
 })
 
-watch(imageUrl, async (url) => {
+watch(imageUrl, (url) => {
   if (!url) return
-  const rec = records.value.find(r => r.mode === 'local' && r.status === 'generating')
-  if (rec) {
-    rec.images = [url]
-    rec.status = 'done'
-    saveRecords()
-  }
+  const rec = (records.value as GenerationRecord[]).find(r => r.mode === 'local' && r.status === 'generating')
+  if (rec) { rec.images = [url]; rec.status = 'done'; saveRecords() }
 })
 
 watch(generating, (val) => {
   if (!val) {
-    const rec = records.value.find(r => r.mode === 'local' && r.status === 'generating')
-    if (rec && rec.images.length === 0) {
-      rec.status = 'error'
-      rec.errorMsg = '生成超时或失败'
-      saveRecords()
-    }
+    const rec = (records.value as GenerationRecord[]).find(r => r.mode === 'local' && r.status === 'generating')
+    if (rec && rec.images.length === 0) { rec.status = 'error'; rec.errorMsg = '生成超时或失败'; saveRecords() }
   }
 })
+
+watch(isImg2Img, (val) => { form.value.denoise = val ? 0.75 : 1 })
+
+// ── 初始化 ────────────────────────────────────────────────
+onMounted(async () => {
+  connect()
+
+  try {
+    const [modelList, ksInfo] = await Promise.all([getModels(), getKSamplerInfo()])
+    models.value = modelList
+    samplers.value = ksInfo.samplers
+    schedulers.value = ksInfo.schedulers
+    if (modelList.length > 0) form.value.ckpt_name = modelList[0]
+    else errorMsg.value = '未找到任何 checkpoint 模型'
+  } catch {
+    errorMsg.value = '无法连接 ComfyUI 后端（默认 127.0.0.1:8188）'
+  }
+
+  try {
+    apiModels.value = await getApiModels('image')
+    if (apiModels.value.length > 0) apiModel.value = apiModels.value[0].id
+  } catch {}
+
+  const userId = await loadFromDb((r) => ({
+    id: String(r.id),
+    dbId: r.id,
+    createdAt: 0,
+    prompt: r.prompt || '',
+    inputPreviews: [],
+    inputAssetUrls: r.input_asset_urls || [],
+    modelName: r.model_name || '',
+    mode: 'api' as const,
+    status: 'done' as const,
+    progress: 100,
+    images: r.output_urls.map((o: any) => o.url),
+    inputAssetIds: r.input_asset_ids,
+  }))
+
+  const pending = markStaleRecords('local')
+  for (const rec of pending) {
+    pollImage(rec as GenerationRecord, userId).catch(console.error)
+  }
+
+  ;(records.value as GenerationRecord[]).filter(r => r.mode === 'local' && r.status === 'generating').forEach(r => {
+    r.status = 'error'; r.errorMsg = '页面刷新，生成中断'
+  })
+  saveRecords()
+})
 </script>
+
 
 <template>
   <div class="page">
@@ -1078,7 +723,7 @@ watch(generating, (val) => {
                 <input v-model="searchQuery" class="search-input" placeholder="搜索提示词..." />
               </div>
 
-              <div v-for="rec in filteredRecords" :key="rec.id" class="record-row">
+              <div v-for="rec in filteredRecords" :key="rec.id" class="record-row" :class="{ 'editing': showRecordEditor && editingRecordId === rec.id }">
                 <!-- 左侧输入图 -->
                 <div class="record-input-col">
                   <template v-if="(rec.inputAssetUrls && rec.inputAssetUrls.length) || (rec.inputPreviews && rec.inputPreviews.length)">
@@ -1089,7 +734,7 @@ watch(generating, (val) => {
                     <template v-if="expandedInputs.has(rec.id)">
                       <template v-if="rec.inputAssetUrls && rec.inputAssetUrls.length">
                         <template v-for="(a, i) in rec.inputAssetUrls" :key="'a' + i">
-                          <video v-if="a.type === 'video'" :src="a.url" class="input-panel-thumb" />
+                          <video v-if="a.type === 'video'" :src="a.url" class="input-panel-thumb" controls />
                           <img v-else :src="a.url" class="input-panel-thumb" @click="previewImage(a.url)" />
                         </template>
                       </template>
@@ -1150,7 +795,7 @@ watch(generating, (val) => {
       :image-src="inputImages[editingIndex].preview"
       :visible="showEditor"
       @confirm="onEditorConfirm"
-      @cancel="onEditorCancel"
+      @cancel="showEditor = false"
     />
 
     <!-- 历史记录图片编辑器（已内联到侧边栏，此处无需渲染） -->
@@ -1158,198 +803,19 @@ watch(generating, (val) => {
 </template>
 
 <style scoped>
-/* ── Page shell ── */
-.page {
-  min-height: 100vh;
-  position: relative;
-  overflow: hidden;
-}
+@import '../styles/generation-page.css';
 
-.orb {
-  position: fixed;
-  border-radius: 50%;
-  filter: blur(90px);
-  pointer-events: none;
-  z-index: 0;
-  animation: breathe 6s ease-in-out infinite;
-}
-.orb-1 {
-  width: 500px; height: 500px;
-  background: radial-gradient(circle, rgba(108,99,255,0.16) 0%, transparent 70%);
-  top: -140px; left: 40px;
-}
-.orb-2 {
-  width: 400px; height: 400px;
-  background: radial-gradient(circle, rgba(167,139,250,0.12) 0%, transparent 70%);
-  bottom: -100px; right: 60px;
-  animation-delay: 3s;
-}
+/* ── 图片页专属样式 ── */
 
-/* ── Two-column layout ── */
-.layout {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  height: 100vh;
-  overflow: hidden;
-}
-
-/* ── Left panel ── */
-.left-panel {
-  width: 340px;
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  border-right: 1px solid rgba(255,255,255,0.06);
-  background: rgba(255,255,255,0.02);
-  backdrop-filter: blur(16px);
-  overflow-y: auto;
-}
-
-/* tab bar */
-.tab-bar {
-  display: flex;
-  border-bottom: 1px solid rgba(255,255,255,0.06);
-  flex-shrink: 0;
-  margin: 20px 20px 0;
-  border: 1px solid rgba(255,255,255,0.07);
-  border-radius: 12px;
-  overflow: hidden;
-  background: rgba(255,255,255,0.03);
-}
-
-.tab-btn {
-  flex: 1;
-  height: 40px;
-  background: none;
-  border: none;
-  color: rgba(255,255,255,0.35);
-  font-size: 13px;
-  letter-spacing: 1px;
-  cursor: pointer;
-  position: relative;
-  transition: color 0.2s, background 0.2s;
-  border-radius: 0;
-}
-.tab-btn.active {
-  color: rgba(255,255,255,0.9);
-  background: rgba(108,99,255,0.2);
-}
-
-/* panel body */
-.panel-body {
-  padding: 20px 20px 32px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.section-label {
-  font-size: 11px;
-  color: rgba(255,255,255,0.35);
-  letter-spacing: 1px;
-  margin-bottom: -4px;
-  display: flex; align-items: center; gap: 8px;
-}
 .local-tip {
   font-size: 10px;
   color: rgba(167,139,250,0.7);
   letter-spacing: 0;
 }
 
-/* prompt inputs */
-.prompt-wrap { position: relative; width: 100%; }
-.prompt-input { width: 100%; }
-.mention-dropdown {
-  position: absolute;
-  z-index: 100;
-  background: #1e1e2e;
-  border: 1px solid rgba(255,255,255,0.12);
-  border-radius: 8px;
-  padding: 4px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 140px;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
-}
-.mention-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 13px;
-  color: #e2e8f0;
-}
-.mention-item:hover, .mention-item.active { background: rgba(255,255,255,0.08); }
-.mention-thumb {
-  width: 32px;
-  height: 32px;
-  object-fit: cover;
-  border-radius: 4px;
-}
 .prompt-input.neg :deep(.el-textarea__inner) {
   background: rgba(248,113,113,0.04) !important;
   border-color: rgba(248,113,113,0.1) !important;
-}
-
-/* divider */
-.divider {
-  height: 1px;
-  background: rgba(255,255,255,0.06);
-  margin: 4px 0;
-}
-
-/* row items */
-.row-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.row-label {
-  font-size: 12px;
-  color: rgba(255,255,255,0.4);
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.row-select { flex: 1; }
-
-/* source toggle */
-.source-toggle {
-  display: flex;
-  background: rgba(255,255,255,0.04);
-  border: 1px solid rgba(255,255,255,0.08);
-  border-radius: 8px;
-  overflow: hidden;
-}
-.source-toggle button {
-  padding: 5px 14px;
-  background: none;
-  border: none;
-  color: rgba(255,255,255,0.35);
-  font-size: 12px;
-  cursor: pointer;
-  transition: background 0.2s, color 0.2s;
-}
-.source-toggle button.active {
-  background: rgba(108,99,255,0.25);
-  color: rgba(255,255,255,0.9);
-}
-
-/* api tip */
-.api-tip {
-  font-size: 12px;
-  color: rgba(167,139,250,0.5);
-  padding: 10px 14px;
-  border: 1px dashed rgba(108,99,255,0.2);
-  border-radius: 10px;
-  text-align: center;
-  letter-spacing: 1px;
 }
 
 .size-preview {
@@ -1382,46 +848,27 @@ watch(generating, (val) => {
 .ratio-current:hover { border-color: rgba(108,99,255,0.4); }
 .ratio-current.dimmed { opacity: 0.45; }
 
-.ratio-icon {
-  font-size: 13px;
-  line-height: 1;
-  flex-shrink: 0;
-}
-
-.ratio-label-text {
-  font-size: 12px;
-  color: rgba(255,255,255,0.8);
-  flex: 1;
-}
-
+.ratio-icon { font-size: 13px; line-height: 1; flex-shrink: 0; }
+.ratio-label-text { font-size: 12px; color: rgba(255,255,255,0.8); flex: 1; }
 .ratio-arrow {
-  font-size: 14px;
-  color: rgba(255,255,255,0.3);
-  transition: transform 0.2s;
-  display: inline-block;
+  font-size: 14px; color: rgba(255,255,255,0.3);
+  transition: transform 0.2s; display: inline-block;
 }
 .ratio-arrow.open { transform: rotate(90deg); }
 
 .ratio-dropdown {
   position: absolute;
-  top: calc(100% + 6px);
-  left: 0; right: 0;
+  top: calc(100% + 6px); left: 0; right: 0;
   background: rgba(14,14,26,0.97);
   border: 1px solid rgba(255,255,255,0.08);
-  border-radius: 10px;
-  overflow: hidden;
-  z-index: 50;
-  backdrop-filter: blur(16px);
+  border-radius: 10px; overflow: hidden;
+  z-index: 50; backdrop-filter: blur(16px);
 }
 
 .ratio-option {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
-  font-size: 12px;
-  color: rgba(255,255,255,0.6);
-  cursor: pointer;
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 12px; font-size: 12px;
+  color: rgba(255,255,255,0.6); cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
 .ratio-option:hover { background: rgba(108,99,255,0.15); color: rgba(255,255,255,0.9); }
@@ -1429,63 +876,37 @@ watch(generating, (val) => {
 
 /* advanced toggle */
 .advanced-toggle {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  background: none;
-  border: none;
-  color: rgba(255,255,255,0.35);
-  font-size: 12px;
-  cursor: pointer;
-  padding: 4px 0;
-  letter-spacing: 0.5px;
+  display: flex; align-items: center; gap: 6px;
+  background: none; border: none;
+  color: rgba(255,255,255,0.35); font-size: 12px;
+  cursor: pointer; padding: 4px 0; letter-spacing: 0.5px;
   transition: color 0.2s;
 }
 .advanced-toggle:hover { color: rgba(255,255,255,0.65); }
 
 .toggle-arrow {
-  margin-left: auto;
-  font-size: 16px;
-  transition: transform 0.3s ease;
-  display: inline-block;
+  margin-left: auto; font-size: 16px;
+  transition: transform 0.3s ease; display: inline-block;
 }
 .toggle-arrow.open { transform: rotate(90deg); }
 
-/* advanced panel */
 .advanced-panel {
-  max-height: 0;
-  overflow: hidden;
-  opacity: 0;
+  max-height: 0; overflow: hidden; opacity: 0;
   transition: max-height 0.4s ease, opacity 0.3s ease;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+  display: flex; flex-direction: column; gap: 12px;
 }
 .advanced-panel.visible { max-height: 900px; opacity: 1; }
 
-/* field */
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
+.field { display: flex; flex-direction: column; gap: 6px; }
 
-/* two-col */
-.two-col {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-}
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 
 /* stepper */
 .stepper {
-  display: flex;
-  align-items: center;
+  display: flex; align-items: center;
   background: rgba(255,255,255,0.04);
   border: 1px solid rgba(255,255,255,0.08);
-  border-radius: 8px;
-  overflow: hidden;
-  height: 34px;
+  border-radius: 8px; overflow: hidden; height: 34px;
   transition: border-color 0.2s;
 }
 .stepper:hover { border-color: rgba(108,99,255,0.35); }
@@ -1493,8 +914,7 @@ watch(generating, (val) => {
 .stepper-btn {
   width: 30px; height: 100%;
   background: none; border: none;
-  color: rgba(255,255,255,0.45);
-  font-size: 15px; cursor: pointer;
+  color: rgba(255,255,255,0.45); font-size: 15px; cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
 .stepper-btn:hover { background: rgba(108,99,255,0.2); color: #fff; }
@@ -1502,99 +922,35 @@ watch(generating, (val) => {
 .stepper-input {
   flex: 1; height: 100%;
   background: transparent; border: none; outline: none;
-  color: rgba(255,255,255,0.9);
-  font-size: 13px; text-align: center;
+  color: rgba(255,255,255,0.9); font-size: 13px; text-align: center;
   -moz-appearance: textfield;
 }
 .stepper-input::-webkit-outer-spin-button,
 .stepper-input::-webkit-inner-spin-button { -webkit-appearance: none; }
 
-/* seed */
 .seed-row { display: flex; gap: 8px; }
 .seed-input { flex: 1; }
 
 .icon-btn {
-  width: 34px; height: 34px;
-  border-radius: 8px;
+  width: 34px; height: 34px; border-radius: 8px;
   background: rgba(255,255,255,0.04);
   border: 1px solid rgba(255,255,255,0.08);
-  color: rgba(255,255,255,0.5);
-  cursor: pointer;
+  color: rgba(255,255,255,0.5); cursor: pointer;
   display: flex; align-items: center; justify-content: center;
-  transition: background 0.2s, color 0.2s;
-  flex-shrink: 0;
+  transition: background 0.2s, color 0.2s; flex-shrink: 0;
 }
 .icon-btn:hover { background: rgba(108,99,255,0.2); color: #fff; }
 
-/* upload actions */
-.upload-actions {
-  display: flex;
-  gap: 10px;
-}
+.full-width { width: 100%; }
 
-.asset-btn, .local-upload-btn {
-  flex: 1;
-  height: 80px;
-  border-radius: 10px;
-  border: 1px dashed rgba(255,255,255,0.1);
-  background: rgba(255,255,255,0.03);
-  color: rgba(255,255,255,0.5);
-  font-size: 12px;
-  cursor: pointer;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  transition: all 0.3s;
-}
-.asset-btn:hover, .local-upload-btn:hover {
-  border-color: rgba(108,99,255,0.45);
-  background: rgba(108,99,255,0.04);
-  color: rgba(255,255,255,0.8);
-}
-
-.preview-wrap {
-  position: relative; width: 100%;
-  border-radius: 10px; overflow: hidden;
-  border: 1px solid rgba(255,255,255,0.08);
-}
-.preview-img {
-  width: 100%; max-height: 160px;
-  object-fit: contain; display: block;
-  background: rgba(0,0,0,0.3);
-}
-.clear-btn {
-  position: absolute; top: 6px; right: 6px;
-  width: 24px; height: 24px; border-radius: 50%;
-  background: rgba(0,0,0,0.6); border: none;
-  color: white; cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 11px; transition: background 0.2s;
-}
-.clear-btn:hover { background: rgba(220,50,50,0.7); }
-
-.edit-btn {
-  position: absolute; top: 6px; right: 36px;
-  width: 24px; height: 24px; border-radius: 50%;
-  background: rgba(0,0,0,0.6); border: none;
-  color: white; cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  transition: background 0.2s;
-}
-.edit-btn:hover { background: rgba(108,99,255,0.8); }
-
-.multi-preview-wrap {
-  display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px;
-}
+/* 多图预览 */
+.multi-preview-wrap { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
 .preview-item {
   position: relative; width: calc(50% - 4px);
   border-radius: 10px; overflow: hidden;
   border: 1px solid rgba(255,255,255,0.08);
 }
-.preview-item .preview-img {
-  max-height: 120px;
-}
+.preview-item .preview-img { max-height: 120px; }
 .img-label {
   position: absolute; top: 6px; left: 6px;
   background: rgba(0,0,0,0.65); color: #a78bfa;
@@ -1602,409 +958,26 @@ watch(generating, (val) => {
   font-weight: 600; letter-spacing: 1px;
 }
 
-/* generate button */
-.generate-btn {
-  position: relative;
-  width: 100%; height: 46px;
-  margin-top: 8px;
-  border-radius: 12px; border: none;
-  cursor: pointer; overflow: hidden;
-  background: linear-gradient(135deg, #6c63ff, #a78bfa, #6c63ff);
-  background-size: 200% auto;
-  color: #fff; font-size: 14px;
-  font-weight: 600; letter-spacing: 2px;
-  transition: opacity 0.2s, transform 0.15s;
-  animation: shimmer 3s linear infinite;
-}
-.generate-btn:hover:not(:disabled) { transform: translateY(-1px); opacity: 0.9; }
-.generate-btn:active:not(:disabled) { transform: translateY(0); }
-.generate-btn:disabled { opacity: 0.45; cursor: not-allowed; animation: none; }
-.generate-btn.loading { animation: breathe 2s ease-in-out infinite; }
-.generate-btn.submitted {
-  background: linear-gradient(135deg, #22c55e, #4ade80, #22c55e);
-  background-size: 200% auto;
-  animation: shimmer 1s linear infinite;
-}
-
-.btn-glow {
-  position: absolute; inset: 0;
-  border-radius: inherit; background: inherit;
-  filter: blur(12px); opacity: 0;
-  transition: opacity 0.3s; z-index: -1;
-}
-.generate-btn:not(:disabled):hover .btn-glow { opacity: 0.5; }
-.btn-label { position: relative; z-index: 1; }
-
-.error-msg {
-  color: #f87171; font-size: 12px;
-  padding: 8px 12px;
-  background: rgba(248,113,113,0.07);
-  border-radius: 8px;
-  border: 1px solid rgba(248,113,113,0.18);
-}
-
-.full-width { width: 100%; }
-
-/* ── Right panel ── */
-.right-panel {
-  flex: 1;
-  display: flex;
-  flex-direction: row;
-  overflow: hidden;
-  padding: 0;
-}
-
-.history-col {
-  flex: 1;
-  min-width: 0;
-  overflow-y: auto;
-  padding: 24px 20px 24px 20px;
-  display: flex;
-  flex-direction: column;
-}
-
-/* 编辑模式布局 */
-.editor-area {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.edit-sidebar {
-  width: 280px;
-  flex-shrink: 0;
-  border-left: 1px solid rgba(255,255,255,0.06);
-  background: transparent;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 20px 16px;
-  overflow-y: auto;
-  animation: slideInRight 0.2s ease;
-}
-
-@keyframes slideInRight {
-  from { transform: translateX(20px); opacity: 0; }
-  to { transform: translateX(0); opacity: 1; }
-}
-
-.record-edit-label {
-  font-size: 11px;
-  color: rgba(255,255,255,0.35);
-  letter-spacing: 1px;
-}
-
-.record-edit-textarea {
-  flex: none;
-  background: rgba(255,255,255,0.04);
-  border: 1px solid rgba(255,255,255,0.1);
-  border-radius: 10px;
-  color: rgba(255,255,255,0.85);
-  font-size: 13px;
-  line-height: 1.6;
-  padding: 10px 12px;
-  resize: none;
-  outline: none;
-  transition: border-color 0.2s;
-  font-family: inherit;
-}
-.record-edit-textarea:focus {
-  border-color: rgba(108,99,255,0.5);
-}
-
-.record-edit-generate-btn {
-  margin-top: auto;
-  flex-shrink: 0;
-}
-
-/* message stream */
-.stream {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-.stream-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 4px 12px;
-  border-bottom: 1px solid rgba(255,255,255,0.06);
-}
-
-.stream-title {
-  font-size: 13px;
-  color: rgba(255,255,255,0.5);
-  letter-spacing: 0.5px;
-}
-
-.search-input {
-  flex: 1;
-  max-width: 200px;
-  padding: 5px 10px;
-  background: rgba(255,255,255,0.05);
-  border: 1px solid rgba(255,255,255,0.1);
-  border-radius: 6px;
-  color: rgba(255,255,255,0.8);
-  font-size: 12px;
-  outline: none;
-  transition: border-color 0.2s;
-}
-.search-input::placeholder { color: rgba(255,255,255,0.25); }
-.search-input:focus { border-color: rgba(108,99,255,0.5); }
-
-.card-previews {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.card-preview-img {
-  width: 56px;
-  height: 56px;
-  object-fit: cover;
-  border-radius: 8px;
-  border: 1px solid rgba(255,255,255,0.08);
-}
-
-.card-model-name {
-  font-size: 11px;
-  color: rgba(108,99,255,0.8);
-  margin-top: 4px;
-}
-
-.card-prompt {
-  font-size: 13px;
-  color: rgba(255,255,255,0.7);
-  line-height: 1.6;
-  margin: 0;
-  word-break: break-all;
-}
-
-/* generating state */
-.progress-wrap {
-  flex: 1;
-  position: relative;
-  height: 4px;
-  background: rgba(255,255,255,0.08);
-  border-radius: 4px;
-  overflow: visible;
-}
-.progress-bar {
-  height: 100%;
-  background: linear-gradient(90deg, #6c63ff, #a78bfa);
-  border-radius: 4px;
-  transition: width 0.3s ease;
-}
-.progress-text {
-  position: absolute;
-  right: 0;
-  top: -18px;
-  font-size: 11px;
-  color: rgba(255,255,255,0.4);
-}
-
-/* done: image grid */
-.card-images {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-}
-
+/* 图片结果 */
+.card-images { display: flex; flex-wrap: wrap; gap: 12px; }
 .card-image-wrap {
   position: relative;
-  max-width: calc(50% - 6px);
-  flex-shrink: 0;
+  max-width: calc(50% - 6px); flex-shrink: 0;
 }
-.card-images:has(.card-image-wrap:only-child) .card-image-wrap {
-  max-width: 480px;
-}
-
+.card-images:has(.card-image-wrap:only-child) .card-image-wrap { max-width: 480px; }
 .card-image {
-  width: 100%;
-  max-height: 400px;
-  border-radius: 12px;
-  box-shadow: 0 4px 24px rgba(0,0,0,0.4);
-  display: block;
-  object-fit: contain;
-  cursor: pointer;
+  width: 100%; max-height: 400px;
+  border-radius: 12px; box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+  display: block; object-fit: contain; cursor: pointer;
 }
+.card-image-wrap:hover .download-btn { opacity: 1; }
 
-.download-btn {
-  position: absolute;
-  bottom: 12px;
-  right: 12px;
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background: rgba(0,0,0,0.7);
-  border: 1px solid rgba(255,255,255,0.2);
-  color: white;
-  font-size: 18px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0;
-  transition: all 0.2s;
-}
-.card-image-wrap:hover .download-btn {
-  opacity: 1;
-}
-.download-btn:hover {
-  background: rgba(108,99,255,0.9);
-  transform: scale(1.1);
-}
-
-/* error */
-/* empty */
-.empty-wrap {
-  display: flex; flex-direction: column;
-  align-items: center; gap: 14px;
-  margin: auto;
-}
-.empty-orb {
-  width: 60px; height: 60px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(108,99,255,0.15) 0%, transparent 70%);
-  border: 1px solid rgba(108,99,255,0.15);
-  animation: breathe 4s ease-in-out infinite;
-}
-.empty-text {
-  font-size: 12px;
-  color: rgba(255,255,255,0.2);
-  letter-spacing: 2px;
-}
-
-/* 历史记录左侧输入图 */
-.hist-input-col {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: 8px;
-  width: 100%;
-  align-content: start;
-}
-.hist-input-thumb {
-  width: 100%;
-  aspect-ratio: 1;
-  object-fit: cover;
-  border-radius: 8px;
-  border: 1px solid rgba(255,255,255,0.08);
-  cursor: zoom-in;
-  transition: transform 0.15s, border-color 0.15s;
-  display: block;
-}
-.hist-input-thumb:hover {
-  transform: scale(1.04);
-  border-color: rgba(108,99,255,0.4);
-}
-
-/* ── 每条记录行 ── */
-.record-row {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-.record-input-col {
-  width: 240px;
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 4px 0;
-}
-.input-toggle-btn {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  padding: 6px 12px;
-  border-radius: 8px;
-  background: rgba(255,255,255,0.04);
-  border: 1px solid rgba(255,255,255,0.1);
-  color: rgba(255,255,255,0.5);
-  font-size: 12px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-.input-toggle-btn:hover {
-  background: rgba(108,99,255,0.1);
-  border-color: rgba(108,99,255,0.3);
-  color: rgba(255,255,255,0.8);
-}
-.input-toggle-arrow {
-  display: inline-block;
-  transition: transform 0.2s;
-  font-size: 14px;
-}
-.input-toggle-arrow.open {
-  transform: rotate(90deg);
-}
-.record-card-flex {
-  flex: 1;
-  min-width: 0;
-}
-.input-panel-thumb {
-  width: 100%;
-  aspect-ratio: 16 / 9;
-  object-fit: cover;
-  object-position: center;
-  border-radius: 10px;
-  border: 1px solid rgba(255,255,255,0.08);
-  display: block;
-  transition: transform 0.15s, border-color 0.15s;
-}
-img.input-panel-thumb {
-  cursor: zoom-in;
-}
-.input-panel-thumb:hover {
-  transform: scale(1.03);
-  border-color: rgba(108,99,255,0.4);
-}
-
-/* 历史记录编辑面板（内联） */
-.record-edit-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-shrink: 0;
-}
-.record-edit-title {
-  font-size: 14px;
-  color: rgba(255,255,255,0.85);
-  font-weight: 500;
-}
-.record-edit-close {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: none;
-  border: 1px solid rgba(255,255,255,0.1);
-  color: rgba(255,255,255,0.4);
-  font-size: 18px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s;
-}
-.record-edit-close:hover {
-  background: rgba(248,113,113,0.15);
-  border-color: rgba(248,113,113,0.3);
-  color: #f87171;
-}
-
+/* 进度 */
+.loading-text { font-size: 12px; color: rgba(255,255,255,0.35); }
 
 .record-row.editing {
   outline: 1px solid rgba(108,99,255,0.3);
   border-radius: 16px;
 }
-
-@media (max-width: 900px) {
-  .layout { flex-direction: column; height: auto; }
-  .left-panel { width: 100%; border-right: none; border-bottom: 1px solid rgba(255,255,255,0.06); }
-  .edit-sidebar { width: 100%; border-left: none; border-top: 1px solid rgba(108,99,255,0.2); }
-}
 </style>
+
