@@ -8,7 +8,6 @@ interface RecordWithImages {
   prompt: string
   images?: string[]
   videoUrl?: string
-  inputAssetUrls?: Array<{ url: string; type: string }>
 }
 
 /**
@@ -23,25 +22,21 @@ export function useRecordEditor(
   const editingRecordId = ref('')              // 当前编辑的记录 id
   const recordEditorPrompt = ref('')           // 弹窗中的提示词
   const recordEditorImages = ref<string[]>([]) // 弹窗中展示的输出图片列表
-  const recordEditorInputUrls = ref<Array<{ url: string; type: string }>>([]) // 输入素材列表
   const recordEditorEditedFile = ref<File | null>(null)   // 用户在编辑器中修改后的图片文件
   const recordEditorEditedPreview = ref('')               // 编辑后图片的预览 URL
   const recordEditorEditingSrc = ref('')                  // 当前在图片编辑器中打开的图片 URL
   const showRecordImageEditor = ref(false)                // 是否显示图片编辑器
 
-  // 打开编辑弹窗，预填充记录内容；优先用输入图作为编辑器初始图
+  // 打开编辑弹窗，预填充记录内容；用输出图作为编辑器初始图
   function openEditor(rec: RecordWithImages) {
     editingRecordId.value = rec.id
     recordEditorPrompt.value = rec.prompt
     recordEditorImages.value = rec.images || []
-    recordEditorInputUrls.value = rec.inputAssetUrls || []
     recordEditorEditedFile.value = null
     recordEditorEditedPreview.value = ''
     showRecordEditor.value = true
 
-    // 优先用输入图，其次用输出图作为编辑器初始图
-    const firstInputImg = (rec.inputAssetUrls || []).find(a => a.type !== 'video')
-    const firstSrc = firstInputImg?.url || rec.images?.[0] || ''
+    const firstSrc = rec.images?.[0] || ''
     if (firstSrc) {
       recordEditorEditingSrc.value = firstSrc
       showRecordImageEditor.value = true
@@ -85,7 +80,6 @@ export function useRecordEditor(
     editingRecordId,
     recordEditorPrompt,
     recordEditorImages,
-    recordEditorInputUrls,
     recordEditorEditedFile,
     recordEditorEditedPreview,
     recordEditorEditingSrc,

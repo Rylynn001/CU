@@ -140,7 +140,7 @@ function onEditorConfirmUnified(file: File) {
 // ── 历史记录编辑面板 ──────────────────────────────────────
 const inlineEditorRef = ref<InstanceType<typeof ImageEditor> | null>(null)
 const {
-  showRecordEditor, recordEditorPrompt, recordEditorInputUrls,
+  showRecordEditor, recordEditorPrompt,
   recordEditorEditedPreview, recordEditorEditingSrc, showRecordImageEditor,
   openEditor: openRecordEditor, onImageEditorConfirm: onRecordImageEditorConfirm,
   onImageEditorCancel: onRecordImageEditorCancel, closeEditor: closeRecordEditor, getEditedFile,
@@ -178,9 +178,8 @@ async function generateFromEdit() {
       const { uploadInputImage } = await import('../api/apiService')
       const uploaded = await uploadInputImage(editedFile, userId ?? 1)
       inputAssetIds = [uploaded.id]
-    } else if (recordEditorInputUrls.value.length > 0) {
-      const origRec = (records.value as VideoRecord[]).find(r => r.id === newRecord.id)
-      inputAssetIds = origRec?.inputAssetIds || []
+    } else if (editedFile) {
+      inputAssetIds = []
     }
 
     newRecord.inputAssetIds = inputAssetIds
@@ -567,9 +566,8 @@ onMounted(async () => {
           </div>
         </template>
 
-        <!-- 正常模式：历史记录 -->
-        <template v-else>
-          <div class="history-col">
+        <!-- 正常模式：历史记录（始终保留 DOM 防止滚动重置） -->
+        <div class="history-col" v-show="!showRecordEditor">
             <div v-if="filteredRecords.length === 0 && records.length === 0" class="empty-wrap">
               <div class="empty-orb" />
               <p class="empty-text">等待生成</p>
@@ -623,7 +621,6 @@ onMounted(async () => {
               </div>
             </div>
           </div>
-        </template>
       </main>
     </div>
 

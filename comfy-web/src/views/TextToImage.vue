@@ -709,9 +709,8 @@ onMounted(async () => {
           </div>
         </template>
 
-        <!-- 正常模式：历史记录 -->
-        <template v-else>
-          <div class="history-col">
+        <!-- 历史记录（始终保留 DOM 防止滚动重置） -->
+        <div class="history-col" v-show="!showRecordEditor">
             <div v-if="filteredRecords.length === 0 && records.length === 0" class="empty-wrap">
               <div class="empty-orb" />
               <p class="empty-text">等待生成</p>
@@ -770,7 +769,6 @@ onMounted(async () => {
               </div>
             </div>
           </div>
-        </template>
       </main>
     </div>
 
