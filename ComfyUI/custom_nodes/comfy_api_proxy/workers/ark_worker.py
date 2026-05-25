@@ -42,23 +42,28 @@ def process_txt2video(task: dict) -> None:
         task_queue.set_meta(task_id, 'prompt', task.get('prompt', ''))
         task_queue.set_meta(task_id, 'model_id', str(task.get('model_id', '')))
         task_queue.set_meta(task_id, 'type', 'txt2video')
+        task_queue.set_meta(task_id, 'history_id', str(task.get('history_id', '')))
         task_queue.set_status(task_id, 'processing')
         logger.info(f'[{task_id}] Ark 文生视频已提交，等待轮询')
 
     except Exception as e:
         logger.error(f'[{task_id}] 提交 Ark 文生视频失败: {e}')
-        history_repo.save_history(
-            task_id=task_id,
-            prompt=task.get('prompt', ''),
-            user_id=int(task['user_id']) if task.get('user_id') else 0,
-            model_id=int(task['model_id']) if task.get('model_id') else None,
-            input_asset_ids=[],
-            output_asset_ids=[],
-            status='error',
-            type_='txt2video',
-            mode='api',
-            message=str(e),
-        )
+        history_id = task.get('history_id')
+        if history_id:
+            history_repo.update_history(history_id=history_id, output_asset_ids=[], status='error', message=str(e))
+        else:
+            history_repo.save_history(
+                task_id=task_id,
+                prompt=task.get('prompt', ''),
+                user_id=int(task['user_id']) if task.get('user_id') else 0,
+                model_id=int(task['model_id']) if task.get('model_id') else None,
+                input_asset_ids=[],
+                output_asset_ids=[],
+                status='error',
+                type_='txt2video',
+                mode='api',
+                message=str(e),
+            )
         task_queue.set_status(task_id, 'failed')
         task_queue.set_result(task_id, {'error': {'error_message': str(e)}})
 
@@ -133,22 +138,28 @@ def process_img2video(task: dict) -> None:
         task_queue.set_meta(task_id, 'model_id', str(task.get('model_id', '')))
         task_queue.set_meta(task_id, 'input_asset_ids', json.dumps(task.get('input_asset_ids', [])))
         task_queue.set_meta(task_id, 'type', 'img2video')
+        task_queue.set_meta(task_id, 'history_id', str(task.get('history_id', '')))
         task_queue.set_status(task_id, 'processing')
+        logger.info(f'[{task_id}] Ark 图生视频已提交，等待轮询')
         logger.info(f'[{task_id}] Ark 图生视频已提交，等待轮询')
 
     except Exception as e:
         logger.error(f'[{task_id}] 提交 Ark 图生视频失败: {e}')
-        history_repo.save_history(
-            task_id=task_id,
-            prompt=task.get('prompt', ''),
-            user_id=int(task['user_id']) if task.get('user_id') else 0,
-            model_id=int(task['model_id']) if task.get('model_id') else None,
-            input_asset_ids=task.get('input_asset_ids', []),
-            output_asset_ids=[],
-            status='error',
-            type_='img2video',
-            mode='api',
-            message=str(e),
-        )
+        history_id = task.get('history_id')
+        if history_id:
+            history_repo.update_history(history_id=history_id, output_asset_ids=[], status='error', message=str(e))
+        else:
+            history_repo.save_history(
+                task_id=task_id,
+                prompt=task.get('prompt', ''),
+                user_id=int(task['user_id']) if task.get('user_id') else 0,
+                model_id=int(task['model_id']) if task.get('model_id') else None,
+                input_asset_ids=task.get('input_asset_ids', []),
+                output_asset_ids=[],
+                status='error',
+                type_='img2video',
+                mode='api',
+                message=str(e),
+            )
         task_queue.set_status(task_id, 'failed')
         task_queue.set_result(task_id, {'error': {'error_message': str(e)}})

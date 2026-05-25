@@ -98,17 +98,25 @@ def process(task: dict) -> None:
                     logger.error(f'[{task_id}] 数据库写入失败: {e}')
 
         type_ = 'img2img' if task.get('input_asset_ids') else 'txt2img'
-        history_id = history_repo.save_history(
-            task_id=task_id,
-            prompt=task.get('prompt', ''),
-            user_id=int(user_id) if user_id else 0,
-            model_id=int(task['model_id']) if task.get('model_id') else None,
-            input_asset_ids=task.get('input_asset_ids', []),
-            output_asset_ids=output_asset_ids,
-            status='done',
-            type_=type_,
-            mode='api',
-        )
+        history_id = task.get('history_id')
+        if history_id:
+            history_repo.update_history(
+                history_id=history_id,
+                output_asset_ids=output_asset_ids,
+                status='done',
+            )
+        else:
+            history_id = history_repo.save_history(
+                task_id=task_id,
+                prompt=task.get('prompt', ''),
+                user_id=int(user_id) if user_id else 0,
+                model_id=int(task['model_id']) if task.get('model_id') else None,
+                input_asset_ids=task.get('input_asset_ids', []),
+                output_asset_ids=output_asset_ids,
+                status='done',
+                type_=type_,
+                mode='api',
+            )
 
         task_queue.set_status(task_id, 'completed')
         task_queue.set_result(task_id, {'result': images, 'history_id': history_id})
@@ -117,17 +125,21 @@ def process(task: dict) -> None:
     except Exception as e:
         logger.error(f'[{task_id}] 任务失败: {e}')
         type_ = 'img2img' if task.get('input_asset_ids') else 'txt2img'
-        history_repo.save_history(
-            task_id=task_id,
-            prompt=task.get('prompt', ''),
-            user_id=int(task['user_id']) if task.get('user_id') else 0,
-            model_id=int(task['model_id']) if task.get('model_id') else None,
-            input_asset_ids=task.get('input_asset_ids', []),
-            output_asset_ids=[],
-            status='error',
-            type_=type_,
-            mode='api',
-            message=str(e),
-        )
+        history_id = task.get('history_id')
+        if history_id:
+            history_repo.update_history(history_id=history_id, output_asset_ids=[], status='error', message=str(e))
+        else:
+            history_repo.save_history(
+                task_id=task_id,
+                prompt=task.get('prompt', ''),
+                user_id=int(task['user_id']) if task.get('user_id') else 0,
+                model_id=int(task['model_id']) if task.get('model_id') else None,
+                input_asset_ids=task.get('input_asset_ids', []),
+                output_asset_ids=[],
+                status='error',
+                type_=type_,
+                mode='api',
+                message=str(e),
+            )
         task_queue.set_status(task_id, 'failed')
         task_queue.set_result(task_id, {'error': {'error_message': str(e)}})

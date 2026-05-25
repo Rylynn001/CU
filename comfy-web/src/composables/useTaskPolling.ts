@@ -11,6 +11,7 @@ interface BaseRecord {
 export type PollResultHandler<T extends BaseRecord> = (rec: T, result: {
   images: Array<{ url?: string }>
   historyId?: number
+  inputAssetUrls?: Array<{ url: string; type: string }>
 }) => void
 
 /**
@@ -55,6 +56,7 @@ export function useTaskPolling<T extends BaseRecord>(
             onDone(rec, {
               images: checkData.result,
               historyId: checkData.history_id,
+              inputAssetUrls: checkData.input_asset_urls,
             })
             rec.status = 'done'
             if (checkData.history_id) rec.dbId = checkData.history_id
@@ -79,6 +81,7 @@ export function useTaskPolling<T extends BaseRecord>(
         onDone(rec, {
           images: result.images,
           historyId: (result as any).historyId,
+          inputAssetUrls: (result as any).inputAssetUrls,
         })
         rec.status = 'done'
         if ((result as any).historyId) rec.dbId = (result as any).historyId

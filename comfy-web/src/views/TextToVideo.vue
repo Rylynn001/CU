@@ -39,7 +39,12 @@ interface VideoRecord {
 const {
   records, saveRecords, searchQuery, expandedInputs, filteredRecords,
   toggleInputExpand, deleteRecord, clearAll, loadFromDb, markStaleRecords,
-} = useGenerationHistory<VideoRecord>('video_generation_history', 'video')
+} = useGenerationHistory<VideoRecord>('video_generation_history', 'video',
+  (r) => ({
+    // blob URL 刷新后失效，保存时过滤掉，完成后从 DB 重新加载
+    inputAssetUrls: r.inputAssetUrls?.filter(a => !a.url.startsWith('blob:')),
+  }),
+)
 
 // ── 任务轮询 ──────────────────────────────────────────────
 const { resumeTaskPolling } = useTaskPolling<VideoRecord>(
@@ -51,6 +56,9 @@ function pollVideo(record: VideoRecord, userId?: number) {
   return resumeTaskPolling(record, userId, (rec, result) => {
     const videoItem = result.images.find((i: any) => i.url)
     rec.videoUrl = videoItem?.url || ''
+    if ((result as any).inputAssetUrls?.length) {
+      rec.inputAssetUrls = (result as any).inputAssetUrls
+    }
   }, 'video')
 }
 
@@ -287,7 +295,7 @@ async function handleGenerate() {
           ratio: ratio.value, resolution: resolution.value, duration: duration.value,
           userId: userId ?? undefined,
           inputFiles: inputFiles.value,
-          inputAssetIds: selectedAssetIds.value,
+          inputAssetPreviews: selectedAssetPreviews.value,
         })
         record.taskId = result.taskId
         if (result.inputAssetIds) record.inputAssetIds = result.inputAssetIds
@@ -338,11 +346,13 @@ onMounted(async () => {
     id: String(r.id), dbId: r.id, createdAt: 0,
     prompt: r.prompt || '', modelName: r.model_name || '',
     ratio: '', resolution: '', duration: 0,
-    status: 'done' as const, mode: 'txt2video' as const,
+    status: (r.status === 'error' ? 'error' : 'done') as 'done' | 'error',
+    mode: (r.type === 'img2video' ? 'img2video' : 'txt2video') as 'txt2video' | 'img2video',
     videoUrl: r.output_urls.find((o: any) => o.type === 'video')?.url || r.output_urls[0]?.url,
     inputAssetIds: r.input_asset_ids,
     inputAssetUrls: r.input_asset_urls || [],
-  }))
+    errorMsg: r.status === 'error' ? (r.message || '生成失败') : undefined,
+  }), (r) => r.status !== 'pending' && r.status !== 'processing')
 
   const pending = markStaleRecords()
   for (const rec of pending) {

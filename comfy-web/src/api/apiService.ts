@@ -313,15 +313,15 @@ class TaskFailedError extends Error {
 /**
  * 轮询任务状态，使用阶梯式间隔策略：
  * - 前 20 次：每 10 秒查询一次
- * - 20 次后：每 30 秒查询一次
- * 最长轮询约 30 分钟（100 次）
+ * - 20 次后：每 60 秒查询一次
+ * 最长轮询约 100 分钟（120 次）
  */
 async function pollTaskStatus(taskId: string, expectedType: 'image' | 'video', userId?: number): Promise<ApiGenerateResult> {
-  const maxAttempts = 100
+  const maxAttempts = 120
 
   const getInterval = (attempt: number): number => {
     if (attempt < 20) return 10000  // 前 20 次 10 秒
-    return 30000                    // 之后 30 秒
+    return 60000                    // 之后 60 秒
   }
 
   for (let i = 0; i < maxAttempts; i++) {
@@ -347,7 +347,7 @@ async function pollTaskStatus(taskId: string, expectedType: 'image' | 'video', u
           throw new TaskFailedError(`No ${expectedType} generated`)
         }
 
-        return { images }
+        return { images, inputAssetUrls: (data as any).input_asset_urls, historyId: (data as any).history_id }
       } else if (data.status === 'failed') {
         // 任务失败，立即抛出，不重试
         const errorMsg = data.error?.error_message || 'Generation failed'
@@ -376,5 +376,5 @@ async function pollTaskStatus(taskId: string, expectedType: 'image' | 'video', u
     }
   }
 
-  throw new Error('Task timeout after 30 minutes')
+  throw new Error('Task timeout after 100 minutes')
 }

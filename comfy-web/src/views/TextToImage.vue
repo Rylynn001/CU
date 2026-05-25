@@ -402,11 +402,12 @@ onMounted(async () => {
     inputAssetUrls: r.input_asset_urls || [],
     modelName: r.model_name || '',
     mode: 'api' as const,
-    status: 'done' as const,
+    status: (r.status === 'error' ? 'error' : 'done') as 'done' | 'error',
     progress: 100,
     images: r.output_urls.map((o: any) => o.url),
     inputAssetIds: r.input_asset_ids,
-  }))
+    errorMsg: r.status === 'error' ? (r.message || '生成失败') : undefined,
+  }), (r) => r.status !== 'pending' && r.status !== 'processing')
 
   const pending = markStaleRecords('local')
   for (const rec of pending) {

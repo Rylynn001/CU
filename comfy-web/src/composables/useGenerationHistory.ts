@@ -76,14 +76,16 @@ export function useGenerationHistory<T extends BaseGenerationRecord>(
    */
   async function loadFromDb(
     mapDbRecord: (r: HistoryRecord) => T,
+    filter?: (r: HistoryRecord) => boolean,
   ): Promise<number | undefined> {
     const userId = getCurrentUserId()
     if (!userId) return undefined
 
     const dbRecords = await historyDb.load(userId, historyType)
+    const filtered = filter ? dbRecords.filter(filter) : dbRecords
     // 保留本地还在生成中的任务（刷新后需要恢复轮询）
     const localPending = (records.value as T[]).filter(r => r.status === 'generating')
-    const fromDb = dbRecords.map(mapDbRecord)
+    const fromDb = filtered.map(mapDbRecord)
     records.value = [...localPending, ...fromDb] as any
     saveRecords()
     return userId

@@ -36,30 +36,23 @@ def _load_input_assets_as_b64(input_asset_ids: list[int]) -> list[str]:
     return result
 
 
-def _save_history_from_redis(task_id: str, output_asset_ids: list, status: str, message: str | None = None) -> int | None:
-    """从 Redis 读取任务元数据，写入 history 表"""
+def _update_history_from_redis(task_id: str, output_asset_ids: list, status: str, message: str | None = None) -> int | None:
+    """从 Redis 读取 history_id，更新已有历史记录"""
     try:
-        user_id = task_queue.get_meta(task_id, 'user_id')
-        prompt = task_queue.get_meta(task_id, 'prompt') or ''
-        model_id = task_queue.get_meta(task_id, 'model_id')
-        type_ = task_queue.get_meta(task_id, 'type') or 'txt2video'
-        input_ids_raw = task_queue.get_meta(task_id, 'input_asset_ids')
-        input_asset_ids = json.loads(input_ids_raw) if input_ids_raw else []
-
-        return history_repo.save_history(
-            task_id=task_id,
-            prompt=prompt,
-            user_id=int(user_id) if user_id else 0,
-            model_id=int(model_id) if model_id else None,
-            input_asset_ids=input_asset_ids,
+        history_id_raw = task_queue.get_meta(task_id, 'history_id')
+        if not history_id_raw:
+            logger.warning(f'[history] 任务 {task_id} 无 history_id，跳过更新')
+            return None
+        history_id = int(history_id_raw)
+        history_repo.update_history(
+            history_id=history_id,
             output_asset_ids=output_asset_ids,
             status=status,
-            type_=type_,
-            mode='api',
             message=message,
         )
+        return history_id
     except Exception as e:
-        logger.error(f'[history] 任务 {task_id} 保存历史记录失败: {e}')
+        logger.error(f'[history] 任务 {task_id} 更新历史记录失败: {e}')
         return None
 
 
@@ -107,13 +100,32 @@ async def _poll_ark_task(task_id: str, remote_id: str, api_key: str, base_url: s
             task_queue.set_downloading_lock(task_id)
             try:
                 local_url, output_asset_id = await _download_video(task_id, video_url, stored_user_id)
-                history_id = _save_history_from_redis(
+                history_id = _update_history_from_redis(
                     task_id, [output_asset_id] if output_asset_id else [], status='done'
                 )
+
+                # 查询参考图 URL，随结果一起返回给前端
+                input_asset_urls = []
+                try:
+                    input_ids_raw = task_queue.get_meta(task_id, 'input_asset_ids')
+                    input_ids = json.loads(input_ids_raw) if input_ids_raw else []
+                    if input_ids:
+                        in_assets = asset_repo.get_input_assets_by_ids(input_ids)
+                        asset_map = {a['id']: a for a in in_assets}
+                        for aid in input_ids:
+                            if aid in asset_map:
+                                filename = pathlib.Path(asset_map[aid]['location']).name
+                                ext = pathlib.Path(filename).suffix.lower()
+                                asset_type = 'video' if ext in ('.mp4', '.mov', '.avi', '.webm') else 'image'
+                                input_asset_urls.append({'url': f'/api/api-proxy/input/{filename}', 'type': asset_type})
+                except Exception as e:
+                    logger.warning(f'[{task_id}] 查询参考图失败: {e}')
+
                 task_queue.set_status(task_id, 'completed')
                 task_queue.set_result(task_id, {
                     'result': [{'url': local_url, 'type': 'video'}],
                     'history_id': history_id,
+                    'input_asset_urls': input_asset_urls,
                 })
                 task_queue.delete_meta(task_id, 'remote_id', 'api_key', 'base_url', 'provider', 'user_id')
                 task_queue.release_downloading_lock(task_id)
@@ -127,10 +139,10 @@ async def _poll_ark_task(task_id: str, remote_id: str, api_key: str, base_url: s
                 raise download_error
 
         elif remote_status == "failed":
-            error_msg = "Video generation failed"
-            if hasattr(result, 'error') and hasattr(result.error, 'message'):
-                error_msg = result.error.message
-            _save_history_from_redis(task_id, [], status='error', message=error_msg)
+            error_info = result.get("error") if isinstance(result, dict) else None
+            error_msg = (error_info.get("message") if isinstance(error_info, dict) else None) or "Video generation failed"
+            logger.error(f'[{task_id}] Ark 任务失败: {error_msg}，完整响应: {result}')
+            _update_history_from_redis(task_id, [], status='error', message=error_msg)
             task_queue.set_status(task_id, 'failed')
             task_queue.set_result(task_id, {'error': {'error_message': error_msg}})
             return web.json_response({'status': 'failed', 'error': {'error_message': error_msg}})
@@ -182,6 +194,19 @@ async def txt2img(request: web.Request):
         raise web.HTTPServiceUnavailable(reason=f'系统繁忙，请稍后再试')
 
     task_id = str(uuid.uuid4())
+    type_ = 'img2img' if input_asset_ids else 'txt2img'
+    history_id = history_repo.save_history(
+        task_id=task_id,
+        prompt=prompt,
+        user_id=int(user_id) if user_id else 0,
+        model_id=int(model_id) if model_id else None,
+        input_asset_ids=input_asset_ids,
+        output_asset_ids=[],
+        status='pending',
+        type_=type_,
+        mode='api',
+    )
+
     task_payload = {
         'task_id': task_id,
         'provider': provider,
@@ -196,12 +221,13 @@ async def txt2img(request: web.Request):
         'base_url': base_url,
         'image_b64_list': image_b64_list,
         'input_asset_ids': input_asset_ids,
+        'history_id': history_id,
     }
 
     task_queue.enqueue('queue:txt2img', task_payload)
     task_queue.mark_pending(task_id)
     logger.info(f'[api-proxy] txt2img 任务已入队: {task_id}')
-    return web.json_response({'task_id': task_id})
+    return web.json_response({'task_id': task_id, 'history_id': history_id})
 
 
 # ── /api-proxy/txt2video ──────────────────────────────────────────────────
@@ -232,6 +258,19 @@ async def txt2video(request: web.Request):
         raise web.HTTPServiceUnavailable(reason=f'系统繁忙，请稍后再试')
 
     task_id = str(uuid.uuid4())
+    user_id = body.get('user_id')
+    history_id = history_repo.save_history(
+        task_id=task_id,
+        prompt=prompt,
+        user_id=int(user_id) if user_id else 0,
+        model_id=int(model_id) if model_id else None,
+        input_asset_ids=[],
+        output_asset_ids=[],
+        status='pending',
+        type_='txt2video',
+        mode='api',
+    )
+
     task_payload = {
         'task_id': task_id,
         'provider': 'ark',
@@ -241,15 +280,16 @@ async def txt2video(request: web.Request):
         'ratio': body.get('ratio', '16:9'),
         'resolution': body.get('resolution', '720p'),
         'duration': body.get('duration', 8),
-        'user_id': body.get('user_id'),
+        'user_id': user_id,
         'api_key': api_key,
         'base_url': base_url,
+        'history_id': history_id,
     }
 
     task_queue.enqueue('queue:txt2video', task_payload)
     task_queue.mark_pending(task_id)
     logger.info(f'[api-proxy] txt2video 任务已入队: {task_id}')
-    return web.json_response({'task_id': task_id})
+    return web.json_response({'task_id': task_id, 'history_id': history_id})
 
 
 # ── /api-proxy/img2video ──────────────────────────────────────────────────
@@ -304,6 +344,19 @@ async def img2video(request: web.Request):
     input_asset_ids = [int(x.strip()) for x in input_asset_ids_raw.split(',') if x.strip()] if input_asset_ids_raw else []
 
     task_id = str(uuid.uuid4())
+    user_id = body.get('user_id')
+    history_id = history_repo.save_history(
+        task_id=task_id,
+        prompt=prompt,
+        user_id=int(user_id) if user_id else 0,
+        model_id=int(model_id) if model_id else None,
+        input_asset_ids=input_asset_ids,
+        output_asset_ids=[],
+        status='pending',
+        type_='img2video',
+        mode='api',
+    )
+
     task_payload = {
         'task_id': task_id,
         'provider': 'ark',
@@ -313,10 +366,11 @@ async def img2video(request: web.Request):
         'ratio': body.get('ratio', '16:9'),
         'resolution': body.get('resolution', '720p'),
         'duration': int(body.get('duration', 8)),
-        'user_id': body.get('user_id'),
+        'user_id': user_id,
         'api_key': api_key,
         'base_url': base_url,
         'input_asset_ids': input_asset_ids,
+        'history_id': history_id,
         'input_files': [
             {'filename': f['filename'], 'data': f['data'].hex(), 'content_type': f['content_type']}
             for f in input_files
@@ -326,7 +380,7 @@ async def img2video(request: web.Request):
     task_queue.enqueue('queue:img2video', task_payload)
     task_queue.mark_pending(task_id)
     logger.info(f'[api-proxy] img2video 任务已入队: {task_id}, 文件数: {len(input_files)}')
-    return web.json_response({'task_id': task_id})
+    return web.json_response({'task_id': task_id, 'history_id': history_id})
 
 
 # ── /api-proxy/task/{task_id} ─────────────────────────────────────────────
@@ -367,6 +421,9 @@ async def get_task_status(request: web.Request):
                 response['result'] = result_data.get('result', [])
                 if result_data.get('history_id'):
                     response['history_id'] = result_data['history_id']
+                input_asset_urls = result_data.get('input_asset_urls')
+                if input_asset_urls:
+                    response['input_asset_urls'] = input_asset_urls
             else:
                 response['error'] = result_data.get('error')
 

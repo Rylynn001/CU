@@ -115,6 +115,23 @@ def get_user_history(user_id: int, type_filter: str | None = None) -> list[dict]
     return result
 
 
+def update_history(
+    history_id: int,
+    status: str,
+    output_asset_ids: list[int],
+    message: str | None = None,
+) -> None:
+    """更新历史记录的状态和输出资产"""
+    output_file = ','.join(str(i) for i in output_asset_ids) if output_asset_ids else None
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE history SET status = %s, output_file = %s, message = %s WHERE id = %s",
+            (status, output_file, message, history_id)
+        )
+        conn.commit()
+
+
 def delete_history(history_id: int, user_id: int) -> bool:
     """软删除单条历史记录"""
     with get_db_connection() as conn:
