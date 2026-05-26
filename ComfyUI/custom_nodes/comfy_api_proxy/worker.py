@@ -83,7 +83,8 @@ def worker_loop(worker_id: int, redis_client) -> None:
 def main():
     logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s: %(message)s')
     redis_client = _get_redis()
-    num_workers = 4
+    from .config import get_worker_count
+    num_workers = get_worker_count()
     logger.info(f'正在启动 {num_workers} 个 worker 线程...')
 
     threads = []

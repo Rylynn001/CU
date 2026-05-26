@@ -18,6 +18,7 @@ logger = logging.getLogger('comfy_api_proxy')
 routes = PromptServer.instance.routes
 
 OUTPUT_DIR = cfg.get_output_dir()
+QUEUE_MAX_SIZE = cfg.get_queue_max_size()
 
 
 def _load_input_assets_as_b64(input_asset_ids: list[int]) -> list[str]:
@@ -190,7 +191,7 @@ async def txt2img(request: web.Request):
     if not task_queue.AVAILABLE:
         raise web.HTTPServiceUnavailable(reason='Redis not available')
 
-    if task_queue.queue_length('queue:txt2img') >= 20:
+    if task_queue.queue_length('queue:txt2img') >= QUEUE_MAX_SIZE:
         raise web.HTTPServiceUnavailable(reason=f'系统繁忙，请稍后再试')
 
     task_id = str(uuid.uuid4())
@@ -255,7 +256,7 @@ async def txt2video(request: web.Request):
     if not task_queue.AVAILABLE:
         raise web.HTTPServiceUnavailable(reason='Redis not available')
 
-    if task_queue.queue_length('queue:txt2video') >= 20:
+    if task_queue.queue_length('queue:txt2video') >= QUEUE_MAX_SIZE:
         raise web.HTTPServiceUnavailable(reason=f'系统繁忙，请稍后再试')
 
     task_id = str(uuid.uuid4())
@@ -339,7 +340,7 @@ async def img2video(request: web.Request):
     if not task_queue.AVAILABLE:
         raise web.HTTPServiceUnavailable(reason='Redis not available')
 
-    if task_queue.queue_length('queue:img2video') >= 20:
+    if task_queue.queue_length('queue:img2video') >= QUEUE_MAX_SIZE:
         raise web.HTTPServiceUnavailable(reason=f'系统繁忙，请稍后再试')
 
     input_asset_ids_raw = body.get('input_asset_ids', '')
@@ -466,7 +467,7 @@ async def retry_history(request: web.Request):
     new_task_id = str(uuid.uuid4())
 
     if type_ in ('txt2img', 'img2img'):
-        if task_queue.queue_length('queue:txt2img') >= 20:
+        if task_queue.queue_length('queue:txt2img') >= QUEUE_MAX_SIZE:
             raise web.HTTPServiceUnavailable(reason='系统繁忙，请稍后再试')
 
         input_asset_ids = payload.get('input_asset_ids', [])
@@ -506,7 +507,7 @@ async def retry_history(request: web.Request):
         task_queue.enqueue('queue:txt2img', task_payload)
 
     elif type_ == 'txt2video':
-        if task_queue.queue_length('queue:txt2video') >= 20:
+        if task_queue.queue_length('queue:txt2video') >= QUEUE_MAX_SIZE:
             raise web.HTTPServiceUnavailable(reason='系统繁忙，请稍后再试')
 
         new_history_id = history_repo.save_history(
@@ -538,7 +539,7 @@ async def retry_history(request: web.Request):
         task_queue.enqueue('queue:txt2video', task_payload)
 
     elif type_ == 'img2video':
-        if task_queue.queue_length('queue:img2video') >= 20:
+        if task_queue.queue_length('queue:img2video') >= QUEUE_MAX_SIZE:
             raise web.HTTPServiceUnavailable(reason='系统繁忙，请稍后再试')
 
         input_asset_ids = payload.get('input_asset_ids', [])

@@ -98,6 +98,14 @@ def get_input_dir() -> pathlib.Path:
     return path
 
 
+def get_worker_count() -> int:
+    return int(os.environ.get('WORKER_COUNT', '4'))
+
+
+def get_queue_max_size() -> int:
+    return int(os.environ.get('QUEUE_MAX_SIZE', '20'))
+
+
 def get_oss_config() -> dict:
     return {
         'access_key_id': os.environ.get('OSS_ACCESS_KEY_ID', ''),
