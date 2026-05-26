@@ -4,26 +4,35 @@ services:
     environment:
       MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
       MYSQL_DATABASE: comfyui
+      TZ: Asia/Shanghai
     volumes:
       - ./mysql_data:/var/lib/mysql
+      - /etc/localtime:/etc/localtime:ro
     ports:
       - "3306:3306"
     restart: unless-stopped
 
   redis:
     image: redis:7-alpine
+    environment:
+      TZ: Asia/Shanghai
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
     ports:
       - "6379:6379"
     restart: unless-stopped
 
   comfyui:
     build: ./ComfyUI
+    environment:
+      TZ: Asia/Shanghai
     volumes:
       - ./ComfyUI:/app                          # 挂载源码，git pull 后 restart 即生效
       - ./ComfyUI/models:/app/models            # 覆盖模型目录（大文件单独管理）
       - ./ComfyUI/custom_nodes:/app/custom_nodes
       - ./ComfyUI/output:/app/output
       - ./ComfyUI/input:/app/input
+      - /etc/localtime:/etc/localtime:ro
     ports:
       - "8188:8188"
     depends_on:
@@ -33,6 +42,10 @@ services:
 
   comfy-web:
     build: ./comfy-web
+    environment:
+      TZ: Asia/Shanghai
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
     ports:
       - "80:80"
     depends_on:
