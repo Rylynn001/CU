@@ -161,8 +161,8 @@ async def txt2img(request: web.Request):
 
     model_id = body.get('model')
     prompt = body.get('prompt', '').strip()
-    width = body.get('width')
-    height = body.get('height')
+    aspect_ratio = body.get('aspect_ratio', '1:1')
+    quality = body.get('quality', 'medium')
     n = body.get('n', 1)
     input_asset_ids = body.get('input_asset_ids', [])
     user_id = body.get('user_id')
@@ -213,8 +213,8 @@ async def txt2img(request: web.Request):
         'model': model_name,
         'model_id': model_id,
         'prompt': prompt,
-        'width': width,
-        'height': height,
+        'aspect_ratio': aspect_ratio,
+        'quality': quality,
         'n': n,
         'user_id': user_id,
         'api_key': api_key,

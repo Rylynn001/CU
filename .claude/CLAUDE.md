@@ -113,3 +113,5 @@
 
 3. [步骤] → 验证：[检查]
 这是我都所有，就改第一条，后面的不懂
+当前项目python环境是：
+D:\Software\anaconda3\envs\comfy311

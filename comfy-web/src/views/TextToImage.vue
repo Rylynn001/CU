@@ -73,6 +73,7 @@ function pollImage(record: GenerationRecord, userId?: number) {
 // ── 模型 ──────────────────────────────────────────────────
 const apiModels = ref<ApiModel[]>([])
 const apiModel = ref('')
+const apiQuality = ref('medium')
 const models = ref<string[]>([])
 const samplers = ref<string[]>([])
 const schedulers = ref<string[]>([])
@@ -213,8 +214,8 @@ async function runApiGeneration(recordId: string, img2img: boolean, snapshotImag
     const result = await submitImageGeneration({
       modelId: rec.modelId,
       prompt: rec.prompt,
-      width: form.value.width,
-      height: form.value.height,
+      aspect_ratio: activeRatio.value.label,
+      quality: apiQuality.value,
       batchSize: form.value.batch_size,
       img2img,
       inputImages: snapshotImages,
@@ -543,15 +544,24 @@ onMounted(async () => {
           
           <div class="divider" />
 
-          <!-- resolution -->
+          <!-- resolution：本地模式显示像素档位，API 模式显示清晰度档位 -->
           <div class="row-item">
             <span class="row-label">清晰度</span>
             <div class="source-toggle">
-              <button
-                v-for="r in resolutions" :key="r.label"
-                :class="{ active: !sizeCustomized && activeResolution.label === r.label }"
-                @click="setResolution(r)"
-              >{{ r.label }}</button>
+              <template v-if="modelSource === 'local'">
+                <button
+                  v-for="r in resolutions" :key="r.label"
+                  :class="{ active: !sizeCustomized && activeResolution.label === r.label }"
+                  @click="setResolution(r)"
+                >{{ r.label }}</button>
+              </template>
+              <template v-else>
+                <button
+                  v-for="q in ['low', 'medium', 'high']" :key="q"
+                  :class="{ active: apiQuality === q }"
+                  @click="apiQuality = q"
+                >{{ q }}</button>
+              </template>
             </div>
           </div>
 
@@ -578,8 +588,8 @@ onMounted(async () => {
             </div>
           </div>
 
-          <!-- size preview -->
-          <div class="size-preview">{{ form.width }} × {{ form.height }}</div>
+          <!-- size preview：仅本地模式显示像素数 -->
+          <div v-if="modelSource === 'local'" class="size-preview">{{ form.width }} × {{ form.height }}</div>
 
           <!-- batch size -->
           <div class="row-item">

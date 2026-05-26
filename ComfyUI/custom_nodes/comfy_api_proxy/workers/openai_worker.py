@@ -25,10 +25,18 @@ def process(task: dict) -> None:
 
         client = OpenAI(api_key=task['api_key'], base_url=task['base_url'])
 
-        width = task.get('width') or 1024
-        height = task.get('height') or 1024
         n = task.get('n', 1)
         image_b64_list = task.get('image_b64_list', [])
+
+        aspect_ratio_to_size = {
+            '1:1':  '1024x1024',
+            '16:9': '1792x1024',
+            '9:16': '1024x1792',
+            '4:3':  '1024x768',
+            '3:4':  '768x1024',
+        }
+        size = aspect_ratio_to_size.get(task.get('aspect_ratio', '1:1'), '1024x1024')
+        quality = task.get('quality', 'medium')
 
         response = None
         for attempt in range(3):
@@ -48,12 +56,16 @@ def process(task: dict) -> None:
                         model=task['model'],
                         prompt=full_prompt,
                         image=image_files,
+                        size=size,
+                        quality=quality,
                         n=n,
                     )
                 else:
                     response = client.images.generate(
                         model=task['model'],
                         prompt=task['prompt'],
+                        size=size,
+                        quality=quality,
                         n=n,
                     )
                 break

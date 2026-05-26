@@ -17,8 +17,8 @@ export interface ApiModel {
 export interface ApiGenerateParams {
   model: string
   prompt: string
-  width: number
-  height: number
+  aspect_ratio: string     // 比例，如 "1:1"、"16:9"，后端按模型映射
+  quality: string          // 清晰度，如 "low"/"medium"/"high"，后端按模型映射
   n?: number               // 生成数量，默认 1
   input_asset_ids?: number[] // 图生图时传入的参考图资产 id 列表
   user_id?: number
