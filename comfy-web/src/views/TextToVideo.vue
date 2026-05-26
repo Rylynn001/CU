@@ -5,7 +5,7 @@ import { UploadFilled } from '@element-plus/icons-vue'
 import AssetPicker from '../components/AssetPicker.vue'
 import RecordCard from '../components/RecordCard.vue'
 import ImageEditor from '../components/ImageEditor.vue'
-import { getApiModels, type ApiModel } from '../api/apiService'
+import { getApiModels, retryHistory, type ApiModel } from '../api/apiService'
 import { useGenerationHistory } from '../composables/useGenerationHistory'
 import { useTaskPolling } from '../composables/useTaskPolling'
 import { useAtMention } from '../composables/useAtMention'
@@ -207,14 +207,9 @@ async function generateFromEdit() {
 
 // ── 重试 ──────────────────────────────────────────────────
 async function retryRecord(record: VideoRecord) {
-  if (record.dbId) {
-    const userId = getCurrentUserId()
-    if (userId) {
-      const { useHistoryDb } = await import('../composables/useHistoryDb')
-      await useHistoryDb().remove(record.dbId, userId)
-    }
+  if (!record.dbId) {
+    return
   }
-
   const newRecord: VideoRecord = {
     id: generateUUID(), createdAt: Date.now(),
     prompt: record.prompt, modelName: record.modelName,
@@ -224,32 +219,12 @@ async function retryRecord(record: VideoRecord) {
   records.value = [newRecord, ...(records.value as VideoRecord[]).filter(r => r.id !== record.id)] as any
   saveRecords()
 
-  const model = apiModels.value.find(m => m.id === record.modelName || m.name === record.modelName)
-  if (!model) { newRecord.status = 'error'; newRecord.errorMsg = '找不到对应的模型'; saveRecords(); return }
-
-  const userId = getCurrentUserId()
   try {
-    if (record.mode === 'img2video') {
-      const result = await submitImg2VideoGeneration({
-        modelId: model.id, prompt: record.prompt,
-        ratio: record.ratio, resolution: record.resolution, duration: record.duration,
-        userId: userId ?? undefined, inputFiles: [], inputAssetIds: record.inputAssetIds || [],
-      })
-      newRecord.taskId = result.taskId
-    } else {
-      const result = await submitVideoGeneration({
-        modelId: model.id, prompt: record.prompt,
-        ratio: record.ratio, resolution: record.resolution, duration: record.duration,
-        userId: userId ?? undefined,
-      })
-      if (result.taskId) {
-        newRecord.taskId = result.taskId
-      } else {
-        newRecord.videoUrl = result.videoUrl; newRecord.status = 'done'; saveRecords(); return
-      }
-    }
+    const result = await retryHistory(record.dbId)
+    newRecord.taskId = result.task_id
+    newRecord.dbId = result.history_id
     saveRecords()
-    setTimeout(() => generating.value = false, 1500)
+    const userId = getCurrentUserId()
     pollVideo(newRecord, userId ?? undefined).catch(console.error)
   } catch (e: any) {
     newRecord.status = 'error'; newRecord.errorMsg = e.message; saveRecords()

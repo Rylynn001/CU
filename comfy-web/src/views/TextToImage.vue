@@ -8,7 +8,7 @@ import RecordCard from '../components/RecordCard.vue'
 import ImageEditor from '../components/ImageEditor.vue'
 import { getModels, getKSamplerInfo, submitPrompt, uploadImage, type PromptParams } from '../api/comfyui'
 import { useComfyWebSocket } from '../composables/useComfyWebSocket'
-import { getApiModels, type ApiModel } from '../api/apiService'
+import { getApiModels, retryHistory, type ApiModel } from '../api/apiService'
 import { useGenerationHistory } from '../composables/useGenerationHistory'
 import { useTaskPolling } from '../composables/useTaskPolling'
 import { useAtMention } from '../composables/useAtMention'
@@ -239,46 +239,27 @@ async function runApiGeneration(recordId: string, img2img: boolean, snapshotImag
 }
 
 async function retryRecord(record: GenerationRecord) {
-  if (record.dbId) {
-    const userId = getCurrentUserId()
-    if (userId) {
-      const { useHistoryDb } = await import('../composables/useHistoryDb')
-      await useHistoryDb().remove(record.dbId, userId)
-    }
+  if (!record.dbId) {
+    return
   }
-
   const newRecord: GenerationRecord = {
     id: generateUUID(), createdAt: Date.now(),
     mode: record.mode, prompt: record.prompt, modelName: record.modelName,
     status: 'generating', inputPreviews: record.inputPreviews,
-    progress: 0, images: [], isImg2Img: record.isImg2Img,
+    progress: 0, images: [],  isImg2Img: record.isImg2Img,
   }
   records.value = [newRecord, ...(records.value as GenerationRecord[]).filter(r => r.id !== record.id)] as any
   saveRecords()
 
-  if (record.mode !== 'api') {
-    newRecord.status = 'error'; newRecord.errorMsg = '本地模式不支持重试'; saveRecords(); return
-  }
-  const model = apiModels.value.find(m => m.id === record.modelName)
-  if (!model) {
-    newRecord.status = 'error'; newRecord.errorMsg = '找不到对应的模型'; saveRecords(); return
-  }
-
-  if (record.isImg2Img) {
-    const snapshotImages: InputImage[] = (record.inputPreviews || []).map(url => {
-      const match = url.match(/\/api\/view\?filename=([^&]+)/)
-      const assetLocation = match ? decodeURIComponent(match[1]) : ''
-      return { file: null, preview: url, assetLocation }
-    }).filter(img => img.assetLocation)
-
-    if (snapshotImages.length === 0) {
-      newRecord.status = 'error'
-      newRecord.errorMsg = '无法重试：本地上传的图片不支持重试，请重新上传'
-      saveRecords(); return
-    }
-    runApiGeneration(newRecord.id, true, snapshotImages)
-  } else {
-    runApiGeneration(newRecord.id, false, [])
+  try {
+    const result = await retryHistory(record.dbId)
+    newRecord.taskId = result.task_id
+    newRecord.dbId = result.history_id
+    saveRecords()
+    const userId = getCurrentUserId()
+    pollImage(newRecord, userId ?? undefined).catch(console.error)
+  } catch (e: any) {
+    newRecord.status = 'error'; newRecord.errorMsg = e.message; saveRecords()
   }
 }
 

@@ -65,7 +65,7 @@ def process_txt2video(task: dict) -> None:
                 message=str(e),
             )
         task_queue.set_status(task_id, 'failed')
-        task_queue.set_result(task_id, {'error': {'error_message': str(e)}})
+        task_queue.set_result(task_id, {'error': {'error_message': str(e)}, 'history_id': history_id})
 
 
 def process_img2video(task: dict) -> None:
@@ -162,4 +162,4 @@ def process_img2video(task: dict) -> None:
                 message=str(e),
             )
         task_queue.set_status(task_id, 'failed')
-        task_queue.set_result(task_id, {'error': {'error_message': str(e)}})
+        task_queue.set_result(task_id, {'error': {'error_message': str(e)}, 'history_id': history_id})

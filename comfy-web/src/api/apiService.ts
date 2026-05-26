@@ -275,6 +275,16 @@ export async function clearHistory(userId: number): Promise<void> {
   if (!res.ok) throw new Error(`clear history failed: ${res.status}`)
 }
 
+// 重试失败的历史记录：后端读取 payload 重新入队，旧记录软删除
+export async function retryHistory(historyId: number): Promise<{ task_id: string; history_id: number }> {
+  const res = await fetch(`${BASE}/history/${historyId}/retry`, { method: 'POST' })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(text || `retry failed: ${res.status}`)
+  }
+  return res.json()
+}
+
 // ── Task Cancel / Priority ────────────────────────────────────────────────
 
 // 取消正在排队或执行中的任务
@@ -304,9 +314,11 @@ interface TaskStatusResponse {
 
 // 区分"任务本身失败"和"网络/超时错误"，前者不重试
 class TaskFailedError extends Error {
-  constructor(message: string) {
+  historyId?: number
+  constructor(message: string, historyId?: number) {
     super(message)
     this.name = 'TaskFailedError'
+    this.historyId = historyId
   }
 }
 
@@ -351,7 +363,7 @@ async function pollTaskStatus(taskId: string, expectedType: 'image' | 'video', u
       } else if (data.status === 'failed') {
         // 任务失败，立即抛出，不重试
         const errorMsg = data.error?.error_message || 'Generation failed'
-        throw new TaskFailedError(errorMsg)
+        throw new TaskFailedError(errorMsg, (data as any).history_id)
       }
 
       // 任务进行中，等待后继续轮询

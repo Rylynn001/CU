@@ -118,6 +118,17 @@ def get_user_history(user_id: int, type_filter: str | None = None) -> list[dict]
     return result
 
 
+def get_history_by_id(history_id: int) -> dict | None:
+    """根据 id 获取单条历史记录（未删除）"""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT id, task_id, prompt, type, payload, model_id, user_id FROM history WHERE id = %s AND del_flag = 0",
+            (history_id,)
+        )
+        return cursor.fetchone()
+
+
 def update_history(
     history_id: int,
     status: str,
@@ -132,6 +143,14 @@ def update_history(
             "UPDATE history SET status = %s, output_file = %s, message = %s WHERE id = %s",
             (status, output_file, message, history_id)
         )
+        conn.commit()
+
+
+def soft_delete_history(history_id: int) -> None:
+    """软删除单条历史记录（不校验 user_id，供内部重试使用）"""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE history SET del_flag = 1 WHERE id = %s", (history_id,))
         conn.commit()
 
 

@@ -205,7 +205,7 @@ async def txt2img(request: web.Request):
         status='pending',
         type_=type_,
         mode='api',
-        payload={'model': model_id, 'prompt': prompt, 'aspect_ratio': aspect_ratio, 'quality': quality, 'n': n, 'user_id': user_id},
+        payload={'model': model_id, 'prompt': prompt, 'aspect_ratio': aspect_ratio, 'quality': quality, 'n': n, 'input_asset_ids': input_asset_ids, 'user_id': user_id},
     )
 
     task_payload = {
@@ -429,11 +429,159 @@ async def get_task_status(request: web.Request):
                     response['input_asset_urls'] = input_asset_urls
             else:
                 response['error'] = result_data.get('error')
+                if result_data.get('history_id'):
+                    response['history_id'] = result_data['history_id']
 
     return web.json_response(response)
 
 
-# ── /api-proxy/task/{task_id}/cancel ──────────────────────────────────────
+# ── /api-proxy/history/{history_id}/retry ────────────────────────────────
+
+@routes.post('/api-proxy/history/{history_id}/retry')
+async def retry_history(request: web.Request):
+    history_id = int(request.match_info['history_id'])
+
+    row = history_repo.get_history_by_id(history_id)
+    if not row:
+        raise web.HTTPNotFound(reason=f'history {history_id} not found')
+
+    payload_raw = row.get('payload')
+    if not payload_raw:
+        raise web.HTTPBadRequest(reason='该记录没有保存 payload，无法重试')
+
+    payload = json.loads(payload_raw) if isinstance(payload_raw, str) else payload_raw
+    type_ = row.get('type', '')
+    model_id = payload.get('model')
+    prompt = payload.get('prompt', '')
+    user_id = payload.get('user_id')
+
+    if not task_queue.AVAILABLE:
+        raise web.HTTPServiceUnavailable(reason='Redis not available')
+
+    provider_id = None
+    api_key, base_url = provider_service.get_provider_config(provider_id=provider_id, model_id=model_id)
+    model_info = provider_service.get_model_info(model_id)
+    model_name = model_info['name']
+
+    new_task_id = str(uuid.uuid4())
+
+    if type_ in ('txt2img', 'img2img'):
+        if task_queue.queue_length('queue:txt2img') >= 20:
+            raise web.HTTPServiceUnavailable(reason='系统繁忙，请稍后再试')
+
+        input_asset_ids = payload.get('input_asset_ids', [])
+        image_b64_list = _load_input_assets_as_b64(input_asset_ids) if input_asset_ids else []
+        provider = model_info.get('provider', '')
+        if not provider:
+            raise web.HTTPBadRequest(reason=f'model {model_id} 未配置 provider 字段')
+
+        new_history_id = history_repo.save_history(
+            task_id=new_task_id,
+            prompt=prompt,
+            user_id=int(user_id) if user_id else 0,
+            model_id=int(model_id) if model_id else None,
+            input_asset_ids=input_asset_ids,
+            output_asset_ids=[],
+            status='pending',
+            type_=type_,
+            mode='api',
+            payload=payload,
+        )
+        task_payload = {
+            'task_id': new_task_id,
+            'provider': provider,
+            'model': model_name,
+            'model_id': model_id,
+            'prompt': prompt,
+            'aspect_ratio': payload.get('aspect_ratio', '1:1'),
+            'quality': payload.get('quality', 'medium'),
+            'n': payload.get('n', 1),
+            'user_id': user_id,
+            'api_key': api_key,
+            'base_url': base_url,
+            'image_b64_list': image_b64_list,
+            'input_asset_ids': input_asset_ids,
+            'history_id': new_history_id,
+        }
+        task_queue.enqueue('queue:txt2img', task_payload)
+
+    elif type_ == 'txt2video':
+        if task_queue.queue_length('queue:txt2video') >= 20:
+            raise web.HTTPServiceUnavailable(reason='系统繁忙，请稍后再试')
+
+        new_history_id = history_repo.save_history(
+            task_id=new_task_id,
+            prompt=prompt,
+            user_id=int(user_id) if user_id else 0,
+            model_id=int(model_id) if model_id else None,
+            input_asset_ids=[],
+            output_asset_ids=[],
+            status='pending',
+            type_='txt2video',
+            mode='api',
+            payload=payload,
+        )
+        task_payload = {
+            'task_id': new_task_id,
+            'provider': 'ark',
+            'model': model_name,
+            'model_id': model_id,
+            'prompt': prompt,
+            'ratio': payload.get('ratio', '16:9'),
+            'resolution': payload.get('resolution', '720p'),
+            'duration': payload.get('duration', 8),
+            'user_id': user_id,
+            'api_key': api_key,
+            'base_url': base_url,
+            'history_id': new_history_id,
+        }
+        task_queue.enqueue('queue:txt2video', task_payload)
+
+    elif type_ == 'img2video':
+        if task_queue.queue_length('queue:img2video') >= 20:
+            raise web.HTTPServiceUnavailable(reason='系统繁忙，请稍后再试')
+
+        input_asset_ids = payload.get('input_asset_ids', [])
+        new_history_id = history_repo.save_history(
+            task_id=new_task_id,
+            prompt=prompt,
+            user_id=int(user_id) if user_id else 0,
+            model_id=int(model_id) if model_id else None,
+            input_asset_ids=input_asset_ids,
+            output_asset_ids=[],
+            status='pending',
+            type_='img2video',
+            mode='api',
+            payload=payload,
+        )
+        task_payload = {
+            'task_id': new_task_id,
+            'provider': 'ark',
+            'model': model_name,
+            'model_id': model_id,
+            'prompt': prompt,
+            'ratio': payload.get('ratio', '16:9'),
+            'resolution': payload.get('resolution', '720p'),
+            'duration': int(payload.get('duration', 8)),
+            'user_id': user_id,
+            'api_key': api_key,
+            'base_url': base_url,
+            'input_asset_ids': input_asset_ids,
+            'history_id': new_history_id,
+            'input_files': [],
+        }
+        task_queue.enqueue('queue:img2video', task_payload)
+
+    else:
+        raise web.HTTPBadRequest(reason=f'不支持的任务类型: {type_}')
+
+    task_queue.mark_pending(new_task_id)
+    history_repo.soft_delete_history(history_id)
+    logger.info(f'[retry] history {history_id} → new task {new_task_id}, type={type_}')
+    return web.json_response({'task_id': new_task_id, 'history_id': new_history_id})
+
+
+
 
 @routes.post('/api-proxy/task/{task_id}/cancel')
 async def cancel_task(request: web.Request):

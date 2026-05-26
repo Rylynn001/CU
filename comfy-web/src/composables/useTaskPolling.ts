@@ -68,6 +68,7 @@ export function useTaskPolling<T extends BaseRecord>(
           if (rec) {
             rec.status = 'error'
             rec.errorMsg = checkData.error?.error_message || '任务失败'
+            if (checkData.history_id) rec.dbId = checkData.history_id
             saveRecords()
           }
           return
@@ -91,6 +92,7 @@ export function useTaskPolling<T extends BaseRecord>(
       if (rec) {
         rec.status = 'error'
         rec.errorMsg = e.message
+        if (e.name === 'TaskFailedError' && e.historyId) rec.dbId = e.historyId
       }
     } finally {
       saveRecords()
