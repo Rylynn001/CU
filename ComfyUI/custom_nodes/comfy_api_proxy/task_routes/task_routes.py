@@ -205,6 +205,7 @@ async def txt2img(request: web.Request):
         status='pending',
         type_=type_,
         mode='api',
+        payload={'model': model_id, 'prompt': prompt, 'aspect_ratio': aspect_ratio, 'quality': quality, 'n': n, 'user_id': user_id},
     )
 
     task_payload = {
@@ -269,6 +270,7 @@ async def txt2video(request: web.Request):
         status='pending',
         type_='txt2video',
         mode='api',
+        payload={'model': model_id, 'prompt': prompt, 'ratio': body.get('ratio', '16:9'), 'resolution': body.get('resolution', '720p'), 'duration': body.get('duration', 8), 'user_id': user_id},
     )
 
     task_payload = {
@@ -355,6 +357,7 @@ async def img2video(request: web.Request):
         status='pending',
         type_='img2video',
         mode='api',
+        payload={'model': model_id, 'prompt': prompt, 'ratio': body.get('ratio', '16:9'), 'resolution': body.get('resolution', '720p'), 'duration': int(body.get('duration', 8)), 'input_asset_ids': input_asset_ids, 'user_id': user_id},
     )
 
     task_payload = {

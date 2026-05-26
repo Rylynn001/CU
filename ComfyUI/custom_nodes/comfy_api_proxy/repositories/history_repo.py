@@ -14,17 +14,20 @@ def save_history(
     type_: str | None = None,
     message: str | None = None,
     model_id: int | None = None,
+    payload: dict | None = None,
 ) -> int:
     """保存一条历史记录，返回新记录 id"""
+    import json as _json
     input_file = ','.join(str(i) for i in input_asset_ids) if input_asset_ids else None
     output_file = ','.join(str(i) for i in output_asset_ids) if output_asset_ids else None
+    payload_json = _json.dumps(payload, ensure_ascii=False) if payload else None
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
             """INSERT INTO history
-               (task_id, prompt, mode, status, type, message, input_file, output_file, user_id, model_id, del_flag)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0)""",
-            (task_id, prompt, mode, status, type_, message, input_file, output_file, user_id, model_id)
+               (task_id, prompt, mode, status, type, message, input_file, output_file, user_id, model_id, payload, del_flag)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0)""",
+            (task_id, prompt, mode, status, type_, message, input_file, output_file, user_id, model_id, payload_json)
         )
         conn.commit()
         return cursor.lastrowid
