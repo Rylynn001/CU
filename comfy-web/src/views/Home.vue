@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
-import { Picture, VideoCamera, Files } from '@element-plus/icons-vue'
+import { Picture, VideoCamera, FolderOpened } from '@element-plus/icons-vue'
 
 const router = useRouter()
 
@@ -22,10 +22,10 @@ const features = [
     tagActive: true,
   },
   {
-    path: '/models',
-    icon: Files,
-    title: '模型管理',
-    desc: '浏览、下载、切换本地模型，统一管理 checkpoint、LoRA 等资源',
+    path: '/assets',
+    icon: FolderOpened,
+    title: '我的资产',
+    desc: '管理你的图片、视频等生成内容，集中查看与下载所有创作成果',
     tag: '已上线',
     tagActive: true,
   },
