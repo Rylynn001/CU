@@ -305,3 +305,66 @@ async def test_save_asset(request: web.Request):
         logger.error(f'[test] 保存失败: {e}')
         raise web.HTTPInternalServerError(reason=str(e))
 
+
+# ── /api-proxy/extract-frame ──────────────────────────────────────────────
+
+@routes.post('/api-proxy/extract-frame')
+async def extract_frame(request: web.Request):
+    import asyncio
+    import uuid
+    import subprocess
+    from .repositories import asset_repo
+
+    body = await request.json()
+    asset_id = body.get('asset_id')
+    time_sec = body.get('time_sec')
+    user_id = body.get('user_id')
+
+    if asset_id is None or time_sec is None or user_id is None:
+        raise web.HTTPBadRequest(reason='asset_id, time_sec, user_id are required')
+
+    try:
+        asset_id = int(asset_id)
+        time_sec = float(time_sec)
+        user_id = int(user_id)
+    except (ValueError, TypeError):
+        raise web.HTTPBadRequest(reason='参数类型错误')
+
+    asset = asset_repo.get_asset_by_id(asset_id)
+    if not asset:
+        raise web.HTTPNotFound(reason='资产不存在')
+
+    # location 可能是相对路径或绝对路径，统一解析到 OUTPUT_DIR
+    location = asset['location']
+    video_path = pathlib.Path(location)
+    if not video_path.is_absolute():
+        video_path = OUTPUT_DIR / video_path.name
+
+    if not video_path.exists():
+        raise web.HTTPNotFound(reason='视频文件不存在')
+
+    out_filename = f'frame_{uuid.uuid4().hex[:12]}.png'
+    out_path = OUTPUT_DIR / out_filename
+
+    cmd = [
+        'ffmpeg', '-y',
+        '-ss', str(time_sec),
+        '-i', str(video_path),
+        '-frames:v', '1',
+        str(out_path),
+    ]
+
+    try:
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(
+            None,
+            lambda: subprocess.run(cmd, check=True, capture_output=True)
+        )
+    except subprocess.CalledProcessError as e:
+        logger.error(f'[extract-frame] ffmpeg 失败: {e.stderr.decode(errors="ignore")}')
+        raise web.HTTPInternalServerError(reason='ffmpeg 抽帧失败')
+
+    new_id = asset_repo.save_output_asset(str(out_path), user_id, 'picture')
+    logger.info(f'[extract-frame] 抽帧成功: asset_id={new_id}, file={out_filename}')
+    return web.json_response({'ok': True, 'asset_id': new_id, 'filename': out_filename})
+

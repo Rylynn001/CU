@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElImageViewer } from 'element-plus'
+import VideoPlayer from '../components/VideoPlayer.vue'
 
 interface Asset {
   id: number
@@ -18,9 +19,7 @@ const previewImageUrl = ref('')
 const previewInitialIndex = ref(0)
 
 function previewImage(asset: Asset) {
-  // 视频不支持预览
   if (isVideo(asset)) return
-
   const index = assets.value.findIndex(a => a.id === asset.id)
   previewInitialIndex.value = index >= 0 ? index : 0
   previewImageUrl.value = getImageUrl(asset.location)
@@ -31,6 +30,15 @@ function previewImage(asset: Asset) {
 function closeImageViewer() {
   showImageViewer.value = false
   document.documentElement.style.overflow = ''
+}
+
+// 视频播放器弹窗
+const showVideoPlayer = ref(false)
+const activeVideo = ref<Asset | null>(null)
+
+function openVideo(asset: Asset) {
+  activeVideo.value = asset
+  showVideoPlayer.value = true
 }
 
 async function loadAssets(assetType?: 'picture' | 'video') {
@@ -127,12 +135,14 @@ onMounted(() => {
       <div v-else class="gallery">
         <div v-for="asset in assets" :key="asset.id" class="gallery-item">
           <!-- 视频 -->
-          <video
+          <div
             v-if="isVideo(asset)"
-            :src="getMediaUrl(asset.location)"
-            class="gallery-media"
-            controls
-          />
+            class="gallery-media video-thumb"
+            @click="openVideo(asset)"
+          >
+            <video :src="getMediaUrl(asset.location)" class="gallery-media" preload="metadata" />
+            <div class="video-play-icon">▶</div>
+          </div>
           <!-- 图片 -->
           <img
             v-else
@@ -158,6 +168,15 @@ onMounted(() => {
       :initial-index="previewInitialIndex"
       @close="closeImageViewer"
       :hide-on-click-modal="true"
+    />
+
+    <!-- Video Player 弹窗 -->
+    <VideoPlayer
+      v-if="activeVideo"
+      :visible="showVideoPlayer"
+      :src="getMediaUrl(activeVideo.location)"
+      :asset-id="activeVideo.id"
+      @close="showVideoPlayer = false"
     />
   </div>
 </template>
@@ -341,6 +360,31 @@ onMounted(() => {
   object-fit: cover;
   display: block;
   cursor: pointer;
+}
+
+.video-thumb {
+  position: relative;
+  cursor: pointer;
+  height: 280px;
+  overflow: hidden;
+}
+.video-thumb video {
+  pointer-events: none;
+  height: 280px;
+}
+.video-play-icon {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 36px;
+  color: rgba(255,255,255,0.85);
+  background: rgba(0,0,0,0.3);
+  transition: background 0.2s;
+}
+.video-thumb:hover .video-play-icon {
+  background: rgba(0,0,0,0.5);
 }
 
 video.gallery-media {

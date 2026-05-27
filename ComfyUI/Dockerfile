@@ -2,7 +2,7 @@ FROM python:3.11-slim
 
 RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources && \
     sed -i 's/security.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources && \
-    apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
+    apt-get update && apt-get install -y git ffmpeg && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 

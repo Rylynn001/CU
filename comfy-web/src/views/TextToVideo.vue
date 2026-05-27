@@ -3,6 +3,7 @@ import { ref, onMounted, computed } from 'vue'
 import { ElInput, ElSelect, ElOption, ElImageViewer } from 'element-plus'
 import { UploadFilled } from '@element-plus/icons-vue'
 import AssetPicker from '../components/AssetPicker.vue'
+import VideoPlayer from '../components/VideoPlayer.vue'
 import RecordCard from '../components/RecordCard.vue'
 import ImageEditor from '../components/ImageEditor.vue'
 import { getApiModels, retryHistory, type ApiModel } from '../api/apiService'
@@ -118,6 +119,17 @@ const previewImageUrl = ref('')
 function previewImage(url: string) {
   previewImageUrl.value = url
   showImageViewer.value = true
+}
+
+// ── 视频播放器弹窗 ────────────────────────────────────────
+const showVideoPlayer = ref(false)
+const activeVideoUrl = ref('')
+const activeVideoDbId = ref<number | undefined>(undefined)
+
+function openVideo(url: string, dbId?: number) {
+  activeVideoUrl.value = url
+  activeVideoDbId.value = dbId
+  showVideoPlayer.value = true
 }
 
 // ── 图片编辑器（输入素材） ────────────────────────────────
@@ -596,10 +608,13 @@ onMounted(async () => {
                   </template>
                   <template #result>
                     <div v-if="rec.videoUrl" class="card-video">
-                      <video :src="rec.videoUrl" controls class="video-player" />
-                      <button class="download-btn" @click="downloadVideo(rec.videoUrl)" title="下载">
-                        <span>⬇</span>
-                      </button>
+                      <div class="video-thumb" @click="openVideo(rec.videoUrl, rec.dbId)">
+                        <video :src="rec.videoUrl" class="video-player" preload="metadata" />
+                        <div class="video-play-icon">▶</div>
+                        <button class="download-btn" @click.stop="downloadVideo(rec.videoUrl)" title="下载">
+                          <span>⬇</span>
+                        </button>
+                      </div>
                     </div>
                   </template>
                 </RecordCard>
@@ -635,6 +650,14 @@ onMounted(async () => {
     />
 
     <!-- 历史记录图片编辑器（已内联到侧边栏） -->
+
+    <!-- Video Player 弹窗 -->
+    <VideoPlayer
+      :visible="showVideoPlayer"
+      :src="activeVideoUrl"
+      :asset-id="activeVideoDbId"
+      @close="showVideoPlayer = false"
+    />
   </div>
 </template>
 
@@ -774,6 +797,31 @@ onMounted(async () => {
   width: 100%; max-width: 560px; height: 280px;
   display: block; border-radius: 10px;
   object-fit: contain;
+  pointer-events: none;
+}
+
+.video-thumb {
+  position: relative;
+  cursor: pointer;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.video-play-icon {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 36px;
+  color: rgba(255,255,255,0.85);
+  background: rgba(0,0,0,0.3);
+  transition: background 0.2s;
+}
+.video-thumb:hover .video-play-icon {
+  background: rgba(0,0,0,0.5);
+}
+.video-thumb:hover .download-btn {
+  opacity: 1;
 }
 
 .record-row { align-items: center; }

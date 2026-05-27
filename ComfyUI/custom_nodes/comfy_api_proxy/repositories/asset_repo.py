@@ -62,6 +62,13 @@ def get_user_assets(user_id: int, asset_type: str | None = None) -> list[dict]:
         return cursor.fetchall()
 
 
+def get_asset_by_id(asset_id: int) -> dict | None:
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT id, location, rfid, asset_type FROM assets WHERE id = %s', (asset_id,))
+        return cursor.fetchone()
+
+
 def find_asset_by_filename(filename: str, user_id: int) -> dict | None:
     with get_db_connection() as conn:
         cursor = conn.cursor()
