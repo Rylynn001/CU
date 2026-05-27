@@ -227,7 +227,7 @@ export interface HistoryRecord {
   type?: string
   message?: string
   model_name?: string
-  output_urls: Array<{ url: string; type: string }>
+  output_urls: Array<{ url: string; type: string; id?: number }>
   input_asset_ids: number[]
   input_asset_urls: Array<{ url: string; type: string }>
 }

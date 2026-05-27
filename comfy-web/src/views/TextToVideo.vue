@@ -34,6 +34,7 @@ interface VideoRecord {
   inputAssetUrls?: Array<{ url: string; type: string }>
   dbId?: number
   modelId?: number
+  outputAssetId?: number
 }
 
 // ── 历史记录 ──────────────────────────────────────────────
@@ -336,6 +337,7 @@ onMounted(async () => {
     status: (r.status === 'error' ? 'error' : 'done') as 'done' | 'error',
     mode: (r.type === 'img2video' ? 'img2video' : 'txt2video') as 'txt2video' | 'img2video',
     videoUrl: r.output_urls.find((o: any) => o.type === 'video')?.url || r.output_urls[0]?.url,
+    outputAssetId: r.output_urls.find((o: any) => o.type === 'video')?.id || r.output_urls[0]?.id,
     inputAssetIds: r.input_asset_ids,
     inputAssetUrls: r.input_asset_urls || [],
     errorMsg: r.status === 'error' ? (r.message || '生成失败') : undefined,
@@ -608,7 +610,7 @@ onMounted(async () => {
                   </template>
                   <template #result>
                     <div v-if="rec.videoUrl" class="card-video">
-                      <div class="video-thumb" @click="openVideo(rec.videoUrl, rec.dbId)">
+                      <div class="video-thumb" @click="openVideo(rec.videoUrl, rec.outputAssetId)">
                         <video :src="rec.videoUrl" class="video-player" preload="metadata" />
                         <div class="video-play-icon">▶</div>
                         <button class="download-btn" @click.stop="downloadVideo(rec.videoUrl)" title="下载">

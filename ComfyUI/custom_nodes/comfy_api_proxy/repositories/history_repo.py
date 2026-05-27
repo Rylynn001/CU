@@ -90,6 +90,7 @@ def get_user_history(user_id: int, type_filter: str | None = None) -> list[dict]
                         item['output_urls'].append({
                             'url': f'/api/api-proxy/output/{filename}',
                             'type': asset_type,
+                            'id': aid,
                         })
 
         if row['input_file']:
