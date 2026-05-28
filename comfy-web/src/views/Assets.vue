@@ -2,16 +2,19 @@
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElImageViewer } from 'element-plus'
 import VideoPlayer from '../components/VideoPlayer.vue'
+import { favoriteAsset } from '../api/apiService'
 
 interface Asset {
   id: number
   location: string
   asset_type?: string
+  tag?: number
 }
 
 const assets = ref<Asset[]>([])
 const loading = ref(false)
 const activeFilter = ref<'all' | 'picture' | 'video'>('all')
+const favoritesOnly = ref(true)
 
 // 图片预览
 const showImageViewer = ref(false)
@@ -52,9 +55,9 @@ async function loadAssets(assetType?: 'picture' | 'video') {
   loading.value = true
 
   try {
-    const url = assetType
-      ? `/api/api-proxy/user/assets?user_id=${user.id}&asset_type=${assetType}`
-      : `/api/api-proxy/user/assets?user_id=${user.id}`
+    let url = `/api/api-proxy/user/assets?user_id=${user.id}`
+    if (assetType) url += `&asset_type=${assetType}`
+    if (favoritesOnly.value) url += `&tag=1`
     const res = await fetch(url)
     if (!res.ok) {
       throw new Error('加载失败')
@@ -71,6 +74,11 @@ async function loadAssets(assetType?: 'picture' | 'video') {
 function setFilter(filter: 'all' | 'picture' | 'video') {
   activeFilter.value = filter
   loadAssets(filter === 'all' ? undefined : filter)
+}
+
+function setFavoritesOnly(val: boolean) {
+  favoritesOnly.value = val
+  loadAssets(activeFilter.value === 'all' ? undefined : activeFilter.value)
 }
 
 function getImageUrl(location: string) {
@@ -94,6 +102,23 @@ function downloadImage(asset: Asset) {
   a.click()
 }
 
+async function toggleFavorite(asset: Asset) {
+  const userStr = localStorage.getItem('user')
+  if (!userStr) return
+  const user = JSON.parse(userStr)
+  const newTag = asset.tag === 1 ? 0 : 1
+  try {
+    await favoriteAsset(asset.id, user.id, newTag as 0 | 1)
+    asset.tag = newTag
+    if (favoritesOnly.value && newTag === 0) {
+      assets.value = assets.value.filter(a => a.id !== asset.id)
+    }
+    ElMessage.success(newTag === 1 ? '已收藏' : '已取消收藏')
+  } catch {
+    ElMessage.error('操作失败')
+  }
+}
+
 onMounted(() => {
   loadAssets()
 })
@@ -113,6 +138,8 @@ onMounted(() => {
             <button class="filter-btn" :class="{ active: activeFilter === 'picture' }" @click="setFilter('picture')">图片</button>
             <button class="filter-btn" :class="{ active: activeFilter === 'video' }" @click="setFilter('video')">视频</button>
           </div>
+          <button class="filter-btn" :class="{ active: !favoritesOnly }" @click="setFavoritesOnly(false)">生成记录</button>
+          <button class="filter-btn" :class="{ active: favoritesOnly }" @click="setFavoritesOnly(true)">收藏</button>
           <button class="refresh-btn" @click="loadAssets()" :disabled="loading">
             <span>{{ loading ? '加载中...' : '刷新' }}</span>
           </button>
@@ -156,6 +183,11 @@ onMounted(() => {
           </div>
           <button class="download-btn" @click.stop="downloadImage(asset)" title="下载">
             <span>⬇</span>
+          </button>
+          <button class="favorite-btn" :class="{ favorited: asset.tag === 1 }" @click.stop="toggleFavorite(asset)" title="收藏">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+            </svg>
           </button>
         </div>
       </div>
@@ -443,6 +475,39 @@ video.gallery-media {
 .download-btn:hover {
   background: rgba(108,99,255,0.9);
   transform: scale(1.1);
+}
+
+.favorite-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.5);
+  border: none;
+  color: rgba(255,255,255,0.6);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: all 0.2s;
+  backdrop-filter: blur(4px);
+}
+.gallery-item:hover .favorite-btn {
+  opacity: 1;
+}
+.favorite-btn.favorited {
+  opacity: 1;
+  color: #f43f5e;
+  background: rgba(244,63,94,0.15);
+}
+.favorite-btn.favorited svg { fill: #f43f5e; stroke: #f43f5e; }
+.favorite-btn:hover {
+  transform: scale(1.15);
+  color: #f43f5e;
+  background: rgba(244,63,94,0.2);
 }
 
 @keyframes breathe {

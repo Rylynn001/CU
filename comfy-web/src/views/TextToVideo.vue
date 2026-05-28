@@ -6,7 +6,7 @@ import AssetPicker from '../components/AssetPicker.vue'
 import VideoPlayer from '../components/VideoPlayer.vue'
 import RecordCard from '../components/RecordCard.vue'
 import ImageEditor from '../components/ImageEditor.vue'
-import { getApiModels, retryHistory, type ApiModel } from '../api/apiService'
+import { getApiModels, retryHistory, favoriteAsset, type ApiModel } from '../api/apiService'
 import { useGenerationHistory } from '../composables/useGenerationHistory'
 import { useTaskPolling } from '../composables/useTaskPolling'
 import { useAtMention } from '../composables/useAtMention'
@@ -58,6 +58,7 @@ function pollVideo(record: VideoRecord, userId?: number) {
   return resumeTaskPolling(record, userId, (rec, result) => {
     const videoItem = result.images.find((i: any) => i.url)
     rec.videoUrl = videoItem?.url || ''
+    if (videoItem?.id) rec.outputAssetId = videoItem.id
     if ((result as any).inputAssetUrls?.length) {
       rec.inputAssetUrls = (result as any).inputAssetUrls
     }
@@ -321,6 +322,23 @@ function downloadVideo(url: string, filename?: string) {
   a.href = url
   a.download = filename || url.split('/').pop() || 'video.mp4'
   a.click()
+}
+
+const favoritedVideos = ref<Record<string, boolean>>({})
+
+async function toggleVideoFavorite(rec: VideoRecord) {
+  if (!rec.outputAssetId) return
+  const userStr = localStorage.getItem('user')
+  if (!userStr) return
+  const user = JSON.parse(userStr)
+  const key = rec.id
+  const newTag: 0 | 1 = favoritedVideos.value[key] ? 0 : 1
+  try {
+    await favoriteAsset(rec.outputAssetId, user.id, newTag)
+    favoritedVideos.value[key] = newTag === 1
+  } catch {
+    // 静默失败
+  }
 }
 
 // ── 初始化 ────────────────────────────────────────────────
@@ -616,6 +634,17 @@ onMounted(async () => {
                         <button class="download-btn" @click.stop="downloadVideo(rec.videoUrl)" title="下载">
                           <span>⬇</span>
                         </button>
+                        <button
+                          v-if="rec.outputAssetId"
+                          class="favorite-btn"
+                          :class="{ favorited: favoritedVideos[rec.id] }"
+                          @click.stop="toggleVideoFavorite(rec)"
+                          title="收藏"
+                        >
+                          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+                          </svg>
+                        </button>
                       </div>
                     </div>
                   </template>
@@ -825,6 +854,33 @@ onMounted(async () => {
 .video-thumb:hover .download-btn {
   opacity: 1;
 }
+.video-thumb:hover .favorite-btn {
+  opacity: 1;
+}
+
+.favorite-btn {
+  position: absolute;
+  top: 10px; right: 10px;
+  width: 30px; height: 30px;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.5);
+  border: none;
+  color: rgba(255,255,255,0.6);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: all 0.2s;
+  backdrop-filter: blur(4px);
+}
+.favorite-btn.favorited {
+  opacity: 1;
+  color: #f43f5e;
+  background: rgba(244,63,94,0.15);
+}
+.favorite-btn.favorited svg { fill: #f43f5e; stroke: #f43f5e; }
+.favorite-btn:hover { transform: scale(1.15); color: #f43f5e; background: rgba(244,63,94,0.2); }
 
 .record-row { align-items: center; }
 .record-input-col { width: 240px; }

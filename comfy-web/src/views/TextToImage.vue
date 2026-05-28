@@ -8,7 +8,7 @@ import RecordCard from '../components/RecordCard.vue'
 import ImageEditor from '../components/ImageEditor.vue'
 import { getModels, getKSamplerInfo, submitPrompt, uploadImage, type PromptParams } from '../api/comfyui'
 import { useComfyWebSocket } from '../composables/useComfyWebSocket'
-import { getApiModels, retryHistory, type ApiModel } from '../api/apiService'
+import { getApiModels, retryHistory, favoriteAsset, type ApiModel } from '../api/apiService'
 import { useGenerationHistory } from '../composables/useGenerationHistory'
 import { useTaskPolling } from '../composables/useTaskPolling'
 import { useAtMention } from '../composables/useAtMention'
@@ -46,6 +46,7 @@ interface GenerationRecord {
   dbId?: number
   inputAssetIds?: number[]
   modelId?: number
+  outputAssetIds?: number[]
 }
 
 // ── 历史记录 ──────────────────────────────────────────────
@@ -67,6 +68,7 @@ const { resumeTaskPolling } = useTaskPolling<GenerationRecord>(
 function pollImage(record: GenerationRecord, userId?: number) {
   return resumeTaskPolling(record, userId, (rec, result) => {
     rec.images = result.images.map((i: any) => i.url).filter(Boolean) as string[]
+    rec.outputAssetIds = result.images.map((i: any) => i.id).filter(Boolean) as number[]
   })
 }
 
@@ -334,6 +336,23 @@ function downloadImage(url: string, filename?: string) {
   a.click()
 }
 
+async function toggleImageFavorite(rec: GenerationRecord, index: number) {
+  const assetId = rec.outputAssetIds?.[index]
+  if (!assetId) return
+  const userStr = localStorage.getItem('user')
+  if (!userStr) return
+  const user = JSON.parse(userStr)
+  const currentTag = (rec as any)._favoritedImages?.[index] ? 1 : 0
+  const newTag: 0 | 1 = currentTag === 1 ? 0 : 1
+  try {
+    await favoriteAsset(assetId, user.id, newTag)
+    if (!(rec as any)._favoritedImages) (rec as any)._favoritedImages = {}
+    ;(rec as any)._favoritedImages[index] = newTag === 1
+  } catch {
+    // 静默失败
+  }
+}
+
 // ── 本地模式 WebSocket 进度 ───────────────────────────────
 watch(progress, (val) => {
   const rec = (records.value as GenerationRecord[]).find(r => r.mode === 'local' && r.status === 'generating')
@@ -387,6 +406,7 @@ onMounted(async () => {
     status: (r.status === 'error' ? 'error' : 'done') as 'done' | 'error',
     progress: 100,
     images: r.output_urls.map((o: any) => o.url),
+    outputAssetIds: r.output_urls.map((o: any) => o.id).filter(Boolean),
     inputAssetIds: r.input_asset_ids,
     errorMsg: r.status === 'error' ? (r.message || '生成失败') : undefined,
   }), (r) => r.status !== 'pending' && r.status !== 'processing')
@@ -754,6 +774,17 @@ onMounted(async () => {
                         <button class="download-btn" @click="downloadImage(src)" title="下载">
                           <span>⬇</span>
                         </button>
+                        <button
+                          v-if="rec.outputAssetIds?.[i]"
+                          class="favorite-btn"
+                          :class="{ favorited: (rec as any)._favoritedImages?.[i] }"
+                          @click.stop="toggleImageFavorite(rec as any, i)"
+                          title="收藏"
+                        >
+                          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+                          </svg>
+                        </button>
                       </div>
                     </div>
                   </template>
@@ -961,6 +992,31 @@ onMounted(async () => {
   display: block; object-fit: contain; cursor: pointer;
 }
 .card-image-wrap:hover .download-btn { opacity: 1; }
+.card-image-wrap:hover .favorite-btn { opacity: 1; }
+
+.favorite-btn {
+  position: absolute;
+  top: 8px; right: 8px;
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.5);
+  border: none;
+  color: rgba(255,255,255,0.6);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: all 0.2s;
+  backdrop-filter: blur(4px);
+}
+.favorite-btn.favorited {
+  opacity: 1;
+  color: #f43f5e;
+  background: rgba(244,63,94,0.15);
+}
+.favorite-btn.favorited svg { fill: #f43f5e; stroke: #f43f5e; }
+.favorite-btn:hover { transform: scale(1.15); color: #f43f5e; background: rgba(244,63,94,0.2); }
 
 /* 进度 */
 .loading-text { font-size: 12px; color: rgba(255,255,255,0.35); }

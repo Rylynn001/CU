@@ -390,3 +390,14 @@ async function pollTaskStatus(taskId: string, expectedType: 'image' | 'video', u
 
   throw new Error('Task timeout after 100 minutes')
 }
+
+// ── Assets Favorite ───────────────────────────────────────────────────────
+
+export async function favoriteAsset(assetId: number, userId: number, tag: 0 | 1): Promise<void> {
+  const res = await fetch(`${BASE}/user/assets/${assetId}/favorite`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id: userId, tag }),
+  })
+  if (!res.ok) throw new Error(`favorite failed: ${res.status}`)
+}

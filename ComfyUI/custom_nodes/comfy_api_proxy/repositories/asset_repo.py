@@ -46,20 +46,32 @@ def get_input_assets_by_ids(asset_ids: list[int]) -> list[dict]:
         return cursor.fetchall()
 
 
-def get_user_assets(user_id: int, asset_type: str | None = None) -> list[dict]:
+def get_user_assets(user_id: int, asset_type: str | None = None, tag: int | None = None) -> list[dict]:
     with get_db_connection() as conn:
         cursor = conn.cursor()
+        sql = 'SELECT id, location, asset_type, tag FROM assets WHERE rfid = %s'
+        params: list = [user_id]
         if asset_type in ('picture', 'video'):
-            cursor.execute(
-                'SELECT id, location, asset_type FROM assets WHERE rfid = %s AND asset_type = %s ORDER BY id DESC',
-                (user_id, asset_type)
-            )
-        else:
-            cursor.execute(
-                'SELECT id, location, asset_type FROM assets WHERE rfid = %s ORDER BY id DESC',
-                (user_id,)
-            )
+            sql += ' AND asset_type = %s'
+            params.append(asset_type)
+        if tag is not None:
+            sql += ' AND tag = %s'
+            params.append(tag)
+        sql += ' ORDER BY id DESC'
+        cursor.execute(sql, params)
         return cursor.fetchall()
+
+
+def set_asset_tag(asset_id: int, user_id: int, tag: int) -> bool:
+    """设置资产 tag（1=收藏，0=取消收藏），返回是否成功"""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            'UPDATE assets SET tag = %s WHERE id = %s AND rfid = %s',
+            (tag, asset_id, user_id)
+        )
+        conn.commit()
+        return cursor.rowcount > 0
 
 
 def get_asset_by_id(asset_id: int) -> dict | None:

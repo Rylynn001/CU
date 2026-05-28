@@ -129,12 +129,49 @@ async def get_user_assets(request: web.Request):
         raise web.HTTPBadRequest(reason='user_id must be an integer')
 
     asset_type = request.rel_url.query.get('asset_type')
+    tag_str = request.rel_url.query.get('tag')
+    tag = int(tag_str) if tag_str is not None else None
     try:
         from .repositories import asset_repo
-        assets = asset_repo.get_user_assets(user_id, asset_type)
+        assets = asset_repo.get_user_assets(user_id, asset_type, tag)
         return web.json_response({'assets': assets})
     except Exception as e:
         logger.error(f'[api-proxy] 获取用户资产失败: {e}')
+        raise web.HTTPInternalServerError(reason=str(e))
+
+
+# ── /api-proxy/user/assets/{asset_id}/favorite ───────────────────────────
+
+@routes.post('/api-proxy/user/assets/{asset_id}/favorite')
+async def set_asset_favorite(request: web.Request):
+    asset_id = request.match_info['asset_id']
+    try:
+        asset_id = int(asset_id)
+    except ValueError:
+        raise web.HTTPBadRequest(reason='asset_id must be an integer')
+
+    body = await request.json()
+    user_id = body.get('user_id')
+    tag = body.get('tag', 1)
+
+    if user_id is None:
+        raise web.HTTPBadRequest(reason='user_id is required')
+    try:
+        user_id = int(user_id)
+        tag = int(tag)
+    except (ValueError, TypeError):
+        raise web.HTTPBadRequest(reason='参数类型错误')
+
+    try:
+        from .repositories import asset_repo
+        ok = asset_repo.set_asset_tag(asset_id, user_id, tag)
+        if not ok:
+            raise web.HTTPNotFound(reason='资产不存在或无权限')
+        return web.json_response({'ok': True})
+    except web.HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f'[api-proxy] 设置收藏失败: {e}')
         raise web.HTTPInternalServerError(reason=str(e))
 
 
