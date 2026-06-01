@@ -1,40 +1,53 @@
 <script setup lang="ts">
+// Vue 核心
 import { ref, onMounted, computed } from 'vue'
+// Element Plus UI 组件
 import { ElInput, ElSelect, ElOption, ElImageViewer } from 'element-plus'
 import { UploadFilled } from '@element-plus/icons-vue'
+// 资产选择器弹窗
 import AssetPicker from '../components/AssetPicker.vue'
+// 视频播放器弹窗（点击历史记录中的视频时打开）
 import VideoPlayer from '../components/VideoPlayer.vue'
+// 历史记录卡片
 import RecordCard from '../components/RecordCard.vue'
+// 图片编辑器（图生视频时可以涂抹参考图）
 import ImageEditor from '../components/ImageEditor.vue'
+// 后端 API 接口
 import { getApiModels, retryHistory, favoriteAsset, type ApiModel } from '../api/apiService'
+// 历史记录管理
 import { useGenerationHistory } from '../composables/useGenerationHistory'
+// 任务轮询
 import { useTaskPolling } from '../composables/useTaskPolling'
+// @提及功能
 import { useAtMention } from '../composables/useAtMention'
+// 历史记录编辑面板
 import { useRecordEditor } from '../composables/useRecordEditor'
+// 输入媒体管理：统一管理本地上传文件和资产库选择的图片/视频
 import { useInputMedia } from '../composables/useInputMedia'
+// 视频生成服务：文生视频 和 图生视频 的 API 调用封装
 import { submitVideoGeneration, submitImg2VideoGeneration } from '../services/videoGenerationService'
 import { getCurrentUserId } from '../utils/user'
 import { generateUUID } from '../utils/uuid'
 
 // ── 生成记录类型 ──────────────────────────────────────────
 interface VideoRecord {
-  id: string
-  createdAt: number
-  prompt: string
-  modelName: string
-  ratio: string
-  resolution: string
-  duration: number
-  status: 'generating' | 'done' | 'error'
-  videoUrl?: string
-  errorMsg?: string
-  taskId?: string
-  mode: 'txt2video' | 'img2video'
-  inputAssetIds?: number[]
-  inputAssetUrls?: Array<{ url: string; type: string }>
-  dbId?: number
-  modelId?: number
-  outputAssetId?: number
+  id: string                                            // 前端唯一 ID
+  createdAt: number                                     // 创建时间戳
+  prompt: string                                        // 提示词
+  modelName: string                                     // 模型名称
+  ratio: string                                         // 宽高比（如 "16:9"）
+  resolution: string                                    // 分辨率（如 "720p"）
+  duration: number                                      // 视频时长（秒）
+  status: 'generating' | 'done' | 'error'              // 当前状态
+  videoUrl?: string                                     // 生成结果视频 URL
+  errorMsg?: string                                     // 失败时的错误信息
+  taskId?: string                                       // API 任务 ID，用于轮询
+  mode: 'txt2video' | 'img2video'                      // 文生视频 或 图生视频
+  inputAssetIds?: number[]                              // 参考素材在资产库中的 ID
+  inputAssetUrls?: Array<{ url: string; type: string }> // 参考素材的线上 URL（展示用）
+  dbId?: number                                         // 数据库记录 ID
+  modelId?: number                                      // 模型数据库 ID
+  outputAssetId?: number                                // 输出视频在资产库中的 ID（用于收藏）
 }
 
 // ── 历史记录 ──────────────────────────────────────────────
@@ -43,7 +56,7 @@ const {
   toggleInputExpand, deleteRecord, clearAll, loadFromDb, markStaleRecords,
 } = useGenerationHistory<VideoRecord>('video_generation_history', 'video',
   (r) => ({
-    // blob URL 刷新后失效，保存时过滤掉，完成后从 DB 重新加载
+    // blob: URL 在页面刷新后失效，保存时过滤掉，下次从数据库重新加载线上 URL
     inputAssetUrls: r.inputAssetUrls?.filter(a => !a.url.startsWith('blob:')),
   }),
 )
@@ -54,21 +67,26 @@ const { resumeTaskPolling } = useTaskPolling<VideoRecord>(
   saveRecords,
 )
 
+// 对视频生成任务启动轮询，回调中将结果写入记录
 function pollVideo(record: VideoRecord, userId?: number) {
   return resumeTaskPolling(record, userId, (rec, result) => {
+    // 从返回的 images 数组中找到视频类型的条目
     const videoItem = result.images.find((i: any) => i.url)
     rec.videoUrl = videoItem?.url || ''
     if (videoItem?.id) rec.outputAssetId = videoItem.id
+    // 如果后端返回了参考素材的线上 URL，更新到记录中（用于展示）
     if ((result as any).inputAssetUrls?.length) {
       rec.inputAssetUrls = (result as any).inputAssetUrls
     }
-  }, 'video')
+  }, 'video')  // 'video' 告诉轮询器这是视频任务
 }
 
 // ── 模型 ──────────────────────────────────────────────────
 const apiModels = ref<ApiModel[]>([])
 const apiModel = ref('')
+// 视频页默认使用 API 模式（本地视频生成暂未实现）
 const modelSource = ref<'local' | 'api'>('api')
+// 当前标签页：文生视频 或 图生视频
 const activeTab = ref<'txt2video' | 'img2video'>('txt2video')
 const isImg2Video = computed(() => activeTab.value === 'img2video')
 
@@ -76,11 +94,16 @@ const isImg2Video = computed(() => activeTab.value === 'img2video')
 const prompt = ref('')
 const generating = ref(false)
 const errorMsg = ref('')
+// 防重复提交标志
 const justSubmitted = ref(false)
+// 视频宽高比
 const ratio = ref('16:9')
+// 视频分辨率
 const resolution = ref('720p')
+// 视频时长（秒）
 const duration = ref(8)
 
+// 宽高比选项列表
 const ratioOptions = [
   { label: '16:9', value: '16:9' },
   { label: '4:3', value: '4:3' },
@@ -88,9 +111,10 @@ const ratioOptions = [
   { label: '3:4', value: '3:4' },
   { label: '9:16', value: '9:16' },
   { label: '21:9', value: '21:9' },
-  { label: 'adaptive', value: 'adaptive' },
+  { label: 'adaptive', value: 'adaptive' },  // 自适应：由模型根据参考图决定
 ]
 
+// 分辨率选项列表
 const resolutionOptions = [
   { label: '480p', value: '480p' },
   { label: '720p', value: '720p' },
@@ -98,7 +122,19 @@ const resolutionOptions = [
 ]
 
 // ── 输入媒体 ──────────────────────────────────────────────
+// 控制资产选择器弹窗
 const showAssetPicker = ref(false)
+// useInputMedia 统一管理图生视频的输入素材：
+// inputFiles - 本地上传的文件列表
+// inputPreviews - 本地文件的预览信息（url + type）
+// selectedAssetIds - 从资产库选择的素材 ID 列表
+// selectedAssetPreviews - 资产库素材的预览信息（url + type + id）
+// allMediaItems - 合并后的所有素材（用于 @mention 下拉）
+// handleFilesChange - 处理文件选择事件（支持多选，自动校验数量上限）
+// removeFile / removeAsset - 删除某个本地文件 / 资产
+// clearAllInputs - 清空所有输入素材
+// handleAssetSelect - 资产选择器回调
+// replaceFile / replaceAssetWithFile - 编辑图片后替换原素材
 const {
   inputFiles, inputPreviews, selectedAssetIds, selectedAssetPreviews, allMediaItems,
   handleFilesChange, removeFile, removeAsset, clearAllInputs, handleAssetSelect,
@@ -111,7 +147,7 @@ const { atMentionActive, atMentionIndex, onPromptKeyup, onPromptKeydown, insertM
   useAtMention(
     () => prompt.value,
     (v) => { prompt.value = v },
-    () => allMediaItems.value,
+    () => allMediaItems.value,  // @mention 可引用所有已上传的图片和视频
     promptInputRef,
   )
 
@@ -124,10 +160,14 @@ function previewImage(url: string) {
 }
 
 // ── 视频播放器弹窗 ────────────────────────────────────────
+// 控制视频播放器弹窗的显示
 const showVideoPlayer = ref(false)
+// 当前播放的视频 URL
 const activeVideoUrl = ref('')
+// 当前播放视频对应的资产 ID（用于收藏等操作）
 const activeVideoDbId = ref<number | undefined>(undefined)
 
+// 点击历史记录中的视频缩略图时打开播放器
 function openVideo(url: string, dbId?: number) {
   activeVideoUrl.value = url
   activeVideoDbId.value = dbId
@@ -135,9 +175,13 @@ function openVideo(url: string, dbId?: number) {
 }
 
 // ── 图片编辑器（输入素材） ────────────────────────────────
+// 控制输入素材编辑器弹窗
 const showEditor = ref(false)
+// 当前编辑的素材来源：本地文件 或 资产库
 const editingSource = ref<'file' | 'asset'>('file')
+// 当前编辑的本地文件索引
 const editingFileIndex = ref(-1)
+// 当前编辑的资产索引
 const editingAssetIndex = ref(-1)
 
 function openLocalEditor(index: number) {
@@ -148,6 +192,7 @@ function openAssetEditor(index: number) {
 }
 function onEditorCancel() { showEditor.value = false }
 
+// 编辑器确认后，根据来源替换对应的素材
 function onEditorConfirmUnified(file: File) {
   if (editingSource.value === 'file') {
     const idx = editingFileIndex.value
@@ -168,12 +213,14 @@ const {
   onImageEditorCancel: onRecordImageEditorCancel, closeEditor: closeRecordEditor, getEditedFile,
 } = useRecordEditor(inlineEditorRef)
 
+// 点击历史记录卡片的"继续生成"按钮
 function handleRecordEdit(id: string) {
   const rec = (records.value as VideoRecord[]).find(r => r.id === id)
   if (!rec || rec.status !== 'done') return
   openRecordEditor(rec)
 }
 
+// 在编辑面板中点击"继续生成"按钮（图生视频模式，使用编辑后的图片重新生成）
 async function generateFromEdit() {
   if (!apiModel.value) { errorMsg.value = '请先选择 API 模型'; return }
   closeRecordEditor()
@@ -184,6 +231,7 @@ async function generateFromEdit() {
   const editedFile = await getEditedFile()
   const userId = getCurrentUserId()
 
+  // 创建新记录
   const newRecord: VideoRecord = {
     id: generateUUID(), createdAt: Date.now(),
     prompt: recordEditorPrompt.value, modelName: model.name,
@@ -197,6 +245,7 @@ async function generateFromEdit() {
   try {
     let inputAssetIds: number[] = []
     if (editedFile) {
+      // 将编辑后的图片上传到资产库，获取资产 ID
       const { uploadInputImage } = await import('../api/apiService')
       const uploaded = await uploadInputImage(editedFile, userId ?? 1)
       inputAssetIds = [uploaded.id]
@@ -222,7 +271,7 @@ async function generateFromEdit() {
 // ── 重试 ──────────────────────────────────────────────────
 async function retryRecord(record: VideoRecord) {
   if (!record.dbId) {
-    return
+    return  // 没有 dbId 无法重试
   }
   const newRecord: VideoRecord = {
     id: generateUUID(), createdAt: Date.now(),
@@ -249,11 +298,12 @@ async function retryRecord(record: VideoRecord) {
 async function handleGenerate() {
   errorMsg.value = ''
   if (!prompt.value.trim()) { errorMsg.value = '请输入提示词'; return }
-  if (generating.value) return
+  if (generating.value) return  // 防止重复提交
   generating.value = true
 
   if (modelSource.value === 'api') {
     if (!apiModel.value) { errorMsg.value = '请先在模型管理中添加视频模型'; generating.value = false; return }
+    // 图生视频模式必须有输入素材
     if (activeTab.value === 'img2video' && inputFiles.value.length === 0 && selectedAssetIds.value.length === 0) {
       errorMsg.value = '请上传图片/视频或从资产选择'; generating.value = false; return
     }
@@ -261,11 +311,13 @@ async function handleGenerate() {
     const modelName = apiModels.value.find(m => m.id === apiModel.value)?.name || apiModel.value
     const userId = getCurrentUserId()
 
+    // 创建记录并立即插入列表
     const record: VideoRecord = {
       id: generateUUID(), createdAt: Date.now(),
       prompt: prompt.value, modelId: Number(apiModel.value) || undefined, modelName,
       ratio: ratio.value, resolution: resolution.value, duration: duration.value,
       status: 'generating', mode: activeTab.value,
+      // 图生视频时记录参考素材信息
       inputAssetIds: activeTab.value === 'img2video' ? [...selectedAssetIds.value] : undefined,
       inputAssetUrls: activeTab.value === 'img2video' ? [
         ...inputPreviews.value.map(p => ({ url: p.url, type: p.type })),
@@ -279,6 +331,7 @@ async function handleGenerate() {
 
     try {
       if (activeTab.value === 'img2video') {
+        // 图生视频：上传本地文件 + 传入资产预览，后端会处理上传
         const result = await submitImg2VideoGeneration({
           modelId: apiModel.value, prompt: prompt.value,
           ratio: ratio.value, resolution: resolution.value, duration: duration.value,
@@ -287,8 +340,10 @@ async function handleGenerate() {
           inputAssetPreviews: selectedAssetPreviews.value,
         })
         record.taskId = result.taskId
+        // 后端可能返回上传后的资产 ID
         if (result.inputAssetIds) record.inputAssetIds = result.inputAssetIds
       } else {
+        // 文生视频
         const result = await submitVideoGeneration({
           modelId: apiModel.value, prompt: prompt.value,
           ratio: ratio.value, resolution: resolution.value, duration: duration.value,
@@ -297,12 +352,14 @@ async function handleGenerate() {
         if (result.taskId) {
           record.taskId = result.taskId
         } else {
+          // 极少数情况下同步返回结果
           record.videoUrl = result.videoUrl; record.status = 'done'
           saveRecords(); generating.value = false; return
         }
       }
 
       saveRecords()
+      // 延迟 1.5s 后解除 generating 状态（让用户看到提交成功的反馈）
       setTimeout(() => generating.value = false, 1500)
       pollVideo(record, userId ?? undefined).catch(console.error)
     } catch (e: any) {
@@ -313,10 +370,12 @@ async function handleGenerate() {
     return
   }
 
+  // 本地视频生成暂未实现
   errorMsg.value = '本地视频生成暂未实现，请使用 API 调用'
   generating.value = false
 }
 
+// 下载视频到本地
 function downloadVideo(url: string, filename?: string) {
   const a = document.createElement('a')
   a.href = url
@@ -324,8 +383,10 @@ function downloadVideo(url: string, filename?: string) {
   a.click()
 }
 
+// 记录每个视频的收藏状态（key 为记录 ID）
 const favoritedVideos = ref<Record<string, boolean>>({})
 
+// 切换某条视频记录的收藏状态
 async function toggleVideoFavorite(rec: VideoRecord) {
   if (!rec.outputAssetId) return
   const userStr = localStorage.getItem('user')
@@ -344,16 +405,19 @@ async function toggleVideoFavorite(rec: VideoRecord) {
 // ── 初始化 ────────────────────────────────────────────────
 onMounted(async () => {
   try {
+    // 获取视频类型的 API 模型列表
     apiModels.value = await getApiModels('video')
     if (apiModels.value.length > 0) apiModel.value = apiModels.value[0].id
   } catch {}
 
+  // 从数据库加载历史记录
   const userId = await loadFromDb((r) => ({
     id: String(r.id), dbId: r.id, createdAt: 0,
     prompt: r.prompt || '', modelName: r.model_name || '',
     ratio: '', resolution: '', duration: 0,
     status: (r.status === 'error' ? 'error' : 'done') as 'done' | 'error',
     mode: (r.type === 'img2video' ? 'img2video' : 'txt2video') as 'txt2video' | 'img2video',
+    // 优先取 type=video 的输出，否则取第一个
     videoUrl: r.output_urls.find((o: any) => o.type === 'video')?.url || r.output_urls[0]?.url,
     outputAssetId: r.output_urls.find((o: any) => o.type === 'video')?.id || r.output_urls[0]?.id,
     inputAssetIds: r.input_asset_ids,
@@ -361,6 +425,7 @@ onMounted(async () => {
     errorMsg: r.status === 'error' ? (r.message || '生成失败') : undefined,
   }), (r) => r.status !== 'pending' && r.status !== 'processing')
 
+  // 恢复页面刷新前未完成的任务轮询
   const pending = markStaleRecords()
   for (const rec of pending) {
     pollVideo(rec as VideoRecord, userId).catch(console.error)

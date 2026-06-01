@@ -1,131 +1,209 @@
 <script setup lang="ts">
+// Vue 核心：ref 创建响应式变量，onMounted 页面加载后执行，watch 监听变量变化，computed 计算属性
 import { ref, onMounted, watch, computed } from 'vue'
+// Element Plus UI 组件：输入框、下拉选择、滑块、数字输入框
 import { ElInput, ElSelect, ElOption, ElSlider, ElInputNumber } from 'element-plus'
+// Element Plus 图标
 import { Refresh, UploadFilled, Close, Setting } from '@element-plus/icons-vue'
+// 图片预览组件（全屏查看大图）
 import { ElImageViewer } from 'element-plus'
+// 资产选择器：从已有素材库中选图
 import AssetPicker from '../components/AssetPicker.vue'
+// 历史记录卡片：展示每条生成记录
 import RecordCard from '../components/RecordCard.vue'
+// 图片编辑器：涂抹/裁剪输入图
 import ImageEditor from '../components/ImageEditor.vue'
+// 本地 ComfyUI 接口：获取模型列表、采样器信息、提交任务、上传图片
 import { getModels, getKSamplerInfo, submitPrompt, uploadImage, type PromptParams } from '../api/comfyui'
+// WebSocket 连接：实时接收本地 ComfyUI 的生成进度和结果图片
 import { useComfyWebSocket } from '../composables/useComfyWebSocket'
+// 后端 API 接口：获取 API 模型列表、重试历史任务、收藏资产
 import { getApiModels, retryHistory, favoriteAsset, type ApiModel } from '../api/apiService'
+// 历史记录管理：读写本地存储 + 从数据库加载历史
 import { useGenerationHistory } from '../composables/useGenerationHistory'
+// 任务轮询：定时查询 API 任务状态，直到完成或失败
 import { useTaskPolling } from '../composables/useTaskPolling'
+// @提及功能：在提示词输入框中输入 @ 可引用已上传的参考图
 import { useAtMention } from '../composables/useAtMention'
+// 图片尺寸控制：管理宽高比例、分辨率档位、自定义尺寸
 import { useImageSizeControl } from '../composables/useImageSizeControl'
+// 历史记录编辑面板：点击历史记录的"继续生图"时打开编辑器
 import { useRecordEditor } from '../composables/useRecordEditor'
+// 图片生成服务：封装了上传参考图 + 调用 API 的完整流程
 import { submitImageGeneration, type InputImage } from '../services/imageGenerationService'
+// 工具函数：获取当前登录用户 ID
 import { getCurrentUserId } from '../utils/user'
+// 工具函数：生成唯一 ID，用于每条生成记录
 import { generateUUID } from '../utils/uuid'
 
+// 解构 WebSocket 相关状态和方法：
+// clientId - 本次连接的唯一标识，提交任务时传给 ComfyUI
+// progress - 当前生成进度 0~100
+// generating - 是否正在生成中
+// imageUrl - 生成完成后的图片 URL
+// connect - 建立 WebSocket 连接
+// startGeneration - 开始监听某个任务的进度
 const { clientId, progress, generating, imageUrl, connect, startGeneration } = useComfyWebSocket()
 
 // ── 图片预览 ──────────────────────────────────────────────
+// 控制全屏图片预览弹窗的显示/隐藏
 const showImageViewer = ref(false)
+// 当前要预览的图片 URL
 const previewImageUrl = ref('')
+// 点击图片时调用，打开全屏预览
 function previewImage(url: string) {
   previewImageUrl.value = url
   showImageViewer.value = true
 }
 
 // ── 生成记录类型 ──────────────────────────────────────────
+// 每条生成记录的数据结构定义
 interface GenerationRecord {
-  id: string
-  createdAt: number
-  prompt: string
-  inputPreviews: string[]
-  inputAssetUrls?: Array<{ url: string; type: string }>
-  modelName: string
-  mode: 'api' | 'local'
-  status: 'generating' | 'done' | 'error'
-  progress: number
-  images: string[]
-  errorMsg?: string
-  taskId?: string
-  isImg2Img?: boolean
-  dbId?: number
-  inputAssetIds?: number[]
-  modelId?: number
-  outputAssetIds?: number[]
+  id: string                                          // 前端唯一 ID（UUID）
+  createdAt: number                                   // 创建时间戳
+  prompt: string                                      // 正向提示词
+  inputPreviews: string[]                             // 参考图的本地预览 URL（blob: 或 /api/view?...）
+  inputAssetUrls?: Array<{ url: string; type: string }> // 参考图的线上 URL（从数据库加载时使用）
+  modelName: string                                   // 模型名称（展示用）
+  mode: 'api' | 'local'                              // 调用方式：API 还是本地 ComfyUI
+  status: 'generating' | 'done' | 'error'            // 当前状态
+  progress: number                                    // 进度 0~100（仅本地模式有意义）
+  images: string[]                                    // 生成结果图片 URL 列表
+  errorMsg?: string                                   // 失败时的错误信息
+  taskId?: string                                     // API 任务 ID，用于轮询状态
+  isImg2Img?: boolean                                 // 是否是图生图模式
+  dbId?: number                                       // 数据库中的记录 ID
+  inputAssetIds?: number[]                            // 参考图在资产库中的 ID
+  modelId?: number                                    // 模型在数据库中的 ID
+  outputAssetIds?: number[]                           // 生成结果在资产库中的 ID（用于收藏）
 }
 
 // ── 历史记录 ──────────────────────────────────────────────
+// useGenerationHistory 封装了：
+// records - 所有历史记录（响应式数组）
+// saveRecords - 将 records 持久化到 localStorage
+// searchQuery - 搜索关键词
+// expandedInputs - 记录哪些条目展开了参考图
+// filteredRecords - 按 searchQuery 过滤后的记录列表
+// toggleInputExpand - 切换某条记录的参考图展开状态
+// deleteRecord - 删除某条记录
+// clearAll - 清空所有记录
+// loadFromDb - 从后端数据库加载历史记录
+// markStaleRecords - 将本地 generating 状态的记录标记为待轮询
 const {
   records, saveRecords, searchQuery, expandedInputs, filteredRecords,
   toggleInputExpand, deleteRecord, clearAll, loadFromDb, markStaleRecords,
 } = useGenerationHistory<GenerationRecord>(
-  'generation_history',
-  'img',
+  'generation_history',  // localStorage 的 key
+  'img',                 // 资产类型，用于从数据库加载时过滤
+  // 保存前的数据清洗：过滤掉 blob: URL（刷新后失效），只保留 http 或 /api 开头的图片
   (r) => ({ images: r.images.filter((img: string) => img.startsWith('http') || img.startsWith('/')) }),
 )
 
 // ── 任务轮询 ──────────────────────────────────────────────
+// resumeTaskPolling：对某条记录启动轮询，定时查询任务状态
 const { resumeTaskPolling } = useTaskPolling<GenerationRecord>(
   () => records.value as GenerationRecord[],
   saveRecords,
 )
 
+// 对图片生成任务启动轮询，回调中将结果写入记录
 function pollImage(record: GenerationRecord, userId?: number) {
   return resumeTaskPolling(record, userId, (rec, result) => {
+    // 将返回的图片列表写入记录（过滤掉空值）
     rec.images = result.images.map((i: any) => i.url).filter(Boolean) as string[]
+    // 同时保存资产 ID，用于后续收藏操作
     rec.outputAssetIds = result.images.map((i: any) => i.id).filter(Boolean) as number[]
   })
 }
 
 // ── 模型 ──────────────────────────────────────────────────
+// API 模型列表（从后端获取，包含 id 和 name）
 const apiModels = ref<ApiModel[]>([])
+// 当前选中的 API 模型 ID
 const apiModel = ref('')
+// API 模式下的生成质量：low / medium / high
 const apiQuality = ref('medium')
+// 本地 ComfyUI 的 checkpoint 模型列表（文件名字符串）
 const models = ref<string[]>([])
+// 本地 ComfyUI 支持的采样器列表
 const samplers = ref<string[]>([])
+// 本地 ComfyUI 支持的调度器列表
 const schedulers = ref<string[]>([])
+// 当前调用方式：local（本地 ComfyUI）或 api（后端 API）
 const modelSource = ref<'local' | 'api'>('local')
 
 // ── 表单参数 ──────────────────────────────────────────────
+// 当前激活的标签页：文生图 或 图生图
 const activeTab = ref<'txt2img' | 'img2img'>('txt2img')
+// 计算属性：是否处于图生图模式（避免到处写 activeTab.value === 'img2img'）
 const isImg2Img = computed(() => activeTab.value === 'img2img')
+// 是否展开高级参数面板（步数、CFG、采样器等）
 const showAdvanced = ref(false)
+// 页面级错误提示文字
 const errorMsg = ref('')
+// 防重复提交：点击生成后短暂变为 true，按钮显示"已提交 ✓"
 const justSubmitted = ref(false)
 
+// 本地 ComfyUI 的生成参数表单
 const form = ref<PromptParams>({
-  ckpt_name: '',
-  positive_prompt: '',
-  negative_prompt: '',
-  width: 512,
-  height: 512,
-  seed: Math.floor(Math.random() * 2 ** 32),
-  steps: 20,
-  cfg: 8,
-  sampler_name: 'dpmpp_2m',
-  scheduler: 'karras',
-  denoise: 1,
-  batch_size: 1,
+  ckpt_name: '',          // 选中的 checkpoint 模型文件名
+  positive_prompt: '',    // 正向提示词
+  negative_prompt: '',    // 反向提示词（不想出现的内容）
+  width: 512,             // 图片宽度（像素）
+  height: 512,            // 图片高度（像素）
+  seed: Math.floor(Math.random() * 2 ** 32), // 随机种子，影响生成结果
+  steps: 20,              // 采样步数，越高质量越好但越慢
+  cfg: 8,                 // CFG Scale，越高越贴近提示词但可能过饱和
+  sampler_name: 'dpmpp_2m', // 采样算法
+  scheduler: 'karras',   // 噪声调度器
+  denoise: 1,             // 降噪强度：1=完全重绘，0=不变（图生图时通常设 0.75）
+  batch_size: 1,          // 一次生成几张图
 })
 
 // ── 尺寸控制 ──────────────────────────────────────────────
+// useImageSizeControl 封装了比例/分辨率的联动逻辑：
+// ratios - 可选的宽高比列表（如 1:1、16:9 等）
+// resolutions - 可选的分辨率档位（如 512、768、1024）
+// activeRatio - 当前选中的比例
+// activeResolution - 当前选中的分辨率
+// ratioOpen - 比例下拉菜单是否展开
+// sizeCustomized - 用户是否手动修改了宽高（此时不高亮任何预设档位）
+// setRatio - 选择比例时调用，自动更新宽高
+// setResolution - 选择分辨率时调用，自动更新宽高
+// startStep / stopStep - 长按宽高步进按钮时的连续增减逻辑
 const { ratios, resolutions, activeRatio, activeResolution, ratioOpen, sizeCustomized,
   setRatio, setResolution, startStep, stopStep } =
   useImageSizeControl(
+    // 读取当前宽高（供内部计算使用）
     () => ({ width: form.value.width, height: form.value.height }),
+    // 写入新宽高（比例/分辨率变化时回调）
     (w, h) => { form.value.width = w; form.value.height = h },
   )
 
 // ── 输入图片 ──────────────────────────────────────────────
+// 图生图模式下的参考图列表，每项包含：file（本地文件）、preview（预览 URL）、assetLocation（资产路径）
 const inputImages = ref<InputImage[]>([])
+// 控制资产选择器弹窗的显示
 const showAssetPicker = ref(false)
+// 文生图模式下选中的资产路径（暂时保留，实际未使用）
 const selectedAssetLocation = ref('')
 
+// 从本地文件添加参考图（最多 4 张）
 function addLocalImage(file: File) {
   if (inputImages.value.length >= 4) return
+  // URL.createObjectURL 创建临时的 blob: URL 用于预览
   inputImages.value.push({ file, preview: URL.createObjectURL(file), assetLocation: '' })
 }
 
+// 从资产库选择图片后的回调
 function handleAssetSelect(assets: Array<{ id: number; location: string; asset_type?: string }>) {
   if (activeTab.value === 'img2img') {
+    // 图生图模式：API 最多 4 张，本地模式最多 1 张
     const maxImages = modelSource.value === 'api' ? 4 : 1
     for (const asset of assets) {
       if (inputImages.value.length >= maxImages) break
+      // 从资产路径中提取文件名，构造 /api/view 预览 URL
       const filename = asset.location.replace(/\\/g, '/').split('/').pop()!
       inputImages.value.push({
         file: null,
@@ -134,30 +212,42 @@ function handleAssetSelect(assets: Array<{ id: number; location: string; asset_t
       })
     }
   } else {
+    // 文生图模式：只记录第一个资产的路径
     if (assets.length > 0) selectedAssetLocation.value = assets[0].location
   }
 }
 
 // ── @mention ──────────────────────────────────────────────
+// 提示词输入框的 ref，用于 @mention 功能定位光标
 const promptInputRef = ref<InstanceType<typeof ElInput> | null>(null)
+// useAtMention 封装了在提示词中输入 @ 后弹出图片选择下拉的逻辑：
+// atMentionActive - 下拉是否显示
+// atMentionIndex - 当前高亮的选项索引（键盘上下键控制）
+// onPromptKeyup / onPromptKeydown - 绑定到输入框的键盘事件处理
+// insertMention - 选中某张图后插入 @图N 文本
 const { atMentionActive, atMentionIndex, onPromptKeyup, onPromptKeydown, insertMention } =
   useAtMention(
-    () => form.value.positive_prompt,
-    (v) => { form.value.positive_prompt = v },
-    () => inputImages.value.map(img => ({ url: img.preview, type: 'image' as const })),
+    () => form.value.positive_prompt,                                          // 读取当前提示词
+    (v) => { form.value.positive_prompt = v },                                 // 写入提示词
+    () => inputImages.value.map(img => ({ url: img.preview, type: 'image' as const })), // 可选的图片列表
     promptInputRef,
   )
 
 // ── 图片编辑器（输入图） ──────────────────────────────────
+// 控制输入图编辑器弹窗的显示
 const showEditor = ref(false)
+// 当前正在编辑的参考图索引（对应 inputImages 数组）
 const editingIndex = ref(-1)
+// 资产选择器的目标索引（-1 表示添加新图，>=0 表示替换某张）
 const assetPickerTargetIndex = ref(-1)
 
+// 打开某张参考图的编辑器
 function openEditor(idx: number) {
   editingIndex.value = idx
   showEditor.value = true
 }
 
+// 编辑器确认后的回调：用编辑后的文件替换原来的参考图
 function onEditorConfirm(file: File) {
   const idx = editingIndex.value
   if (idx >= 0 && idx < inputImages.value.length) {
@@ -167,7 +257,20 @@ function onEditorConfirm(file: File) {
 }
 
 // ── 历史记录编辑面板 ──────────────────────────────────────
+// 历史记录内联编辑器的 ref（用于获取编辑后的图片数据）
 const inlineEditorRef = ref<InstanceType<typeof ImageEditor> | null>(null)
+// useRecordEditor 封装了点击历史记录"继续生图"时的编辑面板逻辑：
+// showRecordEditor - 是否显示编辑面板（显示时左侧面板隐藏）
+// editingRecordId - 当前编辑的记录 ID
+// recordEditorPrompt - 编辑面板中的提示词（可修改）
+// recordEditorImages - 原始参考图 URL 列表
+// recordEditorEditedPreview - 编辑后的图片预览 URL
+// recordEditorEditingSrc - 当前正在编辑的图片源 URL
+// showRecordImageEditor - 是否显示图片编辑器子面板
+// openEditor - 打开某条记录的编辑面板
+// onImageEditorConfirm / onImageEditorCancel - 图片编辑器的确认/取消
+// closeEditor - 关闭编辑面板
+// getEditedFile - 获取编辑后的 File 对象（如果有涂抹修改）
 const {
   showRecordEditor, editingRecordId, recordEditorPrompt, recordEditorImages,
   recordEditorEditedPreview, recordEditorEditingSrc, showRecordImageEditor,
@@ -175,20 +278,25 @@ const {
   onImageEditorCancel: onRecordImageEditorCancel, closeEditor: closeRecordEditor, getEditedFile,
 } = useRecordEditor(inlineEditorRef)
 
+// 点击历史记录卡片的"继续生图"按钮
 function handleRecordEdit(id: string) {
   const rec = (records.value as GenerationRecord[]).find(r => r.id === id)
+  // 只有已完成的记录才能继续生图
   if (!rec || rec.status !== 'done') return
   openRecordEditor(rec)
 }
 
+// 在编辑面板中点击"继续生图"按钮
 async function generateFromEdit() {
   if (!apiModel.value) { errorMsg.value = '请先选择 API 模型'; return }
   closeRecordEditor()
 
+  // 如果用户在编辑器中涂抹了图片，获取修改后的 File；否则使用原始图片 URL
   const editedFile = await getEditedFile()
   const src = editedFile ? URL.createObjectURL(editedFile) : recordEditorImages.value[0]
   if (!src) return
 
+  // 创建新的生成记录并插入到列表最前面
   const record: GenerationRecord = {
     id: generateUUID(), createdAt: Date.now(),
     prompt: recordEditorPrompt.value, inputPreviews: [src],
@@ -206,6 +314,10 @@ async function generateFromEdit() {
 }
 
 // ── 核心生成逻辑 ──────────────────────────────────────────
+// 调用后端 API 执行图片生成，支持文生图和图生图
+// recordId: 对应的历史记录 ID
+// img2img: 是否是图生图模式
+// snapshotImages: 参考图快照（提交时的副本，防止用户后续修改影响本次任务）
 async function runApiGeneration(recordId: string, img2img: boolean, snapshotImages: InputImage[]) {
   const getRecord = () => (records.value as GenerationRecord[]).find(r => r.id === recordId)
   const rec = getRecord()
@@ -213,10 +325,11 @@ async function runApiGeneration(recordId: string, img2img: boolean, snapshotImag
 
   try {
     const userId = getCurrentUserId()
+    // submitImageGeneration 会上传参考图、调用 API、返回 taskId 或直接返回图片
     const result = await submitImageGeneration({
       modelId: rec.modelId,
       prompt: rec.prompt,
-      aspect_ratio: activeRatio.value.label,
+      aspect_ratio: activeRatio.value.label,  // 当前选中的宽高比（如 "1:1"、"16:9"）
       quality: apiQuality.value,
       batchSize: form.value.batch_size,
       img2img,
@@ -225,10 +338,12 @@ async function runApiGeneration(recordId: string, img2img: boolean, snapshotImag
     })
 
     if (result.taskId) {
+      // 异步任务：保存 taskId 后开始轮询
       rec.taskId = result.taskId
       saveRecords()
       pollImage(rec, userId ?? undefined).catch(console.error)
     } else {
+      // 同步返回（极少数情况）：直接写入结果
       rec.images = result.images || []
       rec.status = 'done'
       saveRecords()
@@ -240,10 +355,12 @@ async function runApiGeneration(recordId: string, img2img: boolean, snapshotImag
   }
 }
 
+// 重试某条失败的历史记录（通过数据库 ID 让后端重新执行）
 async function retryRecord(record: GenerationRecord) {
   if (!record.dbId) {
-    return
+    return  // 没有 dbId 说明是本地记录，无法重试
   }
+  // 创建新记录替换旧记录（旧记录从列表中移除）
   const newRecord: GenerationRecord = {
     id: generateUUID(), createdAt: Date.now(),
     mode: record.mode, prompt: record.prompt, modelName: record.modelName,
@@ -254,6 +371,7 @@ async function retryRecord(record: GenerationRecord) {
   saveRecords()
 
   try {
+    // 调用后端重试接口，返回新的 task_id 和 history_id
     const result = await retryHistory(record.dbId)
     newRecord.taskId = result.task_id
     newRecord.dbId = result.history_id
@@ -266,11 +384,14 @@ async function retryRecord(record: GenerationRecord) {
 }
 
 // ── 主生成入口 ────────────────────────────────────────────
+// 点击"开始生成"按钮时调用，根据 modelSource 分别走 API 或本地 ComfyUI 流程
 async function handleGenerate() {
   errorMsg.value = ''
+  // 获取模型显示名称（API 模式从列表中查，本地模式直接用文件名）
   const modelName = modelSource.value === 'api'
     ? (apiModels.value.find(m => m.id === apiModel.value)?.name || apiModel.value)
     : form.value.ckpt_name
+  // 快照当前参考图的预览 URL（用于记录展示）
   const inputPreviews = inputImages.value.map(img => img.preview)
 
   if (modelSource.value === 'api') {
@@ -278,6 +399,7 @@ async function handleGenerate() {
     if (isImg2Img.value && inputImages.value.length === 0) {
       errorMsg.value = '请先上传或选择参考图片'; return
     }
+    // 创建生成记录并立即插入列表（用户能立刻看到"生成中"状态）
     const record: GenerationRecord = {
       id: generateUUID(), createdAt: Date.now(),
       prompt: form.value.positive_prompt, inputPreviews, modelName,
@@ -287,8 +409,10 @@ async function handleGenerate() {
     }
     records.value.unshift(record)
     saveRecords()
+    // 短暂禁用按钮防止重复提交
     justSubmitted.value = true
     setTimeout(() => justSubmitted.value = false, 1000)
+    // 传入参考图快照（[...inputImages.value] 是浅拷贝，防止后续修改影响本次任务）
     runApiGeneration(record.id, isImg2Img.value, [...inputImages.value])
     return
   }
@@ -310,16 +434,20 @@ async function handleGenerate() {
         record.status = 'error'; record.errorMsg = '请先上传或选择参考图片'; saveRecords(); return
       }
       if (firstImg.file) {
+        // 本地文件：先上传到 ComfyUI，获取服务器端文件名
         form.value.input_image = await uploadImage(firstImg.file)
       } else if (firstImg.assetLocation) {
+        // 资产库文件：直接使用资产路径
         form.value.input_image = firstImg.assetLocation
       } else {
         record.status = 'error'; record.errorMsg = '请先上传或选择参考图片'; saveRecords(); return
       }
     } else {
-      form.value.input_image = undefined
+      form.value.input_image = undefined  // 文生图模式不需要输入图
     }
+    // 提交任务到 ComfyUI，返回 prompt_id
     const res = await submitPrompt(form.value, clientId)
+    // 开始通过 WebSocket 监听该任务的进度
     startGeneration(res.prompt_id)
   } catch {
     errorMsg.value = '提交失败，请检查 ComfyUI 后端'
@@ -329,6 +457,7 @@ async function handleGenerate() {
   }
 }
 
+// 下载图片到本地
 function downloadImage(url: string, filename?: string) {
   const a = document.createElement('a')
   a.href = url
@@ -336,16 +465,19 @@ function downloadImage(url: string, filename?: string) {
   a.click()
 }
 
+// 切换某张结果图的收藏状态
 async function toggleImageFavorite(rec: GenerationRecord, index: number) {
   const assetId = rec.outputAssetIds?.[index]
   if (!assetId) return
   const userStr = localStorage.getItem('user')
   if (!userStr) return
   const user = JSON.parse(userStr)
+  // 读取当前收藏状态（1=已收藏，0=未收藏）
   const currentTag = (rec as any)._favoritedImages?.[index] ? 1 : 0
   const newTag: 0 | 1 = currentTag === 1 ? 0 : 1
   try {
     await favoriteAsset(assetId, user.id, newTag)
+    // 更新本地状态（_favoritedImages 是运行时附加的属性，不持久化）
     if (!(rec as any)._favoritedImages) (rec as any)._favoritedImages = {}
     ;(rec as any)._favoritedImages[index] = newTag === 1
   } catch {
@@ -354,17 +486,20 @@ async function toggleImageFavorite(rec: GenerationRecord, index: number) {
 }
 
 // ── 本地模式 WebSocket 进度 ───────────────────────────────
+// 监听 WebSocket 推送的进度值，更新对应记录的进度条
 watch(progress, (val) => {
   const rec = (records.value as GenerationRecord[]).find(r => r.mode === 'local' && r.status === 'generating')
   if (rec) rec.progress = val
 })
 
+// 监听 WebSocket 推送的结果图片 URL，生成完成时更新记录状态
 watch(imageUrl, (url) => {
   if (!url) return
   const rec = (records.value as GenerationRecord[]).find(r => r.mode === 'local' && r.status === 'generating')
   if (rec) { rec.images = [url]; rec.status = 'done'; saveRecords() }
 })
 
+// 监听生成状态：如果 generating 变为 false 但记录还没有图片，说明超时或失败
 watch(generating, (val) => {
   if (!val) {
     const rec = (records.value as GenerationRecord[]).find(r => r.mode === 'local' && r.status === 'generating')
@@ -372,34 +507,39 @@ watch(generating, (val) => {
   }
 })
 
+// 切换到图生图时自动将降噪强度设为 0.75（保留参考图特征），切回文生图时恢复 1（完全重绘）
 watch(isImg2Img, (val) => { form.value.denoise = val ? 0.75 : 1 })
 
 // ── 初始化 ────────────────────────────────────────────────
 onMounted(async () => {
+  // 建立 WebSocket 连接，用于接收本地 ComfyUI 的实时进度
   connect()
 
   try {
+    // 并行请求本地 ComfyUI 的模型列表和采样器信息
     const [modelList, ksInfo] = await Promise.all([getModels(), getKSamplerInfo()])
     models.value = modelList
     samplers.value = ksInfo.samplers
     schedulers.value = ksInfo.schedulers
-    if (modelList.length > 0) form.value.ckpt_name = modelList[0]
+    if (modelList.length > 0) form.value.ckpt_name = modelList[0]  // 默认选第一个模型
     else errorMsg.value = '未找到任何 checkpoint 模型'
   } catch {
     errorMsg.value = '无法连接 ComfyUI 后端（默认 127.0.0.1:8188）'
   }
 
   try {
+    // 获取后端 API 模型列表（type='image' 只返回图片模型）
     apiModels.value = await getApiModels('image')
-    if (apiModels.value.length > 0) apiModel.value = apiModels.value[0].id
+    if (apiModels.value.length > 0) apiModel.value = apiModels.value[0].id  // 默认选第一个
   } catch {}
 
+  // 从数据库加载历史记录，将后端数据格式转换为前端 GenerationRecord 格式
   const userId = await loadFromDb((r) => ({
     id: String(r.id),
     dbId: r.id,
     createdAt: 0,
     prompt: r.prompt || '',
-    inputPreviews: [],
+    inputPreviews: [],                                    // 历史记录没有本地预览，用 inputAssetUrls 代替
     inputAssetUrls: r.input_asset_urls || [],
     modelName: r.model_name || '',
     mode: 'api' as const,
@@ -409,13 +549,15 @@ onMounted(async () => {
     outputAssetIds: r.output_urls.map((o: any) => o.id).filter(Boolean),
     inputAssetIds: r.input_asset_ids,
     errorMsg: r.status === 'error' ? (r.message || '生成失败') : undefined,
-  }), (r) => r.status !== 'pending' && r.status !== 'processing')
+  }), (r) => r.status !== 'pending' && r.status !== 'processing')  // 只加载已完成或失败的记录
 
+  // 将页面刷新前处于 generating 状态的 API 记录标记为待轮询，并恢复轮询
   const pending = markStaleRecords('local')
   for (const rec of pending) {
     pollImage(rec as GenerationRecord, userId).catch(console.error)
   }
 
+  // 本地 ComfyUI 的 generating 记录在刷新后无法恢复，直接标记为失败
   ;(records.value as GenerationRecord[]).filter(r => r.mode === 'local' && r.status === 'generating').forEach(r => {
     r.status = 'error'; r.errorMsg = '页面刷新，生成中断'
   })
