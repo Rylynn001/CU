@@ -6,6 +6,7 @@ from server import PromptServer
 from . import config as cfg
 from .repositories import provider_repo
 from .task_routes import task_routes as _  # noqa: F401 触发 task 路由注册
+from .agent import routes as _agent_routes  # noqa: F401 触发 agent 路由注册
 
 routes = PromptServer.instance.routes
 logger = logging.getLogger('comfy_api_proxy')
