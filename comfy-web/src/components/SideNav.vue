@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useRouter, useRoute } from 'vue-router'
-import { House, Picture, VideoCamera, FolderOpened, SwitchButton } from '@element-plus/icons-vue'
+import { House, Picture, VideoCamera, FolderOpened, SwitchButton, Film } from '@element-plus/icons-vue'
 import { ElMessageBox } from 'element-plus'
 
 const router = useRouter()
@@ -10,8 +10,8 @@ const navItems = [
   { path: '/',       icon: House,        label: '首页' },
   { path: '/image',  icon: Picture,      label: '图片生成' },
   { path: '/video',  icon: VideoCamera,  label: '视频生成' },
+  { path: '/drama',  icon: Film,         label: '导演台' },
   { path: '/assets', icon: FolderOpened, label: '我的资产' },
-  // { path: '/models', icon: Files,        label: '模型管理' },
 ]
 
 function isActive(path: string) {

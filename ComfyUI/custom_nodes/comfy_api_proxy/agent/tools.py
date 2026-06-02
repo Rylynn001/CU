@@ -7,7 +7,7 @@ import json
 from langchain_core.tools import tool
 
 # 让独立运行时能找到 extractor 包
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../../../..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../../..'))
 
 from extractor.tools import ExtractTools
 from ..config import get_db_config
