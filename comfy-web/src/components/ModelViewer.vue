@@ -15,7 +15,7 @@ const thumbContainerRef = ref<HTMLDivElement | null>(null)
 
 // ── 状态 ──
 interface BoneEntry { name: string; bone: THREE.Bone; rx: number; ry: number; rz: number }
-interface CamEntry { id: number; label: string; cam: THREE.PerspectiveCamera; helper: THREE.CameraHelper; thumbUrl: string; px: number; py: number; pz: number; rx: number; ry: number; rz: number }
+interface CamEntry { id: number; label: string; cam: THREE.PerspectiveCamera; helper: THREE.CameraHelper; thumbUrl: string; px: number; py: number; pz: number; rx: number; ry: number; rz: number; fov: number }
 interface ModelEntry { id: number; label: string; obj: THREE.Group; px: number; py: number; pz: number; rx: number; ry: number; rz: number; bones: BoneEntry[] }
 
 const BONE_MAP: Record<string, { label: string; axes: [string, string, string] }> = {
@@ -68,6 +68,13 @@ let resizeObserver: ResizeObserver | null = null
 let justDragged = false
 let thumbDirty = false
 let mouseDownPos = { x: 0, y: 0 }
+
+// 骨骼节点 gizmo
+const selectedBone = ref<BoneEntry | null>(null)
+let boneGizmoMap = new Map<THREE.Bone, THREE.Mesh>()
+let boneGizmoGeo: THREE.SphereGeometry | null = null
+let boneGizmoMat: THREE.MeshBasicMaterial | null = null
+let boneGizmoMatSel: THREE.MeshBasicMaterial | null = null
 
 // 当前选中的对象（模型或相机辅助体）
 const selectedId = ref<{ type: 'model' | 'cam'; id: number } | null>(null)
@@ -128,6 +135,14 @@ function initScene() {
   })
   transformCtrl.addEventListener('objectChange', () => {
     thumbDirty = true
+    // 骨骼旋转时同步回 BoneEntry
+    if (selectedBone.value) {
+      const be = selectedBone.value
+      be.rx = THREE.MathUtils.radToDeg(be.bone.rotation.x)
+      be.ry = THREE.MathUtils.radToDeg(be.bone.rotation.y)
+      be.rz = THREE.MathUtils.radToDeg(be.bone.rotation.z)
+      return
+    }
     if (!selectedId.value) return
     const sel = selectedId.value
     if (sel.type === 'model') {
@@ -151,6 +166,11 @@ function initScene() {
   })
   scene.add(transformCtrl.getHelper())
 
+  // 骨骼 gizmo 共享几何体与材质
+  boneGizmoGeo = new THREE.SphereGeometry(0.035, 8, 8)
+  boneGizmoMat = new THREE.MeshBasicMaterial({ color: 0xffdd00, depthTest: false })
+  boneGizmoMatSel = new THREE.MeshBasicMaterial({ color: 0xff4400, depthTest: false })
+
   // 点击选中（mousedown 记录位置，click 时判断是否真的是点击而非拖拽旋转）
   canvas.addEventListener('mousedown', e => { mouseDownPos = { x: e.clientX, y: e.clientY } })
   canvas.addEventListener('click', onCanvasClick)
@@ -171,6 +191,12 @@ function loop() {
   animId = requestAnimationFrame(loop)
   controls?.update()
   if (!scene || !editorCam || !renderer) return
+  // 每帧同步骨骼 gizmo 小球到骨骼世界坐标
+  const worldPos = new THREE.Vector3()
+  for (const [bone, mesh] of boneGizmoMap) {
+    bone.getWorldPosition(worldPos)
+    mesh.position.copy(worldPos)
+  }
   renderer.render(scene, editorCam)
   if (thumbDirty) {
     cameras.value.forEach(ce => renderThumb(ce))
@@ -183,9 +209,11 @@ function renderThumb(ce: CamEntry) {
   const tcHelper = transformCtrl?.getHelper()
   if (tcHelper) tcHelper.visible = false
   cameras.value.forEach(c => { c.helper.visible = false })
+  for (const mesh of boneGizmoMap.values()) mesh.visible = false
   thumbRenderer.render(scene, ce.cam)
   if (tcHelper) tcHelper.visible = true
   cameras.value.forEach(c => { c.helper.visible = true })
+  for (const mesh of boneGizmoMap.values()) mesh.visible = true
   ce.thumbUrl = thumbRenderer.domElement.toDataURL('image/jpeg', 0.7)
 }
 
@@ -193,7 +221,6 @@ function onCanvasClick(e: MouseEvent) {
   if (!scene || !editorCam || !renderer || !transformCtrl) return
   if (justDragged) { justDragged = false; return }
   if (transformCtrl.dragging) return
-  // 鼠标移动超过 5px 视为旋转视角，不触发选中/取消
   const dx = e.clientX - mouseDownPos.x
   const dy = e.clientY - mouseDownPos.y
   if (dx * dx + dy * dy > 25) return
@@ -204,23 +231,53 @@ function onCanvasClick(e: MouseEvent) {
   )
   const raycaster = new THREE.Raycaster()
   raycaster.setFromCamera(mouse, editorCam)
-  // 收集可点击对象：模型根 + 相机辅助体
-  const pickTargets: THREE.Object3D[] = [
-    ...models.value.map(m => m.obj),
-    ...cameras.value.map(c => c.helper),
-  ]
-  const hits = raycaster.intersectObjects(pickTargets, true)
-  if (!hits.length) {
-    transformCtrl.detach(); selectedId.value = null; return
+
+  // 先检测骨骼 gizmo（当前有模型选中时才检测）
+  if (boneGizmoMap.size > 0) {
+    const gizmoMeshes = Array.from(boneGizmoMap.values())
+    const boneHits = raycaster.intersectObjects(gizmoMeshes, false)
+    if (boneHits.length) {
+      const hitMesh = boneHits[0].object as THREE.Mesh
+      for (const [bone, mesh] of boneGizmoMap) {
+        if (mesh === hitMesh) {
+          // 找到对应 BoneEntry
+          for (const m of models.value) {
+            const be = m.bones.find(b => b.bone === bone)
+            if (be) { selectBone(be); return }
+          }
+        }
+      }
+    }
   }
-  const hit = hits[0].object
-  // 找到命中的顶层对象
-  for (const m of models.value) {
-    if (isDescendant(m.obj, hit)) { attachTo(m.obj, 'model', m.id); return }
+
+  // 先检测模型，再检测相机，避免 CameraHelper 子对象优先被命中
+  const modelMeshes: THREE.Object3D[] = []
+  models.value.forEach(m => {
+    m.obj.traverse(child => {
+      if ((child as THREE.Mesh).isMesh) modelMeshes.push(child)
+    })
+  })
+  const modelHits = raycaster.intersectObjects(modelMeshes, false)
+  if (modelHits.length) {
+    const hit = modelHits[0].object
+    for (const m of models.value) {
+      if (isDescendant(m.obj, hit)) { attachTo(m.obj, 'model', m.id); return }
+    }
   }
-  for (const ce of cameras.value) {
-    if (isDescendant(ce.helper, hit)) { attachTo(ce.cam, 'cam', ce.id); return }
+
+  // 检测相机辅助体
+  const camHelpers = cameras.value.map(c => c.helper)
+  const camHits = raycaster.intersectObjects(camHelpers, true)
+  if (camHits.length) {
+    const hit = camHits[0].object
+    for (const ce of cameras.value) {
+      if (isDescendant(ce.helper, hit)) { attachTo(ce.cam, 'cam', ce.id); return }
+    }
   }
+
+  // 点击空白区域取消选择
+  transformCtrl.detach(); selectedId.value = null
+  hideBoneGizmos(); selectedBone.value = null
 }
 
 function isDescendant(root: THREE.Object3D, target: THREE.Object3D): boolean {
@@ -231,8 +288,53 @@ function isDescendant(root: THREE.Object3D, target: THREE.Object3D): boolean {
 
 function attachTo(obj: THREE.Object3D, type: 'model' | 'cam', id: number) {
   if (!transformCtrl) return
+  // 切换到非骨骼对象时清除骨骼选中状态
+  hideBoneGizmos()
+  selectedBone.value = null
+  transformCtrl.setMode(transformMode.value)
   transformCtrl.attach(obj)
   selectedId.value = { type, id }
+  if (type === 'model') {
+    const m = models.value.find(m => m.id === id)
+    if (m) showBoneGizmos(m)
+  }
+}
+
+function showBoneGizmos(m: ModelEntry) {
+  if (!scene || !boneGizmoGeo || !boneGizmoMat) return
+  hideBoneGizmos()
+  for (const be of m.bones) {
+    // 每个骨骼独立材质实例，避免颜色状态共享
+    const mat = boneGizmoMat.clone()
+    const mesh = new THREE.Mesh(boneGizmoGeo, mat)
+    mesh.renderOrder = 999
+    scene.add(mesh)
+    boneGizmoMap.set(be.bone, mesh)
+  }
+}
+
+function hideBoneGizmos() {
+  if (!scene) return
+  for (const mesh of boneGizmoMap.values()) {
+    scene.remove(mesh)
+    ;(mesh.material as THREE.Material).dispose()
+  }
+  boneGizmoMap.clear()
+}
+
+function selectBone(be: BoneEntry) {
+  if (!transformCtrl) return
+  // 恢复上一个选中骨骼的颜色
+  if (selectedBone.value) {
+    const prevMesh = boneGizmoMap.get(selectedBone.value.bone)
+    if (prevMesh) (prevMesh.material as THREE.MeshBasicMaterial).color.setHex(0xffdd00)
+  }
+  selectedBone.value = be
+  const mesh = boneGizmoMap.get(be.bone)
+  if (mesh) (mesh.material as THREE.MeshBasicMaterial).color.setHex(0xff4400)
+  // 把 TransformControls 挂到骨骼上，仅旋转模式
+  transformCtrl.setMode('rotate')
+  transformCtrl.attach(be.bone)
 }
 
 function setTransformMode(mode: 'translate' | 'rotate') {
@@ -241,13 +343,22 @@ function setTransformMode(mode: 'translate' | 'rotate') {
 }
 
 function deselectAll() {
-  transformCtrl?.detach(); selectedId.value = null
+  transformCtrl?.detach()
+  selectedId.value = null
+  hideBoneGizmos()
+  selectedBone.value = null
+  transformCtrl?.setMode(transformMode.value)
 }
 
 function destroyScene() {
   if (animId !== null) { cancelAnimationFrame(animId); animId = null }
   resizeObserver?.disconnect(); resizeObserver = null
   mainCanvasRef.value?.removeEventListener('click', onCanvasClick)
+  hideBoneGizmos()
+  boneGizmoGeo?.dispose(); boneGizmoGeo = null
+  boneGizmoMat?.dispose(); boneGizmoMat = null
+  boneGizmoMatSel?.dispose(); boneGizmoMatSel = null
+  selectedBone.value = null
   transformCtrl?.detach(); transformCtrl?.dispose(); transformCtrl = null
   controls?.dispose(); renderer?.dispose(); thumbRenderer?.dispose()
   renderer = null; thumbRenderer = null; scene = null; editorCam = null; controls = null
@@ -389,6 +500,12 @@ function removeModel(id: number) {
   const entry = models.value.find(m => m.id === id); if (!entry) return
   if (selectedId.value?.id === id && selectedId.value?.type === 'model') {
     transformCtrl?.detach(); selectedId.value = null
+    hideBoneGizmos(); selectedBone.value = null
+  }
+  // 若当前选中骨骼属于此模型，也清除
+  if (selectedBone.value && entry.bones.some(b => b === selectedBone.value)) {
+    transformCtrl?.detach(); selectedBone.value = null
+    hideBoneGizmos()
   }
   const rawObj = toRaw(entry.obj)
   scene?.remove(rawObj)
@@ -452,7 +569,7 @@ function addCamera() {
   const helper = new THREE.CameraHelper(cam)
   scene?.add(cam)
   scene?.add(helper)
-  const entry: CamEntry = { id, label: `相机 ${id}`, cam, helper, thumbUrl: '', px, py, pz, rx: 0, ry: 0, rz: 0 }
+  const entry: CamEntry = { id, label: `相机 ${id}`, cam, helper, thumbUrl: '', px, py, pz, rx: 0, ry: 0, rz: 0, fov: 45 }
   cameras.value.push(entry)
   if (cameras.value.length === 1) activeCamId.value = id
   thumbDirty = true
@@ -472,16 +589,16 @@ function removeCamera(id: number) {
 
 function zoomCam(ce: CamEntry) {
   if (!scene || !thumbRenderer) return
-  // 用较大尺寸重新渲染一张图
   thumbRenderer.setSize(640, 426)
   const tcHelper = transformCtrl?.getHelper()
   if (tcHelper) tcHelper.visible = false
   cameras.value.forEach(c => { c.helper.visible = false })
+  for (const mesh of boneGizmoMap.values()) mesh.visible = false
   thumbRenderer.render(scene, ce.cam)
   if (tcHelper) tcHelper.visible = true
   cameras.value.forEach(c => { c.helper.visible = true })
+  for (const mesh of boneGizmoMap.values()) mesh.visible = true
   zoomedUrl.value = thumbRenderer.domElement.toDataURL('image/jpeg', 0.9)
-  // 恢复缩略图尺寸
   thumbRenderer.setSize(180, 120)
   zoomedCamId.value = ce.id
 }
@@ -502,6 +619,8 @@ function updateCamTransform(ce: CamEntry) {
     THREE.MathUtils.degToRad(ce.ry),
     THREE.MathUtils.degToRad(ce.rz)
   )
+  ce.cam.fov = ce.fov
+  ce.cam.updateProjectionMatrix()
   ce.helper.update()
   thumbDirty = true
 }
@@ -535,6 +654,8 @@ async function capture() {
   const tcHelper = transformCtrl?.getHelper()
   if (tcHelper) tcHelper.visible = false
   cameras.value.forEach(c => { c.helper.visible = false })
+  // 隐藏骨骼 gizmo
+  for (const mesh of boneGizmoMap.values()) mesh.visible = false
 
   for (const ce of cameras.value) {
     const origAspect = ce.cam.aspect
@@ -554,6 +675,7 @@ async function capture() {
 
   if (tcHelper) tcHelper.visible = true
   cameras.value.forEach(c => { c.helper.visible = true })
+  for (const mesh of boneGizmoMap.values()) mesh.visible = true
   renderer.setSize(origW, origH, false)
   emit('update:visible', false)
 }
@@ -626,9 +748,10 @@ onBeforeUnmount(destroyScene)
             <div class="mv-toolbar">
               <button class="tb-btn" :class="{ active: transformMode === 'translate' }" @click="setTransformMode('translate')">移动</button>
               <button class="tb-btn" :class="{ active: transformMode === 'rotate' }" @click="setTransformMode('rotate')">旋转</button>
-              <button class="tb-btn desel" @click="deselectAll" v-if="selectedId">取消选择</button>
+              <button class="tb-btn desel" @click="deselectAll" v-if="selectedId || selectedBone">取消选择</button>
             </div>
-            <div class="mv-hint">点击模型/机位选中 · 左键旋转视角 · 右键平移 · 滚轮缩放</div>
+            <div class="mv-hint" v-if="selectedBone">骨骼模式：拖动旋转手柄调整姿态 · 点击其他骨骼切换</div>
+            <div class="mv-hint" v-else>点击模型/机位选中 · 左键旋转视角 · 右键平移 · 滚轮缩放</div>
           </div>
 
           <!-- ── 右侧：属性面板 ── -->
@@ -651,6 +774,12 @@ onBeforeUnmount(destroyScene)
                 <div class="props-row"><span>俯仰</span><input type="number" v-model.number="ce.rx" step="1" @input="updateCamTransform(ce)" /></div>
                 <div class="props-row"><span>偏转</span><input type="number" v-model.number="ce.ry" step="1" @input="updateCamTransform(ce)" /></div>
                 <div class="props-row"><span>横滚</span><input type="number" v-model.number="ce.rz" step="1" @input="updateCamTransform(ce)" /></div>
+                <div class="props-group-label">焦距</div>
+                <div class="props-row">
+                  <span>FOV</span>
+                  <input type="range" min="10" max="120" step="1" v-model.number="ce.fov" @input="updateCamTransform(ce)" class="fov-slider" />
+                  <input type="number" min="10" max="120" step="1" v-model.number="ce.fov" @change="updateCamTransform(ce)" class="fov-num" />
+                </div>
                 <div class="props-group-label">截图机位</div>
                 <button class="set-active-btn" @click="activeCamId = ce.id" :class="{ on: activeCamId === ce.id }">
                   {{ activeCamId === ce.id ? '✓ 当前机位' : '设为截图机位' }}
@@ -671,8 +800,11 @@ onBeforeUnmount(destroyScene)
                 <div class="props-row"><span>Y</span><input type="number" v-model.number="m.ry" step="1" @input="updateModelTransform(m)" /></div>
                 <div class="props-row"><span>Z</span><input type="number" v-model.number="m.rz" step="1" @input="updateModelTransform(m)" /></div>
                 <template v-if="m.bones.length">
-                  <div class="props-group-label">骨骼姿态</div>
-                  <div v-for="be in m.bones" :key="be.name" class="bone-block">
+                  <div class="props-group-label">骨骼姿态 <span class="bone-hint">（点击名称在场景中选中）</span></div>
+                  <div v-for="be in m.bones" :key="be.name" class="bone-block"
+                    :class="{ 'bone-selected': selectedBone === be }"
+                    @click="selectBone(be)"
+                  >
                     <div class="bone-name">{{ getBoneDisplay(be.name).label }}</div>
                     <div class="bone-row" v-for="(axisLabel, ai) in getBoneDisplay(be.name).axes" :key="ai">
                       <span class="bone-axis">{{ axisLabel }}</span>
@@ -680,11 +812,13 @@ onBeforeUnmount(destroyScene)
                         :value="ai === 0 ? be.rx : ai === 1 ? be.ry : be.rz"
                         @input="e => { const v = +( e.target as HTMLInputElement).value; if(ai===0) be.rx=v; else if(ai===1) be.ry=v; else be.rz=v; updateBone(be) }"
                         class="bone-slider"
+                        @click.stop
                       />
                       <input type="number" min="-180" max="180" step="1"
                         :value="ai === 0 ? be.rx : ai === 1 ? be.ry : be.rz"
                         @change="e => { const v = +( e.target as HTMLInputElement).value; if(ai===0) be.rx=v; else if(ai===1) be.ry=v; else be.rz=v; updateBone(be) }"
                         class="bone-num"
+                        @click.stop
                       />
                     </div>
                   </div>
@@ -878,9 +1012,34 @@ onBeforeUnmount(destroyScene)
   margin-top: 14px; font-size: 12px; color: rgba(255,255,255,0.3);
 }
 
+.fov-slider {
+  flex: 1; height: 3px; accent-color: #6c63ff; cursor: pointer; min-width: 0;
+}
+.fov-num {
+  width: 38px; flex-shrink: 0;
+  background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 4px; color: rgba(255,255,255,0.8); font-size: 10px;
+  padding: 2px 4px; outline: none; text-align: center;
+  -moz-appearance: textfield;
+}
+.fov-num::-webkit-outer-spin-button,
+.fov-num::-webkit-inner-spin-button { -webkit-appearance: none; }
+
 .bone-block {
   border-left: 2px solid rgba(108,99,255,0.2);
   padding-left: 6px; margin-bottom: 10px;
+  cursor: pointer; border-radius: 0 4px 4px 0;
+  transition: background 0.15s;
+}
+.bone-block:hover {
+  background: rgba(108,99,255,0.08);
+}
+.bone-block.bone-selected {
+  border-left-color: #ff4400;
+  background: rgba(255,68,0,0.08);
+}
+.bone-hint {
+  font-size: 9px; color: rgba(255,255,255,0.25); font-weight: 400;
 }
 .bone-name {
   font-size: 11px; color: rgba(255,255,255,0.6);
