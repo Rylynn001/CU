@@ -12,6 +12,7 @@ import VideoPlayer from '../components/VideoPlayer.vue'
 import RecordCard from '../components/RecordCard.vue'
 // 图片编辑器（图生视频时可以涂抹参考图）
 import ImageEditor from '../components/ImageEditor.vue'
+import ModelViewer from '../components/ModelViewer.vue'
 // 后端 API 接口
 import { getApiModels, retryHistory, favoriteAsset, type ApiModel } from '../api/apiService'
 // 历史记录管理
@@ -124,6 +125,13 @@ const resolutionOptions = [
 // ── 输入媒体 ──────────────────────────────────────────────
 // 控制资产选择器弹窗
 const showAssetPicker = ref(false)
+
+// 3D 模型视角截图
+const showModelViewer = ref(false)
+function handleModelCapture(file: File) {
+  inputFiles.value.push(file)
+  inputPreviews.value.push({ url: URL.createObjectURL(file), type: 'image' })
+}
 // useInputMedia 统一管理图生视频的输入素材：
 // inputFiles - 本地上传的文件列表
 // inputPreviews - 本地文件的预览信息（url + type）
@@ -567,6 +575,9 @@ onMounted(async () => {
                 <el-icon><UploadFilled /></el-icon>
                 <span>本地上传</span>
               </label>
+              <button class="asset-btn" @click="showModelViewer = true">
+                <span>3D 截图</span>
+              </button>
               <button v-if="inputPreviews.length > 0 || selectedAssetPreviews.length > 0" class="clear-all-btn-small" @click="clearAllInputs">
                 清空全部
               </button>
@@ -754,6 +765,9 @@ onMounted(async () => {
       :asset-id="activeVideoDbId"
       @close="showVideoPlayer = false"
     />
+
+    <!-- 3D 模型视角截图 -->
+    <ModelViewer v-model:visible="showModelViewer" @capture="handleModelCapture" />
   </div>
 </template>
 
