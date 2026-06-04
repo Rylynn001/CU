@@ -13,6 +13,7 @@ import AssetPicker from '../components/AssetPicker.vue'
 import RecordCard from '../components/RecordCard.vue'
 // 图片编辑器：涂抹/裁剪输入图
 import ImageEditor from '../components/ImageEditor.vue'
+import ModelViewer from '../components/ModelViewer.vue'
 // 本地 ComfyUI 接口：获取模型列表、采样器信息、提交任务、上传图片
 import { getModels, getKSamplerInfo, submitPrompt, uploadImage, type PromptParams } from '../api/comfyui'
 // WebSocket 连接：实时接收本地 ComfyUI 的生成进度和结果图片
@@ -240,6 +241,13 @@ const showEditor = ref(false)
 const editingIndex = ref(-1)
 // 资产选择器的目标索引（-1 表示添加新图，>=0 表示替换某张）
 const assetPickerTargetIndex = ref(-1)
+
+// 3D 模型视角截图
+const showModelViewer = ref(false)
+function handleModelCapture(file: File) {
+  if (inputImages.value.length >= 4) return
+  inputImages.value.push({ file, preview: URL.createObjectURL(file), assetLocation: '' })
+}
 
 // 打开某张参考图的编辑器
 function openEditor(idx: number) {
@@ -646,6 +654,9 @@ onMounted(async () => {
                 <el-icon><UploadFilled /></el-icon>
                 <span>本地上传</span>
               </label>
+              <button class="asset-btn" @click="showModelViewer = true">
+                <span>3D 截图</span>
+              </button>
             </div>
           </template>
 
@@ -962,6 +973,9 @@ onMounted(async () => {
     />
 
     <!-- 历史记录图片编辑器（已内联到侧边栏，此处无需渲染） -->
+
+    <!-- 3D 模型视角截图 -->
+    <ModelViewer v-model:visible="showModelViewer" @capture="handleModelCapture" />
   </div>
 </template>
 
