@@ -4,6 +4,7 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
+import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js'
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js'
 
 const props = defineProps<{ visible: boolean }>()
@@ -374,7 +375,8 @@ function addPresetModel(key: string) {
   if (key === 'male' || key === 'female') {
     const url = key === 'male' ? '/3D/man.glb' : '/3D/woman.glb'
     const label = `${labels[key]} ${nextModelId}`
-    new GLTFLoader().load(url, gltf => { addUploadedModel(gltf.scene, label) })
+    const loader1 = new GLTFLoader(); loader1.setMeshoptDecoder(MeshoptDecoder)
+    loader1.load(url, gltf => { addUploadedModel(gltf.scene, label) })
     return
   }
 
@@ -640,7 +642,8 @@ function loadModelFile(file: File) {
   if (ext === 'obj') {
     new OBJLoader().load(url, obj => { obj.traverse(c => { if ((c as THREE.Mesh).isMesh) (c as THREE.Mesh).material = new THREE.MeshStandardMaterial({ color: 0x888888 }) }); addUploadedModel(obj, file.name); URL.revokeObjectURL(url) })
   } else {
-    new GLTFLoader().load(url, gltf => { addUploadedModel(gltf.scene, file.name); URL.revokeObjectURL(url) })
+    const loader2 = new GLTFLoader(); loader2.setMeshoptDecoder(MeshoptDecoder)
+    loader2.load(url, gltf => { addUploadedModel(gltf.scene, file.name); URL.revokeObjectURL(url) })
   }
 }
 
