@@ -70,6 +70,13 @@ let justDragged = false
 let thumbDirty = false
 let mouseDownPos = { x: 0, y: 0 }
 
+// 撤销栈
+type UndoSnapshot =
+  | { kind: 'model'; id: number; px: number; py: number; pz: number; rx: number; ry: number; rz: number }
+  | { kind: 'cam';   id: number; px: number; py: number; pz: number; rx: number; ry: number; rz: number }
+  | { kind: 'bone';  modelId: number; boneName: string; rx: number; ry: number; rz: number }
+const undoStack: UndoSnapshot[] = []
+
 // 骨骼节点 gizmo
 const selectedBone = ref<BoneEntry | null>(null)
 let boneGizmoMap = new Map<THREE.Bone, THREE.Mesh>()
@@ -132,7 +139,25 @@ function initScene() {
   transformCtrl.setMode('translate')
   transformCtrl.addEventListener('dragging-changed', e => {
     if (controls) controls.enabled = !e.value
-    if (!e.value) justDragged = true  // 拖拽结束，屏蔽下一次 click
+    if (e.value) {
+      // 拖拽开始，记录快照
+      if (selectedBone.value) {
+        const be = selectedBone.value
+        const modelId = models.value.find(m => m.bones.includes(be))?.id ?? -1
+        undoStack.push({ kind: 'bone', modelId, boneName: be.bone.name, rx: be.rx, ry: be.ry, rz: be.rz })
+      } else if (selectedId.value) {
+        const sel = selectedId.value
+        if (sel.type === 'model') {
+          const m = models.value.find(m => m.id === sel.id)
+          if (m) undoStack.push({ kind: 'model', id: m.id, px: m.px, py: m.py, pz: m.pz, rx: m.rx, ry: m.ry, rz: m.rz })
+        } else {
+          const ce = cameras.value.find(c => c.id === sel.id)
+          if (ce) undoStack.push({ kind: 'cam', id: ce.id, px: ce.px, py: ce.py, pz: ce.pz, rx: ce.rx, ry: ce.ry, rz: ce.rz })
+        }
+      }
+    } else {
+      justDragged = true
+    }
   })
   transformCtrl.addEventListener('objectChange', () => {
     thumbDirty = true
@@ -175,6 +200,9 @@ function initScene() {
   // 点击选中（mousedown 记录位置，click 时判断是否真的是点击而非拖拽旋转）
   canvas.addEventListener('mousedown', e => { mouseDownPos = { x: e.clientX, y: e.clientY } })
   canvas.addEventListener('click', onCanvasClick)
+
+  // 键盘快捷键：W 移动，R 旋转（捕获阶段优先于 TransformControls 内置键盘处理）
+  window.addEventListener('keydown', onKeyDown, true)
 
   // 离屏缩略图渲染器（复用，避免每帧 new WebGLRenderer）
   const offscreen = document.createElement('canvas')
@@ -343,6 +371,44 @@ function setTransformMode(mode: 'translate' | 'rotate') {
   transformCtrl?.setMode(mode)
 }
 
+function onKeyDown(e: KeyboardEvent) {
+  const tag = (e.target as HTMLElement)?.tagName
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return
+  if (e.key === 'w' || e.key === 'W') setTransformMode('translate')
+  else if (e.key === 'r' || e.key === 'R') setTransformMode('rotate')
+  else if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) {
+    e.preventDefault()
+    const snap = undoStack.pop()
+    if (!snap) return
+    if (snap.kind === 'model') {
+      const m = models.value.find(m => m.id === snap.id)
+      if (m) {
+        m.obj.position.set(snap.px, snap.py, snap.pz)
+        m.obj.rotation.set(THREE.MathUtils.degToRad(snap.rx), THREE.MathUtils.degToRad(snap.ry), THREE.MathUtils.degToRad(snap.rz))
+        m.px = snap.px; m.py = snap.py; m.pz = snap.pz
+        m.rx = snap.rx; m.ry = snap.ry; m.rz = snap.rz
+      }
+    } else if (snap.kind === 'cam') {
+      const ce = cameras.value.find(c => c.id === snap.id)
+      if (ce) {
+        ce.cam.position.set(snap.px, snap.py, snap.pz)
+        ce.cam.rotation.set(THREE.MathUtils.degToRad(snap.rx), THREE.MathUtils.degToRad(snap.ry), THREE.MathUtils.degToRad(snap.rz))
+        ce.px = snap.px; ce.py = snap.py; ce.pz = snap.pz
+        ce.rx = snap.rx; ce.ry = snap.ry; ce.rz = snap.rz
+        ce.helper.update()
+      }
+    } else if (snap.kind === 'bone') {
+      const m = models.value.find(m => m.id === snap.modelId)
+      const be = m?.bones.find(b => b.bone.name === snap.boneName)
+      if (be) {
+        be.bone.rotation.set(THREE.MathUtils.degToRad(snap.rx), THREE.MathUtils.degToRad(snap.ry), THREE.MathUtils.degToRad(snap.rz))
+        be.rx = snap.rx; be.ry = snap.ry; be.rz = snap.rz
+      }
+    }
+    thumbDirty = true
+  }
+}
+
 function deselectAll() {
   transformCtrl?.detach()
   selectedId.value = null
@@ -355,6 +421,7 @@ function destroyScene() {
   if (animId !== null) { cancelAnimationFrame(animId); animId = null }
   resizeObserver?.disconnect(); resizeObserver = null
   mainCanvasRef.value?.removeEventListener('click', onCanvasClick)
+  window.removeEventListener('keydown', onKeyDown, true)
   hideBoneGizmos()
   boneGizmoGeo?.dispose(); boneGizmoGeo = null
   boneGizmoMat?.dispose(); boneGizmoMat = null
