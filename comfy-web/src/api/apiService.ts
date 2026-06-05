@@ -255,12 +255,18 @@ export async function saveHistory(params: {
 }
 
 // 拉取指定用户的历史记录，可按 type 过滤（img / video）
-export async function fetchHistory(userId: number, type?: 'img' | 'video'): Promise<HistoryRecord[]> {
-  const url = type ? `${BASE}/history?user_id=${userId}&type=${type}` : `${BASE}/history?user_id=${userId}`
+export async function fetchHistory(
+  userId: number,
+  type?: 'img' | 'video',
+  page = 1,
+  pageSize: 30 | 50 | 100 = 30,
+): Promise<{ records: HistoryRecord[]; total: number }> {
+  let url = `${BASE}/history?user_id=${userId}&page=${page}&page_size=${pageSize}`
+  if (type) url += `&type=${type}`
   const res = await fetch(url)
   if (!res.ok) throw new Error(`fetch history failed: ${res.status}`)
   const data = await res.json()
-  return data.records || []
+  return { records: data.records || [], total: data.total ?? 0 }
 }
 
 // 删除单条历史记录

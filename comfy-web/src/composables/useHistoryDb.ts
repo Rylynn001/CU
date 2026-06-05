@@ -9,12 +9,17 @@ export type { HistoryRecord }
  */
 export function useHistoryDb() {
   // 拉取指定用户的历史记录，失败时返回空数组（不阻断页面）
-  async function load(userId: number, type?: 'img' | 'video'): Promise<HistoryRecord[]> {
+  async function load(
+    userId: number,
+    type?: 'img' | 'video',
+    page = 1,
+    pageSize: 30 | 50 | 100 = 30,
+  ): Promise<{ records: HistoryRecord[]; total: number }> {
     try {
-      return await fetchHistory(userId, type)
+      return await fetchHistory(userId, type, page, pageSize)
     } catch (e) {
       console.warn('[useHistoryDb] load failed:', e)
-      return []
+      return { records: [], total: 0 }
     }
   }
 

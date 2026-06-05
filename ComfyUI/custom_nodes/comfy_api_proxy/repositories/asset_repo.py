@@ -46,20 +46,32 @@ def get_input_assets_by_ids(asset_ids: list[int]) -> list[dict]:
         return cursor.fetchall()
 
 
-def get_user_assets(user_id: int, asset_type: str | None = None, tag: int | None = None) -> list[dict]:
+def get_user_assets(
+    user_id: int,
+    asset_type: str | None = None,
+    tag: int | None = None,
+    page: int = 1,
+    page_size: int = 30,
+) -> tuple[list[dict], int]:
+    """分页获取用户资产，返回 (assets, total)"""
+    offset = (page - 1) * page_size
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        sql = 'SELECT id, location, asset_type, tag FROM assets WHERE rfid = %s'
+        where = 'WHERE rfid = %s'
         params: list = [user_id]
         if asset_type in ('picture', 'video'):
-            sql += ' AND asset_type = %s'
+            where += ' AND asset_type = %s'
             params.append(asset_type)
         if tag is not None:
-            sql += ' AND tag = %s'
+            where += ' AND tag = %s'
             params.append(tag)
-        sql += ' ORDER BY id DESC'
-        cursor.execute(sql, params)
-        return cursor.fetchall()
+        cursor.execute(f'SELECT COUNT(*) AS cnt FROM assets {where}', params)
+        total = cursor.fetchone()['cnt']
+        cursor.execute(
+            f'SELECT id, location, asset_type, tag FROM assets {where} ORDER BY id DESC LIMIT %s OFFSET %s',
+            params + [page_size, offset]
+        )
+        return cursor.fetchall(), total
 
 
 def set_asset_tag(asset_id: int, user_id: int, tag: int) -> bool:

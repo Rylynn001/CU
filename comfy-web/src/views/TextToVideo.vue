@@ -54,7 +54,8 @@ interface VideoRecord {
 // ── 历史记录 ──────────────────────────────────────────────
 const {
   records, saveRecords, searchQuery, expandedInputs, filteredRecords,
-  toggleInputExpand, deleteRecord, clearAll, loadFromDb, markStaleRecords,
+  toggleInputExpand, deleteRecord, clearAll, loadFromDb, loadMoreFromDb,
+  hasMoreInDb, dbPageSize, markStaleRecords,
 } = useGenerationHistory<VideoRecord>('video_generation_history', 'video',
   (r) => ({
     // blob: URL 在页面刷新后失效，保存时过滤掉，下次从数据库重新加载线上 URL
@@ -410,6 +411,34 @@ async function toggleVideoFavorite(rec: VideoRecord) {
   }
 }
 
+// 数据库记录转换函数，loadMore 时复用
+function mapVideoDbRecord(r: any) {
+  return {
+    id: String(r.id), dbId: r.id, createdAt: 0,
+    prompt: r.prompt || '', modelName: r.model_name || '',
+    ratio: '', resolution: '', duration: 0,
+    status: (r.status === 'error' ? 'error' : 'done') as 'done' | 'error',
+    mode: (r.type === 'img2video' ? 'img2video' : 'txt2video') as 'txt2video' | 'img2video',
+    videoUrl: r.output_urls.find((o: any) => o.type === 'video')?.url || r.output_urls[0]?.url,
+    outputAssetId: r.output_urls.find((o: any) => o.type === 'video')?.id || r.output_urls[0]?.id,
+    inputAssetIds: r.input_asset_ids,
+    inputAssetUrls: r.input_asset_urls || [],
+    errorMsg: r.status === 'error' ? (r.message || '生成失败') : undefined,
+  }
+}
+const filterVideoDbRecord = (r: any) => r.status !== 'pending' && r.status !== 'processing'
+
+const loadingMore = ref(false)
+async function loadMoreHistory() {
+  if (loadingMore.value) return
+  loadingMore.value = true
+  try {
+    await loadMoreFromDb(mapVideoDbRecord, filterVideoDbRecord)
+  } finally {
+    loadingMore.value = false
+  }
+}
+
 // ── 初始化 ────────────────────────────────────────────────
 onMounted(async () => {
   try {
@@ -419,19 +448,7 @@ onMounted(async () => {
   } catch {}
 
   // 从数据库加载历史记录
-  const userId = await loadFromDb((r) => ({
-    id: String(r.id), dbId: r.id, createdAt: 0,
-    prompt: r.prompt || '', modelName: r.model_name || '',
-    ratio: '', resolution: '', duration: 0,
-    status: (r.status === 'error' ? 'error' : 'done') as 'done' | 'error',
-    mode: (r.type === 'img2video' ? 'img2video' : 'txt2video') as 'txt2video' | 'img2video',
-    // 优先取 type=video 的输出，否则取第一个
-    videoUrl: r.output_urls.find((o: any) => o.type === 'video')?.url || r.output_urls[0]?.url,
-    outputAssetId: r.output_urls.find((o: any) => o.type === 'video')?.id || r.output_urls[0]?.id,
-    inputAssetIds: r.input_asset_ids,
-    inputAssetUrls: r.input_asset_urls || [],
-    errorMsg: r.status === 'error' ? (r.message || '生成失败') : undefined,
-  }), (r) => r.status !== 'pending' && r.status !== 'processing')
+  const userId = await loadFromDb(mapVideoDbRecord, filterVideoDbRecord)
 
   // 恢复页面刷新前未完成的任务轮询
   const pending = markStaleRecords()
@@ -726,6 +743,24 @@ onMounted(async () => {
                   </template>
                 </RecordCard>
               </div>
+              <!-- 分页控件 -->
+              <div class="history-pagination">
+                <div class="page-size-group">
+                  <span class="page-size-label">每页</span>
+                  <button
+                    v-for="n in [30, 50, 100]" :key="n"
+                    class="page-size-btn" :class="{ active: dbPageSize === n }"
+                    @click="dbPageSize = (n as 30|50|100); loadFromDb(mapVideoDbRecord, filterVideoDbRecord)"
+                  >{{ n }}</button>
+                </div>
+                <button
+                  v-if="hasMoreInDb"
+                  class="load-more-btn"
+                  :disabled="loadingMore"
+                  @click="loadMoreHistory"
+                >{{ loadingMore ? '加载中...' : '加载更多' }}</button>
+                <span v-else-if="records.length > 0" class="no-more-text">已全部加载</span>
+              </div>
             </div>
           </div>
       </main>
@@ -963,5 +998,59 @@ onMounted(async () => {
 
 .record-row { align-items: center; }
 .record-input-col { width: 240px; }
+
+.history-pagination {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 4px 4px;
+  flex-wrap: wrap;
+}
+
+.page-size-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.page-size-label {
+  font-size: 11px;
+  color: rgba(255,255,255,0.35);
+}
+
+.page-size-btn {
+  padding: 3px 10px;
+  border-radius: 5px;
+  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.03);
+  color: rgba(255,255,255,0.45);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.page-size-btn:hover { border-color: rgba(108,99,255,0.3); color: rgba(255,255,255,0.8); }
+.page-size-btn.active {
+  border-color: rgba(108,99,255,0.6);
+  background: rgba(108,99,255,0.2);
+  color: rgba(255,255,255,0.9);
+}
+
+.load-more-btn {
+  padding: 4px 16px;
+  border-radius: 6px;
+  border: 1px solid rgba(108,99,255,0.4);
+  background: rgba(108,99,255,0.12);
+  color: rgba(255,255,255,0.7);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.load-more-btn:hover:not(:disabled) { background: rgba(108,99,255,0.25); color: #fff; }
+.load-more-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.no-more-text {
+  font-size: 11px;
+  color: rgba(255,255,255,0.25);
+}
 </style>
 

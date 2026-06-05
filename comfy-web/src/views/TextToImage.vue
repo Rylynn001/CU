@@ -93,11 +93,11 @@ interface GenerationRecord {
 // markStaleRecords - 将本地 generating 状态的记录标记为待轮询
 const {
   records, saveRecords, searchQuery, expandedInputs, filteredRecords,
-  toggleInputExpand, deleteRecord, clearAll, loadFromDb, markStaleRecords,
+  toggleInputExpand, deleteRecord, clearAll, loadFromDb, loadMoreFromDb,
+  hasMoreInDb, dbPageSize, markStaleRecords,
 } = useGenerationHistory<GenerationRecord>(
-  'generation_history',  // localStorage 的 key
-  'img',                 // 资产类型，用于从数据库加载时过滤
-  // 保存前的数据清洗：过滤掉 blob: URL（刷新后失效），只保留 http 或 /api 开头的图片
+  'generation_history',
+  'img',
   (r) => ({ images: r.images.filter((img: string) => img.startsWith('http') || img.startsWith('/')) }),
 )
 
@@ -518,6 +518,38 @@ watch(generating, (val) => {
 // 切换到图生图时自动将降噪强度设为 0.75（保留参考图特征），切回文生图时恢复 1（完全重绘）
 watch(isImg2Img, (val) => { form.value.denoise = val ? 0.75 : 1 })
 
+// 数据库记录转换函数，loadMore 时复用
+function mapImgDbRecord(r: any) {
+  return {
+    id: String(r.id),
+    dbId: r.id,
+    createdAt: 0,
+    prompt: r.prompt || '',
+    inputPreviews: [],
+    inputAssetUrls: r.input_asset_urls || [],
+    modelName: r.model_name || '',
+    mode: 'api' as const,
+    status: (r.status === 'error' ? 'error' : 'done') as 'done' | 'error',
+    progress: 100,
+    images: r.output_urls.map((o: any) => o.url),
+    outputAssetIds: r.output_urls.map((o: any) => o.id).filter(Boolean),
+    inputAssetIds: r.input_asset_ids,
+    errorMsg: r.status === 'error' ? (r.message || '生成失败') : undefined,
+  }
+}
+const filterImgDbRecord = (r: any) => r.status !== 'pending' && r.status !== 'processing'
+
+const loadingMore = ref(false)
+async function loadMoreHistory() {
+  if (loadingMore.value) return
+  loadingMore.value = true
+  try {
+    await loadMoreFromDb(mapImgDbRecord, filterImgDbRecord)
+  } finally {
+    loadingMore.value = false
+  }
+}
+
 // ── 初始化 ────────────────────────────────────────────────
 onMounted(async () => {
   // 建立 WebSocket 连接，用于接收本地 ComfyUI 的实时进度
@@ -542,22 +574,7 @@ onMounted(async () => {
   } catch {}
 
   // 从数据库加载历史记录，将后端数据格式转换为前端 GenerationRecord 格式
-  const userId = await loadFromDb((r) => ({
-    id: String(r.id),
-    dbId: r.id,
-    createdAt: 0,
-    prompt: r.prompt || '',
-    inputPreviews: [],                                    // 历史记录没有本地预览，用 inputAssetUrls 代替
-    inputAssetUrls: r.input_asset_urls || [],
-    modelName: r.model_name || '',
-    mode: 'api' as const,
-    status: (r.status === 'error' ? 'error' : 'done') as 'done' | 'error',
-    progress: 100,
-    images: r.output_urls.map((o: any) => o.url),
-    outputAssetIds: r.output_urls.map((o: any) => o.id).filter(Boolean),
-    inputAssetIds: r.input_asset_ids,
-    errorMsg: r.status === 'error' ? (r.message || '生成失败') : undefined,
-  }), (r) => r.status !== 'pending' && r.status !== 'processing')  // 只加载已完成或失败的记录
+  const userId = await loadFromDb(mapImgDbRecord, filterImgDbRecord)
 
   // 将页面刷新前处于 generating 状态的 API 记录标记为待轮询，并恢复轮询
   const pending = markStaleRecords('local')
@@ -943,6 +960,24 @@ onMounted(async () => {
                   </template>
                 </RecordCard>
               </div>
+              <!-- 分页控件 -->
+              <div class="history-pagination">
+                <div class="page-size-group">
+                  <span class="page-size-label">每页</span>
+                  <button
+                    v-for="n in [30, 50, 100]" :key="n"
+                    class="page-size-btn" :class="{ active: dbPageSize === n }"
+                    @click="dbPageSize = (n as 30|50|100); loadFromDb(mapImgDbRecord, filterImgDbRecord)"
+                  >{{ n }}</button>
+                </div>
+                <button
+                  v-if="hasMoreInDb"
+                  class="load-more-btn"
+                  :disabled="loadingMore"
+                  @click="loadMoreHistory"
+                >{{ loadingMore ? '加载中...' : '加载更多' }}</button>
+                <span v-else-if="records.length > 0" class="no-more-text">已全部加载</span>
+              </div>
             </div>
           </div>
       </main>
@@ -1180,6 +1215,60 @@ onMounted(async () => {
 .record-row.editing {
   outline: 1px solid rgba(108,99,255,0.3);
   border-radius: 16px;
+}
+
+.history-pagination {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 4px 4px;
+  flex-wrap: wrap;
+}
+
+.page-size-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.page-size-label {
+  font-size: 11px;
+  color: rgba(255,255,255,0.35);
+}
+
+.page-size-btn {
+  padding: 3px 10px;
+  border-radius: 5px;
+  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.03);
+  color: rgba(255,255,255,0.45);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.page-size-btn:hover { border-color: rgba(108,99,255,0.3); color: rgba(255,255,255,0.8); }
+.page-size-btn.active {
+  border-color: rgba(108,99,255,0.6);
+  background: rgba(108,99,255,0.2);
+  color: rgba(255,255,255,0.9);
+}
+
+.load-more-btn {
+  padding: 4px 16px;
+  border-radius: 6px;
+  border: 1px solid rgba(108,99,255,0.4);
+  background: rgba(108,99,255,0.12);
+  color: rgba(255,255,255,0.7);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.load-more-btn:hover:not(:disabled) { background: rgba(108,99,255,0.25); color: #fff; }
+.load-more-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.no-more-text {
+  font-size: 11px;
+  color: rgba(255,255,255,0.25);
 }
 </style>
 

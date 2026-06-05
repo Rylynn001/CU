@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElImageViewer } from 'element-plus'
 import VideoPlayer from '../components/VideoPlayer.vue'
 import { favoriteAsset } from '../api/apiService'
@@ -13,8 +13,13 @@ interface Asset {
 
 const assets = ref<Asset[]>([])
 const loading = ref(false)
+const loadingMore = ref(false)
 const activeFilter = ref<'all' | 'picture' | 'video'>('all')
 const favoritesOnly = ref(true)
+const currentPage = ref(1)
+const total = ref(0)
+const PAGE_SIZE = 30
+const hasMore = computed(() => assets.value.length < total.value)
 
 // 图片预览
 const showImageViewer = ref(false)
@@ -53,21 +58,46 @@ async function loadAssets(assetType?: 'picture' | 'video') {
 
   const user = JSON.parse(userStr)
   loading.value = true
+  currentPage.value = 1
 
   try {
-    let url = `/api/api-proxy/user/assets?user_id=${user.id}`
+    let url = `/api/api-proxy/user/assets?user_id=${user.id}&page=1&page_size=${PAGE_SIZE}`
     if (assetType) url += `&asset_type=${assetType}`
     if (favoritesOnly.value) url += `&tag=1`
     const res = await fetch(url)
-    if (!res.ok) {
-      throw new Error('加载失败')
-    }
+    if (!res.ok) throw new Error('加载失败')
     const data = await res.json()
     assets.value = data.assets || []
+    total.value = data.total ?? 0
   } catch (e: any) {
     ElMessage.error(e.message || '加载资产失败')
   } finally {
     loading.value = false
+  }
+}
+
+async function loadMore() {
+  const userStr = localStorage.getItem('user')
+  if (!userStr || loadingMore.value) return
+  const user = JSON.parse(userStr)
+  loadingMore.value = true
+  const nextPage = currentPage.value + 1
+
+  try {
+    const assetType = activeFilter.value === 'all' ? undefined : activeFilter.value
+    let url = `/api/api-proxy/user/assets?user_id=${user.id}&page=${nextPage}&page_size=${PAGE_SIZE}`
+    if (assetType) url += `&asset_type=${assetType}`
+    if (favoritesOnly.value) url += `&tag=1`
+    const res = await fetch(url)
+    if (!res.ok) throw new Error('加载失败')
+    const data = await res.json()
+    assets.value.push(...(data.assets || []))
+    total.value = data.total ?? 0
+    currentPage.value = nextPage
+  } catch (e: any) {
+    ElMessage.error(e.message || '加载失败')
+  } finally {
+    loadingMore.value = false
   }
 }
 
@@ -190,6 +220,13 @@ onMounted(() => {
             </svg>
           </button>
         </div>
+      </div>
+      <!-- 加载更多 -->
+      <div v-if="assets.length > 0" class="load-more-bar">
+        <button v-if="hasMore" class="load-more-btn" :disabled="loadingMore" @click="loadMore">
+          {{ loadingMore ? '加载中...' : '加载更多' }}
+        </button>
+        <span v-else class="no-more-text">已全部加载（{{ assets.length }} / {{ total }}）</span>
       </div>
     </div>
 
@@ -518,5 +555,30 @@ video.gallery-media {
 @keyframes pulse-dot {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.5; }
+}
+
+.load-more-bar {
+  display: flex;
+  justify-content: center;
+  padding: 20px 0 8px;
+}
+
+.load-more-btn {
+  padding: 8px 28px;
+  border-radius: 8px;
+  border: 1px solid rgba(108,99,255,0.4);
+  background: rgba(108,99,255,0.12);
+  color: rgba(255,255,255,0.7);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.load-more-btn:hover:not(:disabled) { background: rgba(108,99,255,0.25); color: #fff; }
+.load-more-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.no-more-text {
+  font-size: 12px;
+  color: rgba(255,255,255,0.25);
+  align-self: center;
 }
 </style>

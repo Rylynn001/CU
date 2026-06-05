@@ -18,13 +18,6 @@ interface BaseGenerationRecord {
   errorMsg?: string
 }
 
-/**
- * 通用生成历史管理，图片和视频页面共用。
- * 在 useTaskHistory（本地存储）基础上叠加数据库同步能力。
- * storageKey: localStorage key
- * historyType: 'img' 或 'video'，用于过滤数据库记录
- * beforeSave: 保存前对记录做转换（如清除 base64 图片数据）
- */
 export function useGenerationHistory<T extends BaseGenerationRecord>(
   storageKey: string,
   historyType: 'img' | 'video',
@@ -35,23 +28,28 @@ export function useGenerationHistory<T extends BaseGenerationRecord>(
 
   const historyDb = useHistoryDb()
   const searchQuery = ref('')
-  // 记录哪些条目展开了输入内容区域
   const expandedInputs = ref<Set<string>>(new Set())
 
-  // 按提示词关键字过滤记录
+  // 分页状态
+  const dbPage = ref(1)
+  const dbPageSize = ref<30 | 50 | 100>(30)
+  const dbTotal = ref(0)
+  const hasMoreInDb = computed(() => {
+    const loaded = (dbPage.value) * dbPageSize.value
+    return loaded < dbTotal.value
+  })
+
   const filteredRecords = computed(() => {
     if (!searchQuery.value.trim()) return records.value as T[]
     const q = searchQuery.value.trim().toLowerCase()
     return (records.value as T[]).filter(r => r.prompt.toLowerCase().includes(q))
   })
 
-  // 切换某条记录的输入内容展开/折叠状态
   function toggleInputExpand(id: string) {
     if (expandedInputs.value.has(id)) expandedInputs.value.delete(id)
     else expandedInputs.value.add(id)
   }
 
-  // 删除记录：若有 dbId 则同步删除后端数据库，再删本地
   async function deleteRecord(id: string) {
     const rec = (records.value as T[]).find(r => r.id === id)
     if (rec?.dbId) {
@@ -61,19 +59,14 @@ export function useGenerationHistory<T extends BaseGenerationRecord>(
     await deleteRecordLocal(id)
   }
 
-  // 清空所有记录：同步清空后端数据库和本地存储
   async function clearAll() {
     const userId = getCurrentUserId()
     if (userId) await historyDb.clear(userId)
     clearAllLocal()
+    dbPage.value = 1
+    dbTotal.value = 0
   }
 
-  /**
-   * 从数据库加载历史，合并到本地 records。
-   * 加载后本地 generating 中的任务保留在最前面（等待恢复轮询）。
-   * mapDbRecord: 将后端 HistoryRecord 转换为页面使用的 T 类型。
-   * 返回 userId，供调用方继续使用。
-   */
   async function loadFromDb(
     mapDbRecord: (r: HistoryRecord) => T,
     filter?: (r: HistoryRecord) => boolean,
@@ -81,9 +74,10 @@ export function useGenerationHistory<T extends BaseGenerationRecord>(
     const userId = getCurrentUserId()
     if (!userId) return undefined
 
-    const dbRecords = await historyDb.load(userId, historyType)
+    dbPage.value = 1
+    const { records: dbRecords, total } = await historyDb.load(userId, historyType, 1, dbPageSize.value)
+    dbTotal.value = total
     const filtered = filter ? dbRecords.filter(filter) : dbRecords
-    // 保留本地还在生成中的任务（刷新后需要恢复轮询）
     const localPending = (records.value as T[]).filter(r => r.status === 'generating')
     const fromDb = filtered.map(mapDbRecord)
     records.value = [...localPending, ...fromDb] as any
@@ -91,11 +85,23 @@ export function useGenerationHistory<T extends BaseGenerationRecord>(
     return userId
   }
 
-  /**
-   * 页面刷新后处理遗留的 generating 任务：
-   * - 有 taskId 的：加入返回列表，由调用方恢复轮询
-   * - 无 taskId 的（本地 ComfyUI 模式）：标记为失败，结果已无法恢复
-   */
+  async function loadMoreFromDb(
+    mapDbRecord: (r: HistoryRecord) => T,
+    filter?: (r: HistoryRecord) => boolean,
+  ): Promise<void> {
+    const userId = getCurrentUserId()
+    if (!userId || !hasMoreInDb.value) return
+
+    const nextPage = dbPage.value + 1
+    const { records: dbRecords, total } = await historyDb.load(userId, historyType, nextPage, dbPageSize.value)
+    dbTotal.value = total
+    dbPage.value = nextPage
+    const filtered = filter ? dbRecords.filter(filter) : dbRecords
+    const fromDb = filtered.map(mapDbRecord)
+    ;(records.value as T[]).push(...(fromDb as any[]))
+    saveRecords()
+  }
+
   function markStaleRecords(mode?: string): T[] {
     const pending: T[] = []
 
@@ -123,6 +129,10 @@ export function useGenerationHistory<T extends BaseGenerationRecord>(
     deleteRecord,
     clearAll,
     loadFromDb,
+    loadMoreFromDb,
+    hasMoreInDb,
+    dbPageSize,
+    dbTotal,
     markStaleRecords,
     generateUUID,
   }

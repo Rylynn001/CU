@@ -134,9 +134,13 @@ async def get_user_assets(request: web.Request):
     tag_str = request.rel_url.query.get('tag')
     tag = int(tag_str) if tag_str is not None else None
     try:
+        page = int(request.rel_url.query.get('page', 1))
+    except ValueError:
+        page = 1
+    try:
         from .repositories import asset_repo
-        assets = asset_repo.get_user_assets(user_id, asset_type, tag)
-        return web.json_response({'assets': assets})
+        assets, total = asset_repo.get_user_assets(user_id, asset_type, tag, page=page, page_size=30)
+        return web.json_response({'assets': assets, 'total': total, 'page': page, 'page_size': 30})
     except Exception as e:
         logger.error(f'[api-proxy] 获取用户资产失败: {e}')
         raise web.HTTPInternalServerError(reason=str(e))
@@ -291,8 +295,17 @@ async def get_history(request: web.Request):
         raise web.HTTPBadRequest(reason='user_id is required')
     type_filter = request.rel_url.query.get('type')
     try:
-        records = history_repo.get_user_history(int(user_id), type_filter=type_filter or None)
-        return web.json_response({'records': records})
+        page = int(request.rel_url.query.get('page', 1))
+        page_size = int(request.rel_url.query.get('page_size', 30))
+    except ValueError:
+        raise web.HTTPBadRequest(reason='page 和 page_size 必须为整数')
+    if page_size not in (30, 50, 100):
+        page_size = 30
+    try:
+        records, total = history_repo.get_user_history(
+            int(user_id), type_filter=type_filter or None, page=page, page_size=page_size
+        )
+        return web.json_response({'records': records, 'total': total, 'page': page, 'page_size': page_size})
     except Exception as e:
         logger.error(f'[api-proxy] 获取历史记录失败: {e}')
         raise web.HTTPInternalServerError(reason=str(e))

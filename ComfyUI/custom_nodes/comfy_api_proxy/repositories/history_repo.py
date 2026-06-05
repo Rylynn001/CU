@@ -33,25 +33,43 @@ def save_history(
         return cursor.lastrowid
 
 
-def get_user_history(user_id: int, type_filter: str | None = None) -> list[dict]:
-    """获取用户历史记录，关联 assets / input_assets 表返回可访问的 URL"""
+def get_user_history(
+    user_id: int,
+    type_filter: str | None = None,
+    page: int = 1,
+    page_size: int = 30,
+) -> tuple[list[dict], int]:
+    """获取用户历史记录（分页），返回 (records, total)"""
+    offset = (page - 1) * page_size
     with get_db_connection() as conn:
         cursor = conn.cursor()
         if type_filter:
             cursor.execute(
-                """SELECT h.id, h.task_id, h.prompt, h.mode, h.status, h.type, h.message,
-                          h.input_file, h.output_file, m.description AS model_name
-                   FROM history h LEFT JOIN api_models m ON h.model_id = m.id
-                   WHERE h.user_id = %s AND h.del_flag = 0 AND h.type LIKE %s ORDER BY h.id DESC""",
+                "SELECT COUNT(*) AS cnt FROM history WHERE user_id = %s AND del_flag = 0 AND type LIKE %s",
                 (user_id, f'%{type_filter}')
             )
-        else:
+            total = cursor.fetchone()['cnt']
             cursor.execute(
                 """SELECT h.id, h.task_id, h.prompt, h.mode, h.status, h.type, h.message,
                           h.input_file, h.output_file, m.description AS model_name
                    FROM history h LEFT JOIN api_models m ON h.model_id = m.id
-                   WHERE h.user_id = %s AND h.del_flag = 0 ORDER BY h.id DESC""",
+                   WHERE h.user_id = %s AND h.del_flag = 0 AND h.type LIKE %s
+                   ORDER BY h.id DESC LIMIT %s OFFSET %s""",
+                (user_id, f'%{type_filter}', page_size, offset)
+            )
+        else:
+            cursor.execute(
+                "SELECT COUNT(*) AS cnt FROM history WHERE user_id = %s AND del_flag = 0",
                 (user_id,)
+            )
+            total = cursor.fetchone()['cnt']
+            cursor.execute(
+                """SELECT h.id, h.task_id, h.prompt, h.mode, h.status, h.type, h.message,
+                          h.input_file, h.output_file, m.description AS model_name
+                   FROM history h LEFT JOIN api_models m ON h.model_id = m.id
+                   WHERE h.user_id = %s AND h.del_flag = 0
+                   ORDER BY h.id DESC LIMIT %s OFFSET %s""",
+                (user_id, page_size, offset)
             )
         rows = cursor.fetchall()
 
@@ -116,7 +134,7 @@ def get_user_history(user_id: int, type_filter: str | None = None) -> list[dict]
                         })
 
         result.append(item)
-    return result
+    return result, total
 
 
 def get_history_by_id(history_id: int) -> dict | None:
