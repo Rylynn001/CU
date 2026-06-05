@@ -28,6 +28,9 @@ requests
 simpleeval>=1.0.0
 blake3
 cryptography
+langchain-openai
+langchain-core
+langgraph
 
 #non essential dependencies:
 kornia>=0.7.1
