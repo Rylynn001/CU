@@ -254,7 +254,7 @@ function onCanvasClick(e: MouseEvent) {
   // 先检测模型，再检测相机，避免 CameraHelper 子对象优先被命中
   const modelMeshes: THREE.Object3D[] = []
   models.value.forEach(m => {
-    m.obj.traverse(child => {
+    toRaw(m.obj).traverse(child => {
       if ((child as THREE.Mesh).isMesh) modelMeshes.push(child)
     })
   })
@@ -262,7 +262,7 @@ function onCanvasClick(e: MouseEvent) {
   if (modelHits.length) {
     const hit = modelHits[0].object
     for (const m of models.value) {
-      if (isDescendant(m.obj, hit)) { attachTo(m.obj, 'model', m.id); return }
+      if (isDescendant(toRaw(m.obj), hit)) { attachTo(m.obj, 'model', m.id); return }
     }
   }
 
