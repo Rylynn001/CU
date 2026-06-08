@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, onBeforeUnmount, toRaw } from 'vue'
+import { ref, watch, onBeforeUnmount, toRaw, nextTick } from 'vue'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js'
@@ -13,6 +13,50 @@ const emit = defineEmits<{ 'update:visible': [boolean]; 'capture': [File] }>()
 // ── DOM refs ──
 const mainCanvasRef = ref<HTMLCanvasElement | null>(null)
 const thumbContainerRef = ref<HTMLDivElement | null>(null)
+const mainRef = ref<HTMLDivElement | null>(null)
+
+// 分割线位置（百分比）
+const colSplit = ref(50)         // 左列宽度 %
+const rowSplitLeft = ref(50)     // 左列上格高度 %（2+台相机时）
+const rowSplitRight = ref(50)    // 右列上格高度 %（3台相机时）
+let draggingDivider: 'col' | 'row-left' | 'row-right' | null = null
+const isDraggingDivider = ref(false)
+const draggingCursor = ref('col-resize')
+
+function startDividerDrag(e: MouseEvent, target: 'col' | 'row-left' | 'row-right') {
+  draggingDivider = target
+  isDraggingDivider.value = true
+  draggingCursor.value = target === 'col' ? 'col-resize' : 'row-resize'
+  window.addEventListener('mousemove', onDividerMove)
+  window.addEventListener('mouseup', onDividerEnd)
+  e.preventDefault()
+}
+
+function onDividerMove(e: MouseEvent) {
+  if (!draggingDivider || !mainRef.value) return
+  const rect = mainRef.value.getBoundingClientRect()
+  if (draggingDivider === 'col') {
+    const pct = ((e.clientX - rect.left) / rect.width) * 100
+    colSplit.value = Math.min(75, Math.max(25, pct))
+  } else if (draggingDivider === 'row-left') {
+    const pct = ((e.clientY - rect.top) / rect.height) * 100
+    rowSplitLeft.value = Math.min(80, Math.max(20, pct))
+  } else {
+    const pct = ((e.clientY - rect.top) / rect.height) * 100
+    rowSplitRight.value = Math.min(80, Math.max(20, pct))
+  }
+}
+
+function onDividerEnd() {
+  draggingDivider = null
+  isDraggingDivider.value = false
+  window.removeEventListener('mousemove', onDividerMove)
+  window.removeEventListener('mouseup', onDividerEnd)
+}
+
+// 相机视角分割面板：每台相机一个独立渲染器
+const camViewRenderers = new Map<number, THREE.WebGLRenderer>()
+const camViewResizeObservers = new Map<number, ResizeObserver>()
 
 // ── 状态 ──
 interface BoneEntry { name: string; bone: THREE.Bone; rx: number; ry: number; rz: number }
@@ -198,7 +242,7 @@ function initScene() {
   boneGizmoMatSel = new THREE.MeshBasicMaterial({ color: 0xff4400, depthTest: false })
 
   // 点击选中（mousedown 记录位置，click 时判断是否真的是点击而非拖拽旋转）
-  canvas.addEventListener('mousedown', e => { mouseDownPos = { x: e.clientX, y: e.clientY } })
+  canvas.addEventListener('mousedown', onCanvasMouseDown)
   canvas.addEventListener('click', onCanvasClick)
 
   // 键盘快捷键：W 移动，R 旋转（捕获阶段优先于 TransformControls 内置键盘处理）
@@ -227,6 +271,18 @@ function loop() {
     mesh.position.copy(worldPos)
   }
   renderer.render(scene, editorCam)
+  // 渲染各相机视角分割面板
+  const tcHelper = transformCtrl?.getHelper()
+  for (const [camId, r] of camViewRenderers) {
+    const ce = cameras.value.find(c => c.id === camId); if (!ce) continue
+    if (tcHelper) tcHelper.visible = false
+    cameras.value.forEach(c => { c.helper.visible = false })
+    for (const mesh of boneGizmoMap.values()) mesh.visible = false
+    r.render(scene, ce.cam)
+    if (tcHelper) tcHelper.visible = true
+    cameras.value.forEach(c => { c.helper.visible = true })
+    for (const mesh of boneGizmoMap.values()) mesh.visible = true
+  }
   if (thumbDirty) {
     cameras.value.forEach(ce => renderThumb(ce))
     thumbDirty = false
@@ -245,6 +301,8 @@ function renderThumb(ce: CamEntry) {
   for (const mesh of boneGizmoMap.values()) mesh.visible = true
   ce.thumbUrl = thumbRenderer.domElement.toDataURL('image/jpeg', 0.7)
 }
+
+function onCanvasMouseDown(e: MouseEvent) { mouseDownPos = { x: e.clientX, y: e.clientY } }
 
 function onCanvasClick(e: MouseEvent) {
   if (!scene || !editorCam || !renderer || !transformCtrl) return
@@ -421,7 +479,10 @@ function destroyScene() {
   if (animId !== null) { cancelAnimationFrame(animId); animId = null }
   resizeObserver?.disconnect(); resizeObserver = null
   mainCanvasRef.value?.removeEventListener('click', onCanvasClick)
+  mainCanvasRef.value?.removeEventListener('mousedown', onCanvasMouseDown)
   window.removeEventListener('keydown', onKeyDown, true)
+  // 清理所有相机视角渲染器
+  for (const id of [...camViewRenderers.keys()]) destroyCamView(id)
   hideBoneGizmos()
   boneGizmoGeo?.dispose(); boneGizmoGeo = null
   boneGizmoMat?.dispose(); boneGizmoMat = null
@@ -432,6 +493,35 @@ function destroyScene() {
   renderer = null; thumbRenderer = null; scene = null; editorCam = null; controls = null
   cameras.value = []; models.value = []; nextCamId = 1; nextModelId = 1
   selectedId.value = null
+}
+
+// ── 相机视角分割面板挂载/销毁 ──
+function mountCamView(canvas: HTMLCanvasElement, camId: number) {
+  if (!scene) return
+  if (camViewRenderers.has(camId)) return  // 防止重复挂载
+  const ce = cameras.value.find(c => c.id === camId); if (!ce) return
+  const r = new THREE.WebGLRenderer({ canvas, antialias: true })
+  r.setPixelRatio(window.devicePixelRatio)
+  r.setSize(canvas.clientWidth || 400, canvas.clientHeight || 300, false)
+  r.shadowMap.enabled = true
+  ce.cam.aspect = (canvas.clientWidth || 400) / (canvas.clientHeight || 300)
+  ce.cam.updateProjectionMatrix()
+  camViewRenderers.set(camId, r)
+  const ro = new ResizeObserver(() => {
+    const re = camViewRenderers.get(camId); if (!re) return
+    const w = canvas.clientWidth, h = canvas.clientHeight
+    re.setSize(w, h, false)
+    ce.cam.aspect = w / h; ce.cam.updateProjectionMatrix()
+  })
+  ro.observe(canvas)
+  camViewResizeObservers.set(camId, ro)
+}
+
+function destroyCamView(id: number) {
+  camViewResizeObservers.get(id)?.disconnect()
+  camViewResizeObservers.delete(id)
+  camViewRenderers.get(id)?.dispose()
+  camViewRenderers.delete(id)
 }
 
 // ── 模型管理 ──
@@ -559,7 +649,7 @@ function addUploadedModel(obj: THREE.Group, name: string) {
   applyDefaultPose(obj)
   const bones = extractBones(obj)
   const id = nextModelId++
-  const entry: ModelEntry = { id, label: name, obj, px: (models.value.length % 3 - 1) * 1.5, py: 0, pz: 0, rx: 0, ry: 0, rz: 0, bones }
+  const entry: ModelEntry = { id, label: name, obj, px: (models.value.length % 3) * 1.5, py: 0, pz: 0, rx: 0, ry: 0, rz: 0, bones }
   obj.position.x = entry.px; obj.position.z = entry.pz
   scene.add(obj); models.value.push(entry)
   thumbDirty = true
@@ -630,6 +720,7 @@ function selectFromTree(type: 'model' | 'cam', id: number) {
 
 // ── 相机管理 ──
 function addCamera() {
+  if (cameras.value.length >= 3) return  // 最多3台
   const id = nextCamId++
   const cam = new THREE.PerspectiveCamera(45, 180/120, 0.01, 500)
   const offset = cameras.value.length
@@ -647,6 +738,8 @@ function addCamera() {
 function removeCamera(id: number) {
   if (cameras.value.length <= 1) return
   const ce = cameras.value.find(c => c.id === id); if (!ce) return
+  // 清理该相机的分割面板渲染器
+  destroyCamView(id)
   if (selectedId.value?.id === id) { transformCtrl?.detach(); selectedId.value = null }
   const rawHelper = toRaw(ce.helper)
   const rawCam = toRaw(ce.cam)
@@ -751,6 +844,89 @@ async function capture() {
 }
 
 watch(() => props.visible, val => { if (val) setTimeout(initScene, 60); else destroyScene() })
+
+// cameras.length 在 1/2 和 3 之间切换时，mainCanvasRef 对应的 canvas DOM 会重建
+// 需要监听 mainCanvasRef，重新把 renderer 绑到新 canvas 上
+watch(mainCanvasRef, (canvas) => {
+  if (!canvas || !renderer || !editorCam || !scene) return
+  // renderer 内部换 canvas 没有公开 API，最简单是重建 renderer
+  const oldSize = new THREE.Vector2()
+  renderer.getSize(oldSize)
+  renderer.dispose()
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true })
+  renderer.setPixelRatio(window.devicePixelRatio)
+  renderer.setSize(canvas.clientWidth || oldSize.x, canvas.clientHeight || oldSize.y, false)
+  renderer.shadowMap.enabled = true
+  // 重建 OrbitControls
+  const prevTarget = controls?.target.clone() ?? new THREE.Vector3(0, 0.8, 0)
+  controls?.dispose()
+  controls = new OrbitControls(editorCam, canvas)
+  controls.enableDamping = true; controls.dampingFactor = 0.08
+  controls.target.copy(prevTarget); controls.update()
+  // 重建 TransformControls
+  const prevAttached = transformCtrl?.object ?? null
+  const prevMode = transformCtrl?.getMode() ?? transformMode.value
+  scene.remove(transformCtrl?.getHelper() as THREE.Object3D)
+  transformCtrl?.dispose()
+  transformCtrl = new TransformControls(editorCam, canvas)
+  transformCtrl.setMode(prevMode)
+  transformCtrl.addEventListener('dragging-changed', e => {
+    if (controls) controls.enabled = !e.value
+    if (e.value) {
+      if (selectedBone.value) {
+        const be = selectedBone.value
+        const modelId = models.value.find(m => m.bones.includes(be))?.id ?? -1
+        undoStack.push({ kind: 'bone', modelId, boneName: be.bone.name, rx: be.rx, ry: be.ry, rz: be.rz })
+      } else if (selectedId.value) {
+        const sel = selectedId.value
+        if (sel.type === 'model') {
+          const m = models.value.find(m => m.id === sel.id)
+          if (m) undoStack.push({ kind: 'model', id: m.id, px: m.px, py: m.py, pz: m.pz, rx: m.rx, ry: m.ry, rz: m.rz })
+        } else {
+          const ce = cameras.value.find(c => c.id === sel.id)
+          if (ce) undoStack.push({ kind: 'cam', id: ce.id, px: ce.px, py: ce.py, pz: ce.pz, rx: ce.rx, ry: ce.ry, rz: ce.rz })
+        }
+      }
+    } else { justDragged = true }
+  })
+  transformCtrl.addEventListener('objectChange', () => {
+    thumbDirty = true
+    if (selectedBone.value) {
+      const be = selectedBone.value
+      be.rx = THREE.MathUtils.radToDeg(be.bone.rotation.x)
+      be.ry = THREE.MathUtils.radToDeg(be.bone.rotation.y)
+      be.rz = THREE.MathUtils.radToDeg(be.bone.rotation.z)
+      return
+    }
+    if (!selectedId.value) return
+    const sel = selectedId.value
+    if (sel.type === 'model') {
+      const m = models.value.find(m => m.id === sel.id)
+      if (m) { m.px = m.obj.position.x; m.py = m.obj.position.y; m.pz = m.obj.position.z; m.rx = THREE.MathUtils.radToDeg(m.obj.rotation.x); m.ry = THREE.MathUtils.radToDeg(m.obj.rotation.y); m.rz = THREE.MathUtils.radToDeg(m.obj.rotation.z) }
+    } else {
+      const ce = cameras.value.find(c => c.id === sel.id)
+      if (ce) { ce.px = ce.cam.position.x; ce.py = ce.cam.position.y; ce.pz = ce.cam.position.z; ce.rx = THREE.MathUtils.radToDeg(ce.cam.rotation.x); ce.ry = THREE.MathUtils.radToDeg(ce.cam.rotation.y); ce.rz = THREE.MathUtils.radToDeg(ce.cam.rotation.z); ce.helper.update() }
+    }
+  })
+  scene.add(transformCtrl.getHelper())
+  if (prevAttached) transformCtrl.attach(prevAttached)
+  // 重新绑 resizeObserver
+  resizeObserver?.disconnect()
+  resizeObserver = new ResizeObserver(() => {
+    if (!canvas || !renderer || !editorCam) return
+    const nw = canvas.clientWidth, nh = canvas.clientHeight
+    renderer!.setSize(nw, nh, false)
+    editorCam.aspect = nw / nh; editorCam.updateProjectionMatrix()
+  })
+  resizeObserver.observe(canvas)
+  // 重新绑点击事件
+  canvas.removeEventListener('click', onCanvasClick)
+  canvas.removeEventListener('mousedown', onCanvasMouseDown)
+  canvas.addEventListener('mousedown', onCanvasMouseDown)
+  canvas.addEventListener('click', onCanvasClick)
+  nextTick(() => { thumbDirty = true })
+})
+
 onBeforeUnmount(destroyScene)
 </script>
 
@@ -812,16 +988,85 @@ onBeforeUnmount(destroyScene)
             </div>
           </div>
 
-          <!-- ── 中间：主视口 ── -->
-          <div class="mv-main" @dragover.prevent @drop.prevent="onDrop">
-            <canvas ref="mainCanvasRef" class="mv-canvas" />
-            <div class="mv-toolbar">
-              <button class="tb-btn" :class="{ active: transformMode === 'translate' }" @click="setTransformMode('translate')">移动</button>
-              <button class="tb-btn" :class="{ active: transformMode === 'rotate' }" @click="setTransformMode('rotate')">旋转</button>
-              <button class="tb-btn desel" @click="deselectAll" v-if="selectedId || selectedBone">取消选择</button>
+          <!-- ── 中间：分割面板 ── -->
+          <div class="mv-main" ref="mainRef" @dragover.prevent @drop.prevent="onDrop">
+            <!-- 拖拽分割线时的全局遮罩，防止鼠标跑到 canvas 上被吞 -->
+            <div v-if="isDraggingDivider" class="divider-mask"
+              :style="{ cursor: draggingCursor }" />
+
+            <!-- 左列 -->
+            <div class="split-col split-left" :style="{ width: colSplit + '%' }">
+
+              <!-- 1台相机：左列只有相机1 -->
+              <template v-if="cameras.length === 1">
+                <div v-for="ce in cameras.slice(0,1)" :key="ce.id" class="pane pane-cam" style="height:100%">
+                  <canvas class="mv-canvas"
+                    :ref="(el) => { if (el) mountCamView(el as HTMLCanvasElement, ce.id); else destroyCamView(ce.id) }" />
+                  <div class="cam-pane-label">{{ ce.label }}</div>
+                </div>
+              </template>
+
+              <!-- 2~3台相机：左列上下分 相机1 / 相机2 -->
+              <template v-else-if="cameras.length >= 2">
+                <div v-for="ce in cameras.slice(0,1)" :key="ce.id" class="pane pane-cam" :style="{ height: rowSplitLeft + '%' }">
+                  <canvas class="mv-canvas"
+                    :ref="(el) => { if (el) mountCamView(el as HTMLCanvasElement, ce.id); else destroyCamView(ce.id) }" />
+                  <div class="cam-pane-label">{{ ce.label }}</div>
+                </div>
+                <!-- 横向分割线（左列） -->
+                <div class="divider divider-h" @mousedown="startDividerDrag($event, 'row-left')" />
+                <div v-for="ce in cameras.slice(1,2)" :key="ce.id" class="pane pane-cam" :style="{ height: (100 - rowSplitLeft) + '%' }">
+                  <canvas class="mv-canvas"
+                    :ref="(el) => { if (el) mountCamView(el as HTMLCanvasElement, ce.id); else destroyCamView(ce.id) }" />
+                  <div class="cam-pane-label">{{ ce.label }}</div>
+                </div>
+              </template>
+
             </div>
-            <div class="mv-hint" v-if="selectedBone">骨骼模式：拖动旋转手柄调整姿态 · 点击其他骨骼切换</div>
-            <div class="mv-hint" v-else>点击模型/机位选中 · 左键旋转视角 · 右键平移 · 滚轮缩放</div>
+
+            <!-- 竖向分割线 -->
+            <div class="divider divider-v" @mousedown="startDividerDrag($event, 'col')" />
+
+            <!-- 右列 -->
+            <div class="split-col split-right" :style="{ width: (100 - colSplit) + '%' }">
+
+              <!-- 1~2台相机：右列全是编辑画面 -->
+              <template v-if="cameras.length <= 2">
+                <div class="pane pane-editor" style="height:100%">
+                  <canvas ref="mainCanvasRef" class="mv-canvas" />
+                  <div class="mv-toolbar">
+                    <button class="tb-btn" :class="{ active: transformMode === 'translate' }" @click="setTransformMode('translate')">移动</button>
+                    <button class="tb-btn" :class="{ active: transformMode === 'rotate' }" @click="setTransformMode('rotate')">旋转</button>
+                    <button class="tb-btn desel" @click="deselectAll" v-if="selectedId || selectedBone">取消选择</button>
+                  </div>
+                  <div class="mv-hint" v-if="selectedBone">骨骼模式：拖动旋转手柄调整姿态 · 点击其他骨骼切换</div>
+                  <div class="mv-hint" v-else>点击模型/机位选中 · 左键旋转视角 · 右键平移 · 滚轮缩放</div>
+                </div>
+              </template>
+
+              <!-- 3台相机：右上=编辑，右下=相机3 -->
+              <template v-else>
+                <div class="pane pane-editor" :style="{ height: rowSplitRight + '%' }">
+                  <canvas ref="mainCanvasRef" class="mv-canvas" />
+                  <div class="mv-toolbar">
+                    <button class="tb-btn" :class="{ active: transformMode === 'translate' }" @click="setTransformMode('translate')">移动</button>
+                    <button class="tb-btn" :class="{ active: transformMode === 'rotate' }" @click="setTransformMode('rotate')">旋转</button>
+                    <button class="tb-btn desel" @click="deselectAll" v-if="selectedId || selectedBone">取消选择</button>
+                  </div>
+                  <div class="mv-hint" v-if="selectedBone">骨骼模式：拖动旋转手柄调整姿态 · 点击其他骨骼切换</div>
+                  <div class="mv-hint" v-else>点击模型/机位选中 · 左键旋转视角 · 右键平移 · 滚轮缩放</div>
+                </div>
+                <!-- 横向分割线（右列） -->
+                <div class="divider divider-h" @mousedown="startDividerDrag($event, 'row-right')" />
+                <div v-for="ce in cameras.slice(2,3)" :key="ce.id" class="pane pane-cam" :style="{ height: (100 - rowSplitRight) + '%' }">
+                  <canvas class="mv-canvas"
+                    :ref="(el) => { if (el) mountCamView(el as HTMLCanvasElement, ce.id); else destroyCamView(ce.id) }" />
+                  <div class="cam-pane-label">{{ ce.label }}</div>
+                </div>
+              </template>
+
+            </div>
+
           </div>
 
           <!-- ── 右侧：属性面板 ── -->
@@ -989,8 +1234,48 @@ onBeforeUnmount(destroyScene)
 }
 
 /* ── 中间视口 ── */
-.mv-main { flex: 1; height: 100vh; position: relative; min-width: 0; }
+.mv-main {
+  flex: 1; height: 100vh; position: relative; min-width: 0;
+  display: flex; flex-direction: row;
+}
 .mv-canvas { width: 100%; height: 100%; display: block; }
+
+.split-col {
+  display: flex; flex-direction: column;
+  flex-shrink: 0; overflow: hidden; height: 100%;
+}
+
+.divider-v {
+  width: 4px; flex-shrink: 0; height: 100%;
+  background: rgba(255,255,255,0.06);
+  cursor: col-resize; transition: background 0.15s;
+  z-index: 10;
+}
+.divider-v:hover, .divider-v:active { background: rgba(108,99,255,0.6); }
+
+.divider-h {
+  height: 4px; flex-shrink: 0; width: 100%;
+  background: rgba(255,255,255,0.06);
+  cursor: row-resize; transition: background 0.15s;
+  z-index: 10;
+}
+.divider-h:hover, .divider-h:active { background: rgba(108,99,255,0.6); }
+
+.pane {
+  position: relative; overflow: hidden; flex-shrink: 0;
+  border: 1px solid rgba(255,255,255,0.04);
+}
+
+.divider-mask {
+  position: absolute; inset: 0; z-index: 100;
+}
+
+.cam-pane-label {
+  position: absolute; top: 8px; left: 10px;
+  font-size: 11px; color: rgba(255,255,255,0.4);
+  pointer-events: none; letter-spacing: 0.5px;
+  background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 4px;
+}
 
 .mv-toolbar {
   position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
