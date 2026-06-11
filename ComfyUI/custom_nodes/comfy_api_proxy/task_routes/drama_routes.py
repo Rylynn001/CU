@@ -148,3 +148,63 @@ async def get_episode_by_number(request: web.Request):
     if not ep:
         raise web.HTTPNotFound(reason='集不存在')
     return web.json_response(ep)
+
+
+@routes.put('/api-proxy/characters/{character_id}/voice')
+async def update_character_voice(request: web.Request):
+    character_id = int(request.match_info['character_id'])
+    body = await request.json()
+    voice_style = body.get('voice_style', '')
+    try:
+        drama_repo.update_character_voice(character_id, voice_style)
+        return web.json_response({'ok': True})
+    except Exception as e:
+        logger.error(f'[character] voice update error: {e}')
+        raise web.HTTPInternalServerError(reason=str(e))
+
+
+@routes.get('/api-proxy/episodes/{episode_id}/storyboards')
+async def list_storyboards(request: web.Request):
+    episode_id = int(request.match_info['episode_id'])
+    try:
+        items = drama_repo.get_episode_storyboards(episode_id)
+        return web.json_response({'items': items})
+    except Exception as e:
+        logger.error(f'[storyboard] list error: {e}')
+        raise web.HTTPInternalServerError(reason=str(e))
+
+
+@routes.post('/api-proxy/episodes/{episode_id}/storyboards')
+async def create_storyboard(request: web.Request):
+    episode_id = int(request.match_info['episode_id'])
+    body = await request.json()
+    body['episode_id'] = episode_id
+    try:
+        new_id = drama_repo.create_storyboard(body)
+        items = drama_repo.get_episode_storyboards(episode_id)
+        sb = next((s for s in items if s['id'] == new_id), None)
+        return web.json_response(sb or {'id': new_id}, status=201)
+    except Exception as e:
+        logger.error(f'[storyboard] create error: {e}')
+        raise web.HTTPInternalServerError(reason=str(e))
+
+
+@routes.put('/api-proxy/storyboards/{storyboard_id}')
+async def update_storyboard(request: web.Request):
+    storyboard_id = int(request.match_info['storyboard_id'])
+    body = await request.json()
+    try:
+        drama_repo.update_storyboard(storyboard_id, body)
+        return web.json_response({'ok': True})
+    except Exception as e:
+        logger.error(f'[storyboard] update error: {e}')
+        raise web.HTTPInternalServerError(reason=str(e))
+
+
+@routes.delete('/api-proxy/storyboards/{storyboard_id}')
+async def delete_storyboard(request: web.Request):
+    storyboard_id = int(request.match_info['storyboard_id'])
+    ok = drama_repo.delete_storyboard(storyboard_id)
+    if not ok:
+        raise web.HTTPNotFound(reason='分镜不存在')
+    return web.json_response({'ok': True})

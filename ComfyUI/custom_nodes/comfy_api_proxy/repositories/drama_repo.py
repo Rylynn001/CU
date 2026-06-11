@@ -213,3 +213,144 @@ def get_episode_scenes(episode_id: int) -> list:
             return _ser_list(c.fetchall())
     finally:
         conn.close()
+
+
+# ── Character voice ────────────────────────────────────────────────────────
+
+def update_character_voice(character_id: int, voice_style: str) -> bool:
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as c:
+            c.execute(
+                "UPDATE characters SET voice_style=%s, updated_at=%s WHERE id=%s AND deleted_at IS NULL",
+                (voice_style, _NOW(), character_id),
+            )
+            conn.commit()
+            return c.rowcount > 0
+    finally:
+        conn.close()
+
+
+# ── Storyboard ─────────────────────────────────────────────────────────────
+
+def get_episode_storyboards(episode_id: int) -> list:
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as c:
+            c.execute("""
+                SELECT s.*,
+                  IFNULL(GROUP_CONCAT(sc.character_id ORDER BY sc.character_id), '') AS character_ids
+                FROM storyboards s
+                LEFT JOIN storyboard_characters sc ON sc.storyboard_id = s.id
+                WHERE s.episode_id=%s AND s.deleted_at IS NULL
+                GROUP BY s.id
+                ORDER BY s.storyboard_number ASC, s.id ASC
+            """, (episode_id,))
+            return _ser_list(c.fetchall())
+    finally:
+        conn.close()
+
+
+def _sync_storyboard_characters(c, storyboard_id: int, character_ids):
+    """同步 storyboard_characters 关联表"""
+    c.execute("DELETE FROM storyboard_characters WHERE storyboard_id=%s", (storyboard_id,))
+    if not character_ids:
+        return
+    if isinstance(character_ids, str):
+        ids = [int(x) for x in character_ids.split(',') if x.strip().isdigit()]
+    elif isinstance(character_ids, list):
+        ids = [int(x) for x in character_ids if str(x).strip().isdigit()]
+    else:
+        return
+    for cid in ids:
+        c.execute(
+            "INSERT IGNORE INTO storyboard_characters (storyboard_id, character_id) VALUES (%s,%s)",
+            (storyboard_id, cid),
+        )
+
+
+def create_storyboard(data: dict) -> int:
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as c:
+            now = _NOW()
+            c.execute("""
+                INSERT INTO storyboards
+                  (episode_id, storyboard_number, title, shot_type, angle, movement,
+                   location, time, duration, description, action, result,
+                   atmosphere, dialogue, image_prompt, video_prompt,
+                   bgm_prompt, sound_effect, scene_id,
+                   created_at, updated_at)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            """, (
+                data.get('episode_id'),
+                data.get('storyboard_number', data.get('sort_order', 0)),
+                data.get('title', ''),
+                data.get('shot_type', ''),
+                data.get('angle', ''),
+                data.get('movement', ''),
+                data.get('location', ''),
+                data.get('time', ''),
+                data.get('duration', 10),
+                data.get('description', ''),
+                data.get('action', ''),
+                data.get('result', ''),
+                data.get('atmosphere', ''),
+                data.get('dialogue', ''),
+                data.get('image_prompt', ''),
+                data.get('video_prompt', ''),
+                data.get('bgm_prompt', ''),
+                data.get('sound_effect', ''),
+                data.get('scene_id'),
+                now, now,
+            ))
+            new_id = c.lastrowid
+            if data.get('character_ids') is not None:
+                _sync_storyboard_characters(c, new_id, data['character_ids'])
+            conn.commit()
+            return new_id
+    finally:
+        conn.close()
+
+
+_SB_FIELDS = {
+    'storyboard_number', 'title', 'shot_type', 'angle', 'movement', 'location', 'time',
+    'duration', 'description', 'action', 'result', 'atmosphere',
+    'dialogue', 'image_prompt', 'video_prompt', 'bgm_prompt',
+    'sound_effect', 'scene_id',
+}
+
+
+def update_storyboard(storyboard_id: int, data: dict) -> bool:
+    fields = {k: v for k, v in data.items() if k in _SB_FIELDS}
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as c:
+            if fields:
+                sets = ', '.join(f'{k}=%s' for k in fields)
+                vals = list(fields.values()) + [_NOW(), storyboard_id]
+                c.execute(
+                    f"UPDATE storyboards SET {sets}, updated_at=%s WHERE id=%s AND deleted_at IS NULL",
+                    vals,
+                )
+            if data.get('character_ids') is not None:
+                _sync_storyboard_characters(c, storyboard_id, data['character_ids'])
+            conn.commit()
+            return True
+    finally:
+        conn.close()
+
+
+def delete_storyboard(storyboard_id: int) -> bool:
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as c:
+            c.execute(
+                "UPDATE storyboards SET deleted_at=%s WHERE id=%s AND deleted_at IS NULL",
+                (_NOW(), storyboard_id),
+            )
+            conn.commit()
+            return c.rowcount > 0
+    finally:
+        conn.close()
+
