@@ -4,12 +4,16 @@
 """
 import pymysql
 import pymysql.cursors
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date
 from typing import Optional
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _ser(row: dict) -> dict:
+    return {k: (v.isoformat() if isinstance(v, (datetime, date)) else v) for k, v in row.items()}
 
 
 # MySQL 连接配置，可由外部覆盖
@@ -79,22 +83,15 @@ class ExtractTools:
     def read_existing_characters(self) -> dict:
         with self._conn() as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT character_id FROM episode_characters WHERE episode_id=%s",
-                    (self.episode_id,),
-                )
-                linked_ids = {r["character_id"] for r in cur.fetchall()}
-
-                cur.execute(
-                    "SELECT * FROM characters WHERE drama_id=%s AND deleted_at IS NULL",
-                    (self.drama_id,),
-                )
+                cur.execute("""
+                    SELECT ch.* FROM characters ch
+                    JOIN episode_characters ec ON ec.character_id = ch.id
+                    WHERE ec.episode_id = %s AND ch.deleted_at IS NULL
+                """, (self.episode_id,))
                 chars = cur.fetchall()
-
         return {
             "count": len(chars),
-            "characters": list(chars),
-            "current_episode_characters": [c for c in chars if c["id"] in linked_ids],
+            "characters": [_ser(c) for c in chars],
         }
 
     # ── 3. 读取已有场景 ───────────────────────────────────────
@@ -102,22 +99,15 @@ class ExtractTools:
     def read_existing_scenes(self) -> dict:
         with self._conn() as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT scene_id FROM episode_scenes WHERE episode_id=%s",
-                    (self.episode_id,),
-                )
-                linked_ids = {r["scene_id"] for r in cur.fetchall()}
-
-                cur.execute(
-                    "SELECT * FROM scenes WHERE drama_id=%s AND deleted_at IS NULL",
-                    (self.drama_id,),
-                )
+                cur.execute("""
+                    SELECT s.* FROM scenes s
+                    JOIN episode_scenes es ON es.scene_id = s.id
+                    WHERE es.episode_id = %s AND s.deleted_at IS NULL
+                """, (self.episode_id,))
                 scenes = cur.fetchall()
-
         return {
             "count": len(scenes),
-            "scenes": list(scenes),
-            "current_episode_scenes": [s for s in scenes if s["id"] in linked_ids],
+            "scenes": [_ser(s) for s in scenes],
         }
 
     # ── 4. 保存角色（去重） ───────────────────────────────────

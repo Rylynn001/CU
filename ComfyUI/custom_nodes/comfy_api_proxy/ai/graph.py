@@ -34,7 +34,6 @@ def _load_skill_prompt(skill_name: str) -> str:
 
 SYSTEM_PROMPT = _load_skill_prompt('extractor')
 
-
 def build_agent(episode_id: int, drama_id: int):
     """构建绑定了 episode_id/drama_id 的 ReAct agent"""
     llm = ChatOpenAI(
