@@ -1,4 +1,5 @@
 <script setup lang="ts">
+defineOptions({ name: 'TextToImage' })
 // Vue 核心：ref 创建响应式变量，onMounted 页面加载后执行，watch 监听变量变化，computed 计算属性
 import { ref, onMounted, watch, computed } from 'vue'
 // Element Plus UI 组件：输入框、下拉选择、滑块、数字输入框

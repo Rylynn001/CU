@@ -41,9 +41,9 @@ def _make_voice_tools(episode_id: int) -> list:
         return json.dumps(vt.get_characters(), ensure_ascii=False)
 
     @tool
-    def assign_voice(character_id: int, voice_id: str) -> str:
-        """为指定角色分配音色。character_id 为角色 ID，voice_id 为音色 ID。"""
-        return json.dumps(vt.assign_voice(character_id, voice_id), ensure_ascii=False)
+    def assign_voice(character_id: int, timbre_id: int) -> str:
+        """为指定角色分配音色。character_id 为角色 ID，timbre_id 为音色 ID（来自 list_voices 返回的 id 字段）。"""
+        return json.dumps(vt.assign_voice(character_id, timbre_id), ensure_ascii=False)
 
     return [list_voices, get_characters, assign_voice]
 

@@ -215,15 +215,27 @@ def get_episode_scenes(episode_id: int) -> list:
         conn.close()
 
 
+# ── Timbres ────────────────────────────────────────────────────────────────
+
+def list_timbres() -> list:
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as c:
+            c.execute("SELECT id, name, gender, style, provider FROM timbres WHERE deleted_at IS NULL ORDER BY sort_order ASC, id ASC")
+            return _ser_list(c.fetchall())
+    finally:
+        conn.close()
+
+
 # ── Character voice ────────────────────────────────────────────────────────
 
-def update_character_voice(character_id: int, voice_style: str) -> bool:
+def update_character_voice(character_id: int, timbre_id: int) -> bool:
     conn = get_db_connection()
     try:
         with conn.cursor() as c:
             c.execute(
-                "UPDATE characters SET voice_style=%s, updated_at=%s WHERE id=%s AND deleted_at IS NULL",
-                (voice_style, _NOW(), character_id),
+                "UPDATE characters SET timbre_id=%s, updated_at=%s WHERE id=%s AND deleted_at IS NULL",
+                (timbre_id, _NOW(), character_id),
             )
             conn.commit()
             return c.rowcount > 0

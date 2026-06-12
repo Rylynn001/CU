@@ -7,7 +7,11 @@ import ParticleBackground from './components/ParticleBackground.vue'
   <ParticleBackground />
   <SideNav />
   <div class="main-content">
-    <RouterView />
+    <RouterView v-slot="{ Component, route }">
+      <KeepAlive :include="['TextToImage', 'TextToVideo']">
+        <component :is="Component" :key="route.name" />
+      </KeepAlive>
+    </RouterView>
   </div>
 </template>
 

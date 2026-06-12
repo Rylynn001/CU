@@ -196,10 +196,10 @@
               <div class="voice-lib">
                 <div v-for="v in VOICE_PROFILES" :key="v.id" class="voice-lib-item">
                   <div class="voice-lib-head">
-                    <span class="voice-lib-name">{{ v.label }}</span>
+                    <span class="voice-lib-name">{{ v.name }}</span>
                     <span class="tag">{{ v.gender }}</span>
                   </div>
-                  <div class="voice-lib-traits">{{ v.traits }}</div>
+                  <div class="voice-lib-traits">{{ v.style }}</div>
                 </div>
               </div>
             </div>
@@ -210,7 +210,7 @@
                   <div class="voice-char-info">
                     <div class="voice-char-name-row">
                       <span class="extract-name">{{ c.name }}</span>
-                      <span class="tag" :class="c.voice_style ? 'tag-success' : ''">{{ c.voice_style ? '已分配' : '待分配' }}</span>
+                      <span class="tag" :class="c.timbre_id ? 'tag-success' : ''">{{ c.timbre_id ? '已分配' : '待分配' }}</span>
                     </div>
                     <div class="extract-meta">{{ c.role || '角色' }}</div>
                   </div>
@@ -218,18 +218,17 @@
                 <div class="voice-card-desc">{{ c.description || c.appearance || '暂无角色描述' }}</div>
                 <div class="voice-select-block">
                   <span class="field-label">选择音色</span>
-                  <select class="input-select" :value="c.voice_style || ''" @change="updateCharVoice(c.id, ($event.target as HTMLSelectElement).value)">
+                  <select class="input-select" :value="c.timbre_id || ''" @change="updateCharVoice(c.id, Number(($event.target as HTMLSelectElement).value))">
                     <option value="">请选择音色</option>
-                    <option v-for="v in VOICE_PROFILES" :key="v.id" :value="v.id">{{ v.label }} · {{ v.gender }} · {{ v.traits }}</option>
+                    <option v-for="v in VOICE_PROFILES" :key="v.id" :value="v.id">{{ v.name }} · {{ v.gender }} · {{ v.style }}</option>
                   </select>
                 </div>
-                <div v-if="c.voice_style && getVoiceProfile(c.voice_style)" class="voice-profile-card">
+                <div v-if="c.timbre_id && getVoiceProfile(c.timbre_id)" class="voice-profile-card">
                   <div class="voice-profile-head">
-                    <span class="voice-profile-name">{{ getVoiceProfile(c.voice_style)?.label }}</span>
-                    <span class="tag">{{ getVoiceProfile(c.voice_style)?.gender }}</span>
+                    <span class="voice-profile-name">{{ getVoiceProfile(c.timbre_id)?.name }}</span>
+                    <span class="tag">{{ getVoiceProfile(c.timbre_id)?.gender }}</span>
                   </div>
-                  <div class="voice-profile-traits">{{ getVoiceProfile(c.voice_style)?.traits }}</div>
-                  <div class="voice-profile-suitable">适合：{{ getVoiceProfile(c.voice_style)?.suitable }}</div>
+                  <div class="voice-profile-traits">{{ getVoiceProfile(c.timbre_id)?.style }}</div>
                 </div>
               </div>
             </div>
@@ -453,22 +452,23 @@ const agentEvents = ref<string[]>([])
 const activeKey = ref('raw')
 const selectedSb = ref<any>(null)
 
-const VOICE_PROFILES = [
-  { id: 'zh-CN-XiaoxiaoNeural', label: '晓晓', gender: '女', traits: '温柔细腻，情感丰富', suitable: '主角、旁白' },
-  { id: 'zh-CN-YunjianNeural',  label: '云健', gender: '男', traits: '沉稳有力，磁性低沉', suitable: '主角、反派' },
-  { id: 'zh-CN-XiaoyiNeural',   label: '晓伊', gender: '女', traits: '活泼明快，青春感强', suitable: '配角、少女' },
-  { id: 'zh-CN-YunyangNeural',  label: '云扬', gender: '男', traits: '专业播音，清晰标准', suitable: '旁白、解说' },
-  { id: 'zh-CN-XiaohanNeural',  label: '晓涵', gender: '女', traits: '知性优雅，成熟稳重', suitable: '成熟女性' },
-  { id: 'zh-CN-YunxiNeural',    label: '云希', gender: '男', traits: '亲切自然，年轻有活力', suitable: '青年男性' },
-  { id: 'zh-CN-XiaoruiNeural',  label: '晓睿', gender: '女', traits: '冷静理性，干练', suitable: '反派、职场' },
-  { id: 'zh-CN-YunfengNeural',  label: '云枫', gender: '男', traits: '老成持重，威严感强', suitable: '长辈、权威' },
-]
+const VOICE_PROFILES = ref<{id: number, name: string, gender: string, style: string}[]>([])
+
+async function loadVoices() {
+  const res = await fetch(`${BASE}/timbres`)
+  const data = await res.json()
+  VOICE_PROFILES.value = data.items || []
+}
+
+function getVoiceProfile(id: number) {
+  return VOICE_PROFILES.value.find(v => v.id === id)
+}
 
 const SHOT_TYPES = ['全景', '远景', '中景', '近景', '特写', '大特写', '过肩镜头', '两人镜头']
 const SHOT_ANGLES = ['平视', '仰视', '俯视', '斜角', '正面', '侧面', '背面']
 const SHOT_MOVEMENTS = ['固定', '推镜', '拉镜', '摇镜', '移镜', '跟镜', '环绕', '手持']
 
-const charsVoiced = computed(() => chars.value.filter(c => c.voice_style).length)
+const charsVoiced = computed(() => chars.value.filter(c => c.timbre_id).length)
 const totalDuration = computed(() => sbs.value.reduce((s, b) => s + (b.duration || 10), 0))
 
 const sidebarSections = computed(() => [
@@ -484,10 +484,6 @@ const sidebarSections = computed(() => [
     ],
   },
 ])
-
-function getVoiceProfile(id: string) {
-  return VOICE_PROFILES.find(v => v.id === id)
-}
 
 function isSbCharSelected(sb: any, charId: number) {
   if (!sb.character_ids) return false
@@ -519,6 +515,7 @@ async function load() {
     chars.value = (await cRes.json()).items || []
     scenes.value = (await sRes.json()).items || []
     sbs.value = (await sbRes.json()).items || []
+    await loadVoices()
 
     if (sbs.value.length) activeKey.value = 'storyboard'
     else if (chars.value.length) activeKey.value = 'extract'
@@ -702,14 +699,14 @@ async function doVoiceAssign() {
   }
 }
 
-async function updateCharVoice(charId: number, voiceStyle: string) {
+async function updateCharVoice(charId: number, timbreId: number) {
   await fetch(`${BASE}/characters/${charId}/voice`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ voice_style: voiceStyle }),
+    body: JSON.stringify({ timbre_id: timbreId }),
   })
   const c = chars.value.find(x => x.id === charId)
-  if (c) c.voice_style = voiceStyle
+  if (c) c.timbre_id = timbreId
 }
 
 async function doBreakdown() {

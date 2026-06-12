@@ -1,4 +1,5 @@
 <script setup lang="ts">
+defineOptions({ name: 'TextToVideo' })
 // Vue 核心
 import { ref, onMounted, computed } from 'vue'
 // Element Plus UI 组件

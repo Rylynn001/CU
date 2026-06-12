@@ -120,6 +120,15 @@ async def delete_episode(request: web.Request):
     return web.json_response({'ok': True})
 
 
+@routes.get('/api-proxy/timbres')
+async def list_timbres(request: web.Request):
+    try:
+        items = drama_repo.list_timbres()
+        return web.json_response({'items': items})
+    except Exception as e:
+        raise web.HTTPInternalServerError(reason=str(e))
+
+
 @routes.get('/api-proxy/episodes/{episode_id}/characters')
 async def episode_characters(request: web.Request):
     episode_id = int(request.match_info['episode_id'])
@@ -154,9 +163,11 @@ async def get_episode_by_number(request: web.Request):
 async def update_character_voice(request: web.Request):
     character_id = int(request.match_info['character_id'])
     body = await request.json()
-    voice_style = body.get('voice_style', '')
+    timbre_id = body.get('timbre_id')
+    if not timbre_id:
+        raise web.HTTPBadRequest(reason='timbre_id 为必填项')
     try:
-        drama_repo.update_character_voice(character_id, voice_style)
+        drama_repo.update_character_voice(character_id, int(timbre_id))
         return web.json_response({'ok': True})
     except Exception as e:
         logger.error(f'[character] voice update error: {e}')

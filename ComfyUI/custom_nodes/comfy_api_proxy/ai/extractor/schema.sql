@@ -49,6 +49,7 @@ CREATE TABLE characters (
     appearance      TEXT                            COMMENT '外貌描写：性别/年龄/体型/面部/发型/着装（300-500字）',
     personality     TEXT                            COMMENT '性格特点标签，如 冷静/腹黑/热血',
     voice_style     VARCHAR(255)                    COMMENT '声音风格描述',
+    timbre_id       INT DEFAULT NULL                COMMENT '关联音色 ID，关联 timbres.id',
     image_url       VARCHAR(512)                    COMMENT '角色形象图 URL',
     reference_images TEXT                           COMMENT '参考图列表，JSON 数组',
     seed_value      VARCHAR(100)                    COMMENT '图片生成种子值，用于保持形象一致性',
@@ -99,3 +100,17 @@ CREATE TABLE episode_scenes (
     created_at      DATETIME NOT NULL               COMMENT '关联建立时间',
     UNIQUE KEY uq_ep_scene (episode_id, scene_id)   COMMENT '防止重复关联'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='集-场景关联表';
+
+
+CREATE TABLE timbres (
+    id              INT AUTO_INCREMENT PRIMARY KEY COMMENT '音色 ID',
+    name            VARCHAR(100) NOT NULL           COMMENT '音色名称，如 龙小淳',
+    gender          VARCHAR(20)                     COMMENT '性别：male/female',
+    style           VARCHAR(255)                    COMMENT '风格描述，如 活泼甜美',
+    provider        VARCHAR(100)                    COMMENT '服务商，如 aliyun/minimax',
+    sample_url      VARCHAR(512)                    COMMENT '试听样本 URL',
+    sort_order      INT DEFAULT 0                   COMMENT '排序权重',
+    created_at      DATETIME NOT NULL               COMMENT '创建时间',
+    updated_at      DATETIME NOT NULL               COMMENT '更新时间',
+    deleted_at      DATETIME DEFAULT NULL           COMMENT '软删除'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='音色库表';
