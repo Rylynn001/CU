@@ -726,7 +726,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { pollTaskUntilDone } from '../api/apiService'
+import { pollTaskUntilDone, uploadInputImage } from '../api/apiService'
 import { getCurrentUserId } from '../utils/user'
 
 const router = useRouter()
@@ -772,7 +772,7 @@ const totalDuration = computed(() => sbs.value.reduce((s, b) => s + (b.duration 
 
 const charsWithImage = computed(() => chars.value.filter(c => c.image_url).length)
 const scenesWithImage = computed(() => scenes.value.filter(s => s.image_url).length)
-const sbsWithImage = computed(() => sbs.value.filter(s => s.image_url).length)
+const sbsWithImage = computed(() => sbs.value.filter(s => s.first_frame_image || s.image_url).length)
 const sbsWithVideo = computed(() => sbs.value.filter(s => s.video_url).length)
 const sbsComposed = computed(() => sbs.value.filter(s => s.composed_video_url).length)
 const sbsWithDialogue = computed(() => sbs.value.filter(s => s.dialogue))
@@ -891,19 +891,19 @@ function isPendingShotFrame(id: number, frameType: string) {
   return pendingShotFrameKeys.value.includes(framePendingKey(id, frameType))
 }
 
-// 收集镜头绑定的角色和场景的 asset_id（直接用于图生图）
-function getShotRefAssetIds(sb: any): number[] {
-  const ids: number[] = []
+// 收集镜头绑定的角色和场景的图片路径（用于上传图生图参考图）
+function getShotRefLocations(sb: any): string[] {
+  const locations: string[] = []
   const scene = scenes.value.find((s: any) => s.id === sb.scene_id || s.id === sb.sceneId)
-  if (scene?.asset_id) ids.push(scene.asset_id)
+  if (scene?.image_url) locations.push(scene.image_url)
   const charIdList: number[] = sb.character_ids
     ? String(sb.character_ids).split(',').map(Number).filter(Boolean)
     : []
   for (const cid of charIdList) {
     const c = chars.value.find((x: any) => x.id === cid)
-    if (c?.asset_id) ids.push(c.asset_id)
+    if (c?.image_url) locations.push(c.image_url)
   }
-  return ids
+  return locations
 }
 
 function buildFramePrompt(sb: any, frameType: 'first_frame' | 'last_frame'): string {
@@ -923,7 +923,19 @@ async function genShotFrame(sb: any, frameType: 'first_frame' | 'last_frame') {
   try {
     const userId = getCurrentUserId()
     const prompt = buildFramePrompt(sb, frameType)
-    const input_asset_ids = getShotRefAssetIds(sb)
+    const locations = getShotRefLocations(sb)
+
+    // 逐个上传参考图，拿到 input_asset_id
+    const input_asset_ids: number[] = []
+    for (const location of locations) {
+      const filename = location.replace(/\\/g, '/').split('/').pop()!
+      const res = await fetch(`/api/view?filename=${encodeURIComponent(filename)}&type=output`)
+      if (!res.ok) throw new Error(`参考图获取失败: ${filename}`)
+      const blob = await res.blob()
+      const file = new File([blob], filename, { type: blob.type || 'image/png' })
+      const uploaded = await uploadInputImage(file, userId ?? 1)
+      input_asset_ids.push(uploaded.id)
+    }
 
     const body: any = { model: IMAGE_MODEL_ID, prompt, aspect_ratio: '16:9', user_id: userId }
     if (input_asset_ids.length) body.input_asset_ids = input_asset_ids
