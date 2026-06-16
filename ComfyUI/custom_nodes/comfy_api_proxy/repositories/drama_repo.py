@@ -192,8 +192,11 @@ def get_episode_characters(episode_id: int) -> list:
     try:
         with conn.cursor() as c:
             c.execute("""
-                SELECT ch.* FROM characters ch
+                SELECT ch.*,
+                  a.location AS image_url
+                FROM characters ch
                 JOIN episode_characters ec ON ec.character_id=ch.id
+                LEFT JOIN assets a ON a.id=ch.asset_id
                 WHERE ec.episode_id=%s AND ch.deleted_at IS NULL
             """, (episode_id,))
             return _ser_list(c.fetchall())
@@ -206,11 +209,28 @@ def get_episode_scenes(episode_id: int) -> list:
     try:
         with conn.cursor() as c:
             c.execute("""
-                SELECT s.* FROM scenes s
+                SELECT s.*,
+                  a.location AS image_url
+                FROM scenes s
                 JOIN episode_scenes es ON es.scene_id=s.id
+                LEFT JOIN assets a ON a.id=s.asset_id
                 WHERE es.episode_id=%s AND s.deleted_at IS NULL
             """, (episode_id,))
             return _ser_list(c.fetchall())
+    finally:
+        conn.close()
+
+
+def update_scene_asset(scene_id: int, asset_id: int) -> bool:
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as c:
+            c.execute(
+                "UPDATE scenes SET asset_id=%s, updated_at=%s WHERE id=%s AND deleted_at IS NULL",
+                (asset_id, _NOW(), scene_id),
+            )
+            conn.commit()
+            return c.rowcount > 0
     finally:
         conn.close()
 
@@ -223,6 +243,20 @@ def list_timbres() -> list:
         with conn.cursor() as c:
             c.execute("SELECT id, name, gender, style, provider FROM timbres WHERE deleted_at IS NULL ORDER BY sort_order ASC, id ASC")
             return _ser_list(c.fetchall())
+    finally:
+        conn.close()
+
+
+def update_character_asset(character_id: int, asset_id: int) -> bool:
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as c:
+            c.execute(
+                "UPDATE characters SET asset_id=%s, updated_at=%s WHERE id=%s AND deleted_at IS NULL",
+                (asset_id, _NOW(), character_id),
+            )
+            conn.commit()
+            return c.rowcount > 0
     finally:
         conn.close()
 
@@ -251,9 +285,13 @@ def get_episode_storyboards(episode_id: int) -> list:
         with conn.cursor() as c:
             c.execute("""
                 SELECT s.*,
-                  IFNULL(GROUP_CONCAT(sc.character_id ORDER BY sc.character_id), '') AS character_ids
+                  IFNULL(GROUP_CONCAT(sc.character_id ORDER BY sc.character_id), '') AS character_ids,
+                  fa.location AS first_frame_image,
+                  la.location AS last_frame_image
                 FROM storyboards s
                 LEFT JOIN storyboard_characters sc ON sc.storyboard_id = s.id
+                LEFT JOIN assets fa ON fa.id = s.first_asset_id
+                LEFT JOIN assets la ON la.id = s.last_asset_id
                 WHERE s.episode_id=%s AND s.deleted_at IS NULL
                 GROUP BY s.id
                 ORDER BY s.storyboard_number ASC, s.id ASC
@@ -330,6 +368,7 @@ _SB_FIELDS = {
     'duration', 'description', 'action', 'result', 'atmosphere',
     'dialogue', 'image_prompt', 'video_prompt', 'bgm_prompt',
     'sound_effect', 'scene_id',
+    'first_asset_id', 'last_asset_id',
 }
 
 

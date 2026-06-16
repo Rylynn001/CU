@@ -418,6 +418,301 @@
             </div>
           </div>
         </div>
+        <!-- 角色形象 -->
+        <div v-else-if="activeKey === 'prod-chars'" class="content-panel">
+          <div class="panel-toolbar">
+            <div class="step-indicator"><span class="step-num">06</span><span class="step-name">角色形象</span></div>
+            <div class="toolbar-right">
+              <span class="char-count">{{ chars.length }} 角色 · {{ charsWithImage }}/{{ chars.length }} 已生成</span>
+            </div>
+          </div>
+          <div v-if="!chars.length" class="step-empty">
+            <div class="empty-title">暂无角色</div>
+            <div class="empty-desc">请先在剧本流程中提取角色</div>
+            <button class="btn-primary" @click="activeKey = 'extract'">前往提取</button>
+          </div>
+          <div v-else class="prod-scroll">
+            <div class="asset-grid">
+              <div v-for="c in chars" :key="c.id" class="card asset-card">
+                <div class="asset-cover">
+                  <img v-if="c.image_url" :src="locationToUrl(c.image_url) ?? undefined" class="asset-img" />
+                  <div v-else class="asset-placeholder">
+                    <span class="asset-initial">{{ c.name?.[0] || '?' }}</span>
+                  </div>
+                  <span class="asset-badge" :class="c.image_url ? 'badge-ok' : ''">{{ c.image_url ? '已生成' : '待生成' }}</span>
+                </div>
+                <div class="asset-body">
+                  <div class="asset-name">{{ c.name }}</div>
+                  <div class="asset-meta dim">{{ c.role || '角色' }}</div>
+                  <div v-if="c.appearance" class="asset-desc dim">{{ c.appearance?.slice(0,60) }}{{ (c.appearance?.length||0)>60?'...':'' }}</div>
+                </div>
+                <div class="asset-foot">
+                  <span :class="['dot', c.image_url ? 'ok' : '', pendingCharIds.has(c.id) ? 'pending' : '']" />
+                  <span class="dim" style="font-size:10px">{{ pendingCharIds.has(c.id) ? '生成中...' : (c.image_url ? '已生成' : '待生成') }}</span>
+                  <button class="btn-sm ml-auto" :disabled="pendingCharIds.has(c.id)" @click="genCharImage(c)">
+                    {{ pendingCharIds.has(c.id) ? '生成中' : (c.image_url ? '重新生成' : '生成') }}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- 场景图片 -->
+        <div v-else-if="activeKey === 'prod-scenes'" class="content-panel">
+          <div class="panel-toolbar">
+            <div class="step-indicator"><span class="step-num">07</span><span class="step-name">场景图片</span></div>
+            <div class="toolbar-right">
+              <span class="char-count">{{ scenes.length }} 场景 · {{ scenesWithImage }}/{{ scenes.length }} 已生成</span>
+            </div>
+          </div>
+          <div v-if="!scenes.length" class="step-empty">
+            <div class="empty-title">暂无场景</div>
+            <div class="empty-desc">请先在剧本流程中提取场景</div>
+            <button class="btn-primary" @click="activeKey = 'extract'">前往提取</button>
+          </div>
+          <div v-else class="prod-scroll">
+            <div class="asset-grid">
+              <div v-for="s in scenes" :key="s.id" class="card asset-card">
+                <div class="asset-cover wide">
+                  <img v-if="s.image_url" :src="locationToUrl(s.image_url) ?? undefined" class="asset-img" />
+                  <div v-else class="asset-placeholder">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                  </div>
+                  <span class="asset-badge" :class="s.image_url ? 'badge-ok' : ''">{{ s.image_url ? '已生成' : '待生成' }}</span>
+                </div>
+                <div class="asset-body">
+                  <div class="asset-name">{{ s.location }}</div>
+                  <div class="asset-meta dim">{{ s.time || '—' }}</div>
+                  <div v-if="s.prompt" class="asset-desc dim">{{ s.prompt?.slice(0,60) }}{{ (s.prompt?.length||0)>60?'...':'' }}</div>
+                </div>
+                <div class="asset-foot">
+                  <span :class="['dot', s.image_url ? 'ok' : '', pendingSceneIds.has(s.id) ? 'pending' : '']" />
+                  <span class="dim" style="font-size:10px">{{ pendingSceneIds.has(s.id) ? '生成中...' : (s.image_url ? '已生成' : '待生成') }}</span>
+                  <button class="btn-sm ml-auto" :disabled="pendingSceneIds.has(s.id)" @click="genSceneImage(s)">
+                    {{ pendingSceneIds.has(s.id) ? '生成中' : (s.image_url ? '重新生成' : '生成') }}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 配音生成 -->
+        <div v-else-if="activeKey === 'prod-dubbing'" class="content-panel">
+          <div class="panel-toolbar">
+            <div class="step-indicator"><span class="step-num">08</span><span class="step-name">配音生成</span></div>
+            <div class="toolbar-right">
+              <span class="char-count">{{ ttsEligibleCount }} 条有对白 · {{ ttsGeneratedCount }} 已生成</span>
+            </div>
+          </div>
+          <div v-if="!sbs.length" class="step-empty">
+            <div class="empty-title">暂无分镜</div>
+            <div class="empty-desc">请先完成分镜拆解</div>
+            <button class="btn-primary" @click="activeKey = 'storyboard'">前往分镜</button>
+          </div>
+          <div v-else-if="!ttsEligibleCount" class="step-empty">
+            <div class="empty-title">暂无可配音镜头</div>
+            <div class="empty-desc">在分镜列表中为镜头填写对白，格式如：角色名：台词</div>
+            <button class="btn-primary" @click="activeKey = 'storyboard'">前往分镜</button>
+          </div>
+          <div v-else class="prod-scroll">
+            <div class="dub-grid">
+              <div v-for="(sb, i) in sbsWithDialogue" :key="sb.id" class="card dub-card">
+                <div class="dub-head">
+                  <div class="dub-copy">
+                    <div class="dub-title">
+                      <span class="frame-num">#{{ String(sb.storyboard_number || i+1).padStart(2,'0') }}</span>
+                      <span class="frame-badge">{{ getDialogueSpeaker(sb) }}</span>
+                    </div>
+                    <div class="dub-desc">{{ getDialogueText(sb) }}</div>
+                  </div>
+                  <span class="tag" :class="sb.tts_audio_url ? 'tag-success' : ''">{{ sb.tts_audio_url ? '已生成' : '待生成' }}</span>
+                </div>
+                <div class="dub-meta">
+                  <span class="dim">{{ sb.shot_type || '未设景别' }}</span>
+                  <span class="dim">{{ sb.duration || 10 }}s</span>
+                </div>
+                <div class="dub-foot">
+                  <audio v-if="sb.tts_audio_url" :src="sb.tts_audio_url" controls preload="none" class="dub-audio" />
+                  <div v-else class="dim" style="font-size:12px">尚未生成语音</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 镜头图片 -->
+        <div v-else-if="activeKey === 'prod-shots'" class="content-panel">
+          <div class="panel-toolbar">
+            <div class="step-indicator"><span class="step-num">09</span><span class="step-name">镜头图片</span></div>
+            <div class="toolbar-right">
+              <span class="char-count">{{ sbs.length }} 镜头 · {{ sbsWithImage }}/{{ sbs.length }} 已有首帧</span>
+              <div class="frame-mode-toggle">
+                <button :class="['btn-sm', frameMode === 'first' ? 'active' : '']" @click="frameMode = 'first'">仅首帧</button>
+                <button :class="['btn-sm', frameMode === 'first_last' ? 'active' : '']" @click="frameMode = 'first_last'">首尾帧</button>
+              </div>
+            </div>
+          </div>
+          <div v-if="!sbs.length" class="step-empty">
+            <div class="empty-title">暂无分镜</div>
+            <button class="btn-primary" @click="activeKey = 'storyboard'">前往分镜</button>
+          </div>
+          <div v-else class="shot-frame-scroll">
+            <div class="shot-frame-grid">
+              <div v-for="(sb, i) in sbs" :key="sb.id" class="card shot-frame-row">
+                <div class="shot-frame-info">
+                  <div class="shot-frame-top">
+                    <span class="frame-num">#{{ String(sb.storyboard_number || i+1).padStart(2,'0') }}</span>
+                    <span class="frame-badge">{{ sb.shot_type || '—' }}</span>
+                  </div>
+                  <div class="shot-frame-desc">{{ sb.description || sb.title || '—' }}</div>
+                  <div class="shot-frame-meta">
+                    <span :class="['dot', getFirstFrame(sb) ? 'ok' : '', isPendingShotFrame(sb.id, 'first_frame') ? 'pending' : '']" />
+                    <span class="dim" style="font-size:11px">首帧</span>
+                    <template v-if="frameMode === 'first_last'">
+                      <span :class="['dot', getLastFrame(sb) ? 'ok' : '', isPendingShotFrame(sb.id, 'last_frame') ? 'pending' : '']" />
+                      <span class="dim" style="font-size:11px">尾帧</span>
+                    </template>
+                    <span class="dim" style="font-size:11px">· {{ sb.duration || 10 }}s</span>
+                  </div>
+                </div>
+                <div class="shot-frame-thumbs">
+                  <!-- 首帧 -->
+                  <div class="shot-frame-thumb-wrap">
+                    <div class="shot-frame-thumb" @click="!isPendingShotFrame(sb.id, 'first_frame') && genShotFrame(sb, 'first_frame')">
+                      <img v-if="getFirstFrame(sb)" :src="getFirstFrame(sb)!" class="shot-frame-img" />
+                      <div v-else class="shot-frame-empty">
+                        <svg v-if="isPendingShotFrame(sb.id, 'first_frame')" class="spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                        <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                      </div>
+                      <span v-if="getFirstFrame(sb) && !isPendingShotFrame(sb.id, 'first_frame')" class="shot-frame-re">
+                        <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                      </span>
+                    </div>
+                    <span class="shot-frame-label">{{ isPendingShotFrame(sb.id, 'first_frame') ? '生成中' : '首帧' }}</span>
+                  </div>
+                  <!-- 尾帧（仅首尾帧模式） -->
+                  <div v-if="frameMode === 'first_last'" class="shot-frame-thumb-wrap">
+                    <div class="shot-frame-thumb" @click="!isPendingShotFrame(sb.id, 'last_frame') && genShotFrame(sb, 'last_frame')">
+                      <img v-if="getLastFrame(sb)" :src="getLastFrame(sb)!" class="shot-frame-img" />
+                      <div v-else class="shot-frame-empty">
+                        <svg v-if="isPendingShotFrame(sb.id, 'last_frame')" class="spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                        <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                      </div>
+                      <span v-if="getLastFrame(sb) && !isPendingShotFrame(sb.id, 'last_frame')" class="shot-frame-re">
+                        <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                      </span>
+                    </div>
+                    <span class="shot-frame-label">{{ isPendingShotFrame(sb.id, 'last_frame') ? '生成中' : '尾帧' }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 视频生成 -->
+        <div v-else-if="activeKey === 'prod-videos'" class="content-panel">
+          <div class="panel-toolbar">
+            <div class="step-indicator"><span class="step-num">10</span><span class="step-name">视频生成</span></div>
+            <div class="toolbar-right">
+              <span class="char-count">{{ sbs.length }} 镜头 · {{ sbsWithVideo }}/{{ sbs.length }} 已生成</span>
+            </div>
+          </div>
+          <div v-if="!sbs.length" class="step-empty">
+            <div class="empty-title">暂无分镜</div>
+            <button class="btn-primary" @click="activeKey = 'storyboard'">前往分镜</button>
+          </div>
+          <div v-else class="prod-scroll">
+            <div class="prod-grid">
+              <div v-for="(sb, i) in sbs" :key="sb.id" class="card prod-card">
+                <div class="prod-cover">
+                  <video v-if="sb.video_url" :src="sb.video_url" class="prod-video" controls preload="metadata" playsinline />
+                  <img v-else-if="sb.image_url" :src="locationToUrl(sb.image_url) ?? undefined" class="asset-img" />
+                <div v-else class="prod-cover-empty">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+                  </div>
+                  <span class="prod-idx">#{{ String(i+1).padStart(2,'0') }}</span>
+                </div>
+                <div class="prod-info">
+                  <div class="prod-desc truncate">{{ sb.description || sb.title || '—' }}</div>
+                  <div class="prod-meta-line">{{ sb.shot_type || '未设景别' }} · {{ sb.duration || 10 }}s</div>
+                  <div class="prod-dots">
+                    <span :class="['dot', sb.image_url ? 'ok' : '']" /><span style="font-size:10px">图</span>
+                    <span :class="['dot', sb.video_url ? 'ok' : '']" /><span style="font-size:10px">视频</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 视频合成 -->
+        <div v-else-if="activeKey === 'prod-compose'" class="content-panel">
+          <div class="panel-toolbar">
+            <div class="step-indicator"><span class="step-num">11</span><span class="step-name">视频合成</span></div>
+            <div class="toolbar-right">
+              <span class="char-count">{{ sbs.length }} 镜头 · {{ sbsComposed }}/{{ sbs.length }} 已合成</span>
+            </div>
+          </div>
+          <div v-if="!sbs.length" class="step-empty">
+            <div class="empty-title">暂无分镜</div>
+            <button class="btn-primary" @click="activeKey = 'storyboard'">前往分镜</button>
+          </div>
+          <div v-else class="prod-scroll">
+            <div class="prod-grid">
+              <div v-for="(sb, i) in sbs" :key="sb.id" class="card prod-card">
+                <div class="prod-cover">
+                  <video v-if="sb.composed_video_url" :src="sb.composed_video_url" class="prod-video" controls preload="metadata" playsinline />
+                  <video v-else-if="sb.video_url" :src="sb.video_url" class="prod-video" controls preload="metadata" playsinline />
+                  <img v-else-if="sb.image_url" :src="locationToUrl(sb.image_url) ?? undefined" class="asset-img" />
+                  <div v-else class="prod-cover-empty">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+                  </div>
+                  <span class="prod-idx">#{{ String(i+1).padStart(2,'0') }}</span>
+                  <span v-if="sb.composed_video_url" class="prod-overlay-badge">已合成</span>
+                </div>
+                <div class="prod-info">
+                  <div class="prod-desc truncate">{{ sb.description || sb.title || '—' }}</div>
+                  <div class="prod-meta-line">{{ sb.shot_type || '未设景别' }} · {{ sb.duration || 10 }}s</div>
+                  <div class="prod-dots">
+                    <span :class="['dot', sb.video_url ? 'ok' : '']" /><span style="font-size:10px">视频</span>
+                    <span :class="['dot', sb.tts_audio_url ? 'ok' : '']" /><span style="font-size:10px">配音</span>
+                    <span :class="['dot', sb.composed_video_url ? 'ok' : '']" /><span style="font-size:10px">合成</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 拼接导出 -->
+        <div v-else-if="activeKey === 'prod-export'" class="content-panel">
+          <div class="panel-toolbar">
+            <div class="step-indicator"><span class="step-num">12</span><span class="step-name">拼接导出</span></div>
+            <div class="toolbar-right">
+              <span class="char-count">{{ sbsComposed }}/{{ sbs.length }} 镜头已合成</span>
+            </div>
+          </div>
+          <div class="export-body">
+            <div class="card export-card">
+              <div class="export-kicker">Final Export</div>
+              <div class="export-title">全集拼接</div>
+              <div class="export-desc">将所有已合成镜头按顺序拼接为完整视频</div>
+              <div class="export-stats">
+                <div class="export-stat"><span>总镜头</span><strong>{{ sbs.length }}</strong></div>
+                <div class="export-stat"><span>已合成</span><strong>{{ sbsComposed }}</strong></div>
+                <div class="export-stat"><span>总时长</span><strong>{{ totalDuration }}s</strong></div>
+              </div>
+              <div v-if="episode?.merged_video_url" class="export-video-wrap">
+                <video :src="episode.merged_video_url" controls class="export-video" />
+              </div>
+              <div v-else class="export-empty">
+                <div class="dim" style="font-size:13px">尚未导出</div>
+              </div>
+            </div>
+          </div>
+        </div>
       </main>
     </div>
   </div>
@@ -431,6 +726,8 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { pollTaskUntilDone } from '../api/apiService'
+import { getCurrentUserId } from '../utils/user'
 
 const router = useRouter()
 const route = useRoute()
@@ -451,6 +748,8 @@ const runningType = ref<string | null>(null)
 const agentEvents = ref<string[]>([])
 const activeKey = ref('raw')
 const selectedSb = ref<any>(null)
+const frameMode = ref<'first' | 'first_last'>('first')
+const pendingShotFrameKeys = ref<string[]>([])
 
 const VOICE_PROFILES = ref<{id: number, name: string, gender: string, style: string}[]>([])
 
@@ -471,6 +770,203 @@ const SHOT_MOVEMENTS = ['固定', '推镜', '拉镜', '摇镜', '移镜', '跟�
 const charsVoiced = computed(() => chars.value.filter(c => c.timbre_id).length)
 const totalDuration = computed(() => sbs.value.reduce((s, b) => s + (b.duration || 10), 0))
 
+const charsWithImage = computed(() => chars.value.filter(c => c.image_url).length)
+const scenesWithImage = computed(() => scenes.value.filter(s => s.image_url).length)
+const sbsWithImage = computed(() => sbs.value.filter(s => s.image_url).length)
+const sbsWithVideo = computed(() => sbs.value.filter(s => s.video_url).length)
+const sbsComposed = computed(() => sbs.value.filter(s => s.composed_video_url).length)
+const sbsWithDialogue = computed(() => sbs.value.filter(s => s.dialogue))
+const ttsEligibleCount = computed(() => sbsWithDialogue.value.length)
+const ttsGeneratedCount = computed(() => sbs.value.filter(s => s.dialogue && s.tts_audio_url).length)
+
+// 角色/场景/镜头图片生成
+const pendingCharIds = ref<Set<number>>(new Set())
+const pendingSceneIds = ref<Set<number>>(new Set())
+const pendingShotIds = ref<Set<number>>(new Set())
+const IMAGE_MODEL_ID = 4
+
+async function genImage(
+  id: number,
+  prompt: string,
+  pendingSet: typeof pendingCharIds,
+  saveAsset: (assetId: number, url: string) => Promise<void>,
+  label: string,
+) {
+  if (pendingSet.value.has(id)) return
+  if (!prompt) { ElMessage.warning(`${label} 缺少描述，无法生成`); return }
+  pendingSet.value = new Set([...pendingSet.value, id])
+  try {
+    const userId = getCurrentUserId()
+    const res = await fetch(`${BASE}/txt2img`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: IMAGE_MODEL_ID, prompt, aspect_ratio: '1:1', user_id: userId }),
+    })
+    if (!res.ok) throw new Error(await res.text())
+    const { task_id } = await res.json()
+    const result = await pollTaskUntilDone(task_id, userId ?? undefined, 'image')
+    const img = result.images?.[0]
+    if (!img?.url) throw new Error('生成结果中没有图片 URL')
+    if (!img.asset_id) throw new Error('生成结果中没有 asset_id')
+    await saveAsset(img.asset_id, img.url)
+    ElMessage.success(`${label} 已生成`)
+  } catch (e: any) {
+    ElMessage.error(e.message || '生成失败')
+  } finally {
+    const next = new Set(pendingSet.value)
+    next.delete(id)
+    pendingSet.value = next
+  }
+}
+
+function genCharImage(c: any) {
+  return genImage(
+    c.id,
+    c.appearance || c.personality || c.name,
+    pendingCharIds,
+    async (assetId, url) => {
+      await fetch(`${BASE}/characters/${c.id}/image`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ asset_id: assetId }),
+      })
+      c.asset_id = assetId
+      c.image_url = url
+    },
+    c.name,
+  )
+}
+
+function genSceneImage(s: any) {
+  return genImage(
+    s.id,
+    s.prompt || s.location,
+    pendingSceneIds,
+    async (assetId, url) => {
+      await fetch(`${BASE}/scenes/${s.id}/image`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ asset_id: assetId }),
+      })
+      s.asset_id = assetId
+      s.image_url = url
+    },
+    s.location,
+  )
+}
+
+function genShotImage(sb: any) {
+  return genImage(
+    sb.id,
+    sb.image_prompt || sb.description || sb.title,
+    pendingShotIds,
+    async (url) => {
+      await fetch(`${BASE}/storyboards/${sb.id}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image_url: url }),
+      })
+      sb.image_url = url
+    },
+    `镜头 #${sb.storyboard_number || sb.id}`,
+  )
+}
+
+function locationToUrl(location: string | null | undefined): string | null {
+  if (!location) return null
+  const filename = location.replace(/\\/g, '/').split('/').pop()!
+  return `/api/view?filename=${encodeURIComponent(filename)}&type=output`
+}
+
+function getFirstFrame(sb: any): string | null {
+  return locationToUrl(sb?.first_frame_image || sb?.firstFrameImage)
+}
+
+function getLastFrame(sb: any): string | null {
+  return locationToUrl(sb?.last_frame_image || sb?.lastFrameImage)
+}
+
+function framePendingKey(id: number, frameType: string) {
+  return `${id}:${frameType}`
+}
+
+function isPendingShotFrame(id: number, frameType: string) {
+  return pendingShotFrameKeys.value.includes(framePendingKey(id, frameType))
+}
+
+// 收集镜头绑定的角色和场景的 asset_id（直接用于图生图）
+function getShotRefAssetIds(sb: any): number[] {
+  const ids: number[] = []
+  const scene = scenes.value.find((s: any) => s.id === sb.scene_id || s.id === sb.sceneId)
+  if (scene?.asset_id) ids.push(scene.asset_id)
+  const charIdList: number[] = sb.character_ids
+    ? String(sb.character_ids).split(',').map(Number).filter(Boolean)
+    : []
+  for (const cid of charIdList) {
+    const c = chars.value.find((x: any) => x.id === cid)
+    if (c?.asset_id) ids.push(c.asset_id)
+  }
+  return ids
+}
+
+function buildFramePrompt(sb: any, frameType: 'first_frame' | 'last_frame'): string {
+  const base = sb.image_prompt || sb.description || sb.title || ''
+  const hint = frameType === 'first_frame'
+    ? '生成这个镜头的起始关键帧，突出建立关系和动作开始瞬间'
+    : '生成这个镜头的结束关键帧，突出动作结束、情绪落点或结果状态'
+  return base ? `${base}；${hint}` : hint
+}
+
+async function genShotFrame(sb: any, frameType: 'first_frame' | 'last_frame') {
+  const basePrompt = sb.image_prompt || sb.description || sb.title
+  if (!basePrompt) { ElMessage.warning('镜头缺少描述，无法生成'); return }
+  const key = framePendingKey(sb.id, frameType)
+  if (pendingShotFrameKeys.value.includes(key)) return
+  pendingShotFrameKeys.value = [...pendingShotFrameKeys.value, key]
+  try {
+    const userId = getCurrentUserId()
+    const prompt = buildFramePrompt(sb, frameType)
+    const input_asset_ids = getShotRefAssetIds(sb)
+
+    const body: any = { model: IMAGE_MODEL_ID, prompt, aspect_ratio: '16:9', user_id: userId }
+    if (input_asset_ids.length) body.input_asset_ids = input_asset_ids
+
+    const res = await fetch(`${BASE}/txt2img`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    if (!res.ok) throw new Error(await res.text())
+    const { task_id } = await res.json()
+    const result = await pollTaskUntilDone(task_id, userId ?? undefined, 'image')
+    const img = result.images?.[0]
+    if (!img?.url) throw new Error('生成结果中没有图片 URL')
+    if (!img.asset_id) throw new Error('生成结果中没有 asset_id')
+    const assetField = frameType === 'first_frame' ? 'first_asset_id' : 'last_asset_id'
+    const imgField = frameType === 'first_frame' ? 'first_frame_image' : 'last_frame_image'
+    await fetch(`${BASE}/storyboards/${sb.id}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ [assetField]: img.asset_id }),
+    })
+    sb[assetField] = img.asset_id
+    sb[imgField] = img.url
+    ElMessage.success(frameType === 'first_frame' ? '首帧已生成' : '尾帧已生成')
+  } catch (e: any) {
+    ElMessage.error(e.message || '生成失败')
+  } finally {
+    pendingShotFrameKeys.value = pendingShotFrameKeys.value.filter(k => k !== key)
+  }
+}
+
+function getDialogueSpeaker(sb: any): string {
+  const d = sb.dialogue || ''
+  const m = d.match(/^([^：:]+)[：:]/)
+  return m ? m[1].trim() : '旁白'
+}
+
+function getDialogueText(sb: any): string {
+  const d = sb.dialogue || ''
+  const m = d.match(/^[^：:]+[：:](.*)/)
+  return m ? m[1].trim() : d
+}
+
 const sidebarSections = computed(() => [
   {
     id: 'script',
@@ -481,6 +977,19 @@ const sidebarSections = computed(() => [
       { key: 'extract',    label: '提取角色与场景', desc: chars.value.length ? `${chars.value.length} 角色` : '', done: chars.value.length > 0 },
       { key: 'voice',      label: '分配音色',    desc: charsVoiced.value ? `${charsVoiced.value}/${chars.value.length} 已分配` : '', done: charsVoiced.value > 0 && charsVoiced.value === chars.value.length },
       { key: 'storyboard', label: '分镜列表',    desc: sbs.value.length ? `${sbs.value.length} 镜头` : '', done: sbs.value.length > 0 },
+    ],
+  },
+  {
+    id: 'prod',
+    label: '制作',
+    items: [
+      { key: 'prod-chars',   label: '角色形象',   desc: chars.value.length ? `${charsWithImage.value}/${chars.value.length}` : '', done: charsWithImage.value > 0 && charsWithImage.value === chars.value.length },
+      { key: 'prod-scenes',  label: '场景图片',   desc: scenes.value.length ? `${scenesWithImage.value}/${scenes.value.length}` : '', done: scenesWithImage.value > 0 && scenesWithImage.value === scenes.value.length },
+      { key: 'prod-dubbing', label: '配音生成',   desc: ttsEligibleCount.value ? `${ttsGeneratedCount.value}/${ttsEligibleCount.value}` : '', done: ttsGeneratedCount.value > 0 && ttsGeneratedCount.value === ttsEligibleCount.value },
+      { key: 'prod-shots',   label: '镜头图片',   desc: sbs.value.length ? `${sbsWithImage.value}/${sbs.value.length}` : '', done: sbsWithImage.value > 0 && sbsWithImage.value === sbs.value.length },
+      { key: 'prod-videos',  label: '视频生成',   desc: sbs.value.length ? `${sbsWithVideo.value}/${sbs.value.length}` : '', done: sbsWithVideo.value > 0 && sbsWithVideo.value === sbs.value.length },
+      { key: 'prod-compose', label: '视频合成',   desc: sbs.value.length ? `${sbsComposed.value}/${sbs.value.length}` : '', done: sbsComposed.value > 0 && sbsComposed.value === sbs.value.length },
+      { key: 'prod-export',  label: '拼接导出',   desc: episode.value?.merged_video_url ? '已导出' : '', done: !!episode.value?.merged_video_url },
     ],
   },
 ])
@@ -1004,4 +1513,109 @@ onMounted(load)
 .loading-full { display: flex; align-items: center; justify-content: center; height: 100%; color: rgba(255,255,255,0.4); }
 .spin { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* 制作面板通用 */
+.prod-scroll { flex: 1; overflow-y: auto; padding: 24px; }
+.asset-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+.asset-card { display: flex; flex-direction: column; gap: 0; overflow: hidden; padding: 0; }
+.asset-cover { position: relative; width: 100%; aspect-ratio: 1; background: rgba(255,255,255,0.03); overflow: hidden; }
+.asset-cover.wide { aspect-ratio: 16/9; }
+.asset-img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.asset-placeholder { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: rgba(255,255,255,0.15); }
+.asset-initial { font-size: 32px; font-weight: 700; color: rgba(167,139,250,0.3); }
+.asset-badge {
+  position: absolute; top: 8px; right: 8px;
+  font-size: 10px; padding: 2px 7px; border-radius: 99px;
+  background: rgba(0,0,0,0.6); color: rgba(255,255,255,0.4);
+}
+.asset-badge.badge-ok { background: rgba(74,222,128,0.15); color: #4ade80; }
+.asset-body { padding: 10px 12px 6px; display: flex; flex-direction: column; gap: 3px; }
+.asset-name { font-size: 13px; font-weight: 600; color: rgba(255,255,255,0.85); }
+.asset-meta { font-size: 11px; }
+.asset-desc { font-size: 11px; line-height: 1.5; margin-top: 2px; }
+.asset-foot { padding: 6px 12px 12px; display: flex; align-items: center; gap: 6px; }
+
+.dot { width: 6px; height: 6px; border-radius: 50%; background: rgba(255,255,255,0.15); flex-shrink: 0; display: inline-block; }
+.dot.ok { background: #4ade80; }
+.dot.pending { background: #facc15; }
+
+/* 配音 */
+.dub-grid { display: flex; flex-direction: column; gap: 10px; }
+.dub-card { padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+.dub-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.dub-copy { display: flex; flex-direction: column; gap: 4px; flex: 1; }
+.dub-title { display: flex; align-items: center; gap: 6px; }
+.frame-num { font-size: 11px; font-weight: 700; color: #a78bfa; font-family: monospace; }
+.frame-badge { font-size: 11px; color: rgba(255,255,255,0.5); background: rgba(255,255,255,0.06); padding: 1px 7px; border-radius: 99px; }
+.dub-desc { font-size: 13px; color: rgba(255,255,255,0.75); line-height: 1.5; }
+.dub-meta { display: flex; gap: 10px; }
+.dub-meta .dim { font-size: 11px; }
+.dub-foot { display: flex; align-items: center; gap: 10px; }
+.dub-audio { flex: 1; height: 32px; }
+
+/* 镜头图片行布局 */
+.frame-mode-toggle { display: flex; gap: 2px; background: rgba(255,255,255,0.06); border-radius: 8px; padding: 2px; }
+.frame-mode-toggle .btn-sm { border-radius: 6px; border: none; background: transparent; color: rgba(255,255,255,0.45); padding: 3px 10px; font-size: 11px; cursor: pointer; transition: all 0.15s; }
+.frame-mode-toggle .btn-sm.active { background: rgba(124,58,237,0.5); color: #fff; }
+.frame-mode-toggle .btn-sm:hover:not(.active) { color: rgba(255,255,255,0.7); }
+.shot-frame-scroll { flex: 1; overflow-y: auto; padding: 10px 16px; }
+.shot-frame-grid { display: flex; flex-direction: column; gap: 8px; }
+.shot-frame-row {
+  display: flex; align-items: center; gap: 14px;
+  padding: 12px 14px; cursor: default;
+  border-radius: 10px;
+  border: 1.5px solid transparent;
+}
+.shot-frame-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.shot-frame-top { display: flex; align-items: center; gap: 8px; }
+.shot-frame-desc { font-size: 13px; color: rgba(255,255,255,0.7); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.shot-frame-meta { display: flex; align-items: center; gap: 6px; }
+.shot-frame-thumbs { display: flex; gap: 8px; flex-shrink: 0; }
+.shot-frame-thumb-wrap { display: flex; flex-direction: column; gap: 3px; align-items: center; }
+.shot-frame-label { font-size: 10px; font-weight: 600; color: rgba(255,255,255,0.3); }
+.shot-frame-thumb {
+  position: relative; width: 112px; height: 63px;
+  border-radius: 6px; overflow: hidden; cursor: pointer;
+  background: rgba(255,255,255,0.04);
+  border: 1.5px solid rgba(255,255,255,0.08);
+  transition: border-color 0.15s;
+}
+.shot-frame-thumb:hover { border-color: #7c3aed; }
+.shot-frame-img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.shot-frame-empty { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: rgba(255,255,255,0.2); }
+.shot-frame-re {
+  display: none; position: absolute; bottom: 4px; right: 4px;
+  width: 18px; height: 18px; border-radius: 4px;
+  background: rgba(0,0,0,0.6); align-items: center; justify-content: center;
+  color: rgba(255,255,255,0.7);
+}
+.shot-frame-thumb:hover .shot-frame-re { display: flex; }
+
+/* 镜头图/视频/合成 */
+.prod-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
+.prod-card { display: flex; flex-direction: column; gap: 0; overflow: hidden; padding: 0; }
+.prod-cover { position: relative; width: 100%; aspect-ratio: 16/9; background: rgba(255,255,255,0.03); overflow: hidden; }
+.prod-cover-empty { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: rgba(255,255,255,0.15); }
+.prod-video { width: 100%; height: 100%; object-fit: cover; }
+.prod-idx { position: absolute; top: 6px; left: 8px; font-size: 10px; font-weight: 700; color: rgba(255,255,255,0.5); font-family: monospace; }
+.prod-overlay-badge { position: absolute; top: 6px; right: 8px; font-size: 10px; padding: 1px 6px; border-radius: 99px; background: rgba(74,222,128,0.2); color: #4ade80; }
+.prod-info { padding: 8px 10px 10px; display: flex; flex-direction: column; gap: 4px; }
+.prod-desc { font-size: 12px; color: rgba(255,255,255,0.7); }
+.prod-meta-line { font-size: 10px; color: rgba(255,255,255,0.3); }
+.prod-dots { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.truncate { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* 导出 */
+.export-body { flex: 1; display: flex; align-items: flex-start; padding: 24px; }
+.export-card { max-width: 480px; width: 100%; display: flex; flex-direction: column; gap: 12px; }
+.export-kicker { font-size: 10px; font-weight: 600; letter-spacing: 0.1em; color: rgba(255,255,255,0.25); text-transform: uppercase; }
+.export-title { font-size: 20px; font-weight: 700; color: #fff; }
+.export-desc { font-size: 13px; color: rgba(255,255,255,0.4); line-height: 1.6; }
+.export-stats { display: flex; gap: 24px; margin: 4px 0; }
+.export-stat { display: flex; flex-direction: column; gap: 2px; }
+.export-stat span { font-size: 11px; color: rgba(255,255,255,0.4); }
+.export-stat strong { font-size: 22px; font-weight: 700; color: #a78bfa; }
+.export-video-wrap { margin-top: 8px; }
+.export-video { width: 100%; border-radius: 8px; }
+.export-empty { padding: 24px 0; }
 </style>

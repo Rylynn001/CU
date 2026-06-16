@@ -93,7 +93,7 @@ def process(task: dict) -> None:
                 save_path = OUTPUT_DIR / filename
                 with open(save_path, 'wb') as f:
                     f.write(img_data)
-                images.append({'url': f'/api/api-proxy/output/{filename}', 'type': 'image'})
+                images.append({'url': f'/api/api-proxy/output/{filename}', 'type': 'image', 'asset_id': None})
                 save_paths.append(save_path)
 
         if not images:
@@ -102,10 +102,11 @@ def process(task: dict) -> None:
         output_asset_ids = []
         user_id = task.get('user_id')
         if user_id:
-            for save_path in save_paths:
+            for i, save_path in enumerate(save_paths):
                 try:
                     aid = asset_repo.save_output_asset(str(save_path), int(user_id), 'picture')
                     output_asset_ids.append(aid)
+                    images[i]['asset_id'] = aid
                 except Exception as e:
                     logger.error(f'[{task_id}] 数据库写入失败: {e}')
 

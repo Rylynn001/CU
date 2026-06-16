@@ -159,6 +159,36 @@ async def get_episode_by_number(request: web.Request):
     return web.json_response(ep)
 
 
+@routes.put('/api-proxy/scenes/{scene_id}/image')
+async def update_scene_image(request: web.Request):
+    scene_id = int(request.match_info['scene_id'])
+    body = await request.json()
+    asset_id = body.get('asset_id')
+    if not asset_id:
+        raise web.HTTPBadRequest(reason='asset_id 为必填项')
+    try:
+        drama_repo.update_scene_asset(scene_id, int(asset_id))
+        return web.json_response({'ok': True})
+    except Exception as e:
+        logger.error(f'[scene] image update error: {e}')
+        raise web.HTTPInternalServerError(reason=str(e))
+
+
+@routes.put('/api-proxy/characters/{character_id}/image')
+async def update_character_image(request: web.Request):
+    character_id = int(request.match_info['character_id'])
+    body = await request.json()
+    asset_id = body.get('asset_id')
+    if not asset_id:
+        raise web.HTTPBadRequest(reason='asset_id 为必填项')
+    try:
+        drama_repo.update_character_asset(character_id, int(asset_id))
+        return web.json_response({'ok': True})
+    except Exception as e:
+        logger.error(f'[character] image update error: {e}')
+        raise web.HTTPInternalServerError(reason=str(e))
+
+
 @routes.put('/api-proxy/characters/{character_id}/voice')
 async def update_character_voice(request: web.Request):
     character_id = int(request.match_info['character_id'])

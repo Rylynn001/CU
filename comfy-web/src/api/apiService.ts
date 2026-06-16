@@ -26,7 +26,7 @@ export interface ApiGenerateParams {
 
 // 图片生成结果（同步返回图片 或 异步返回 taskId）
 export interface ApiGenerateResult {
-  images: Array<{ b64?: string; url?: string }>
+  images: Array<{ b64?: string; url?: string; asset_id?: number }>
   taskId?: string
 }
 
@@ -359,7 +359,7 @@ async function pollTaskStatus(taskId: string, expectedType: 'image' | 'video', u
         const results = data.result || []
         const images = results
           .filter(item => item.type === expectedType)
-          .map(item => ({ url: item.url }))
+          .map(item => ({ url: item.url, asset_id: (item as any).asset_id }))
 
         if (images.length === 0) {
           throw new TaskFailedError(`No ${expectedType} generated`)
