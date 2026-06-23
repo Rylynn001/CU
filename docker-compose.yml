@@ -32,6 +32,7 @@ services:
       - ./ComfyUI/custom_nodes:/app/custom_nodes
       - ./ComfyUI/output:/app/output
       - ./ComfyUI/input:/app/input
+      - ./ComfyUI/voice:/app/voice
       - /etc/localtime:/etc/localtime:ro
     ports:
       - "8188:8188"
