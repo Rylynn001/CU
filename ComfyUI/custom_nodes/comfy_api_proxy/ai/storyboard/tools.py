@@ -45,9 +45,11 @@ class StoryboardTools:
 
                 # 角色列表
                 cur.execute("""
-                    SELECT ch.id, ch.name, ch.role, ch.personality, ch.appearance, ch.timbre_id
+                    SELECT ch.id, ch.name, ch.role, ch.personality, ch.appearance,
+                           t.name AS voice_name
                     FROM characters ch
                     JOIN episode_characters ec ON ec.character_id = ch.id
+                    LEFT JOIN timbres t ON t.id = ch.timbre_id
                     WHERE ec.episode_id = %s AND ch.deleted_at IS NULL
                 """, (self.episode_id,))
                 characters = list(cur.fetchall())

@@ -18,7 +18,8 @@ export interface AssetPreview {
 
 export interface VideoImg2VideoParams extends VideoGenerateParams {
   inputFiles: File[]
-  inputAssetPreviews: AssetPreview[]  // 从资产库选择的素材（含预览 URL）
+  inputAssetPreviews: AssetPreview[]
+  audioFile?: File // 可选背景音频
 }
 
 export interface VideoGenerateResult {
@@ -64,6 +65,12 @@ export async function submitImg2VideoGeneration(params: VideoImg2VideoParams): P
     const file = new File([blob], `asset_${asset.id}.${ext}`, { type: blob.type })
     const uploaded = await uploadInputImage(file, userId ?? 1)
     allIds.push(uploaded.id)
+  }
+
+  // 上传音频（可选），和图片/视频走同一套上传流程
+  if (params.audioFile) {
+    const res = await uploadInputImage(params.audioFile, userId ?? 1)
+    allIds.push(res.id)
   }
 
   const result = await apiImg2VideoGenerate({

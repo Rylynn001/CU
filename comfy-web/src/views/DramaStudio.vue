@@ -199,7 +199,6 @@
                     <span class="voice-lib-name">{{ v.name }}</span>
                     <span class="tag">{{ v.gender }}</span>
                   </div>
-                  <div class="voice-lib-traits">{{ v.style }}</div>
                 </div>
               </div>
             </div>
@@ -220,15 +219,32 @@
                   <span class="field-label">选择音色</span>
                   <select class="input-select" :value="c.timbre_id || ''" @change="updateCharVoice(c.id, Number(($event.target as HTMLSelectElement).value))">
                     <option value="">请选择音色</option>
-                    <option v-for="v in VOICE_PROFILES" :key="v.id" :value="v.id">{{ v.name }} · {{ v.gender }} · {{ v.style }}</option>
+                    <option v-for="v in VOICE_PROFILES" :key="v.id" :value="v.id">{{ v.name }} · {{ v.gender }}</option>
                   </select>
                 </div>
-                <div v-if="c.timbre_id && getVoiceProfile(c.timbre_id)" class="voice-profile-card">
+                <div v-if="c.timbre_id" class="voice-profile-card">
                   <div class="voice-profile-head">
-                    <span class="voice-profile-name">{{ getVoiceProfile(c.timbre_id)?.name }}</span>
-                    <span class="tag">{{ getVoiceProfile(c.timbre_id)?.gender }}</span>
+                    <span class="voice-profile-name">{{ VOICE_PROFILES.find(v => v.id === c.timbre_id)?.name || '' }}</span>
+                    <span class="tag">{{ VOICE_PROFILES.find(v => v.id === c.timbre_id)?.gender || '' }}</span>
+                    <button class="btn-gen-sample" :disabled="previewingCharId === c.id" @click="previewVoice(c)">
+                      <svg v-if="previewingCharId !== c.id" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+                      <svg v-else class="spin" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                      {{ previewingCharId === c.id ? '生成中' : (c.voice_sample_url ? '重新生成' : '生成试听') }}
+                    </button>
                   </div>
-                  <div class="voice-profile-traits">{{ getVoiceProfile(c.timbre_id)?.style }}</div>
+                  <div v-if="c.voice_sample_url" class="voice-player">
+                    <button class="voice-play-btn" @click="togglePlay(c)">
+                      <svg v-if="playingCharId !== c.id" width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                      <svg v-else width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
+                    </button>
+                    <div class="voice-progress-wrap" @click="seekAudio(c, $event)">
+                      <div class="voice-progress-bg">
+                        <div class="voice-progress-fill" :style="{ width: (playingCharId === c.id ? audioProgress : 0) + '%' }"></div>
+                      </div>
+                    </div>
+                    <span class="voice-time">{{ playingCharId === c.id ? formatAudioTime(audioCurrentTime) : '0:00' }}</span>
+                  </div>
+                  <div v-else class="voice-no-sample">尚未生成试听</div>
                 </div>
               </div>
             </div>
@@ -503,6 +519,9 @@
             <div class="step-indicator"><span class="step-num">08</span><span class="step-name">配音生成</span></div>
             <div class="toolbar-right">
               <span class="char-count">{{ ttsEligibleCount }} 条有对白 · {{ ttsGeneratedCount }} 已生成</span>
+              <button class="btn-sm" :disabled="pendingDubIds.size > 0" @click="genAllDubbing">
+                {{ pendingDubIds.size > 0 ? `生成中 (${pendingDubIds.size})` : '全部生成' }}
+              </button>
             </div>
           </div>
           <div v-if="!sbs.length" class="step-empty">
@@ -526,14 +545,30 @@
                     </div>
                     <div class="dub-desc">{{ getDialogueText(sb) }}</div>
                   </div>
-                  <span class="tag" :class="sb.tts_audio_url ? 'tag-success' : ''">{{ sb.tts_audio_url ? '已生成' : '待生成' }}</span>
+                  <button class="btn-gen-sample" :disabled="pendingDubIds.has(sb.id)" @click="genDubbing(sb)">
+                    <svg v-if="!pendingDubIds.has(sb.id)" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+                    <svg v-else class="spin" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                    {{ pendingDubIds.has(sb.id) ? '生成中' : (sb.tts_audio_url ? '重新生成' : '生成配音') }}
+                  </button>
                 </div>
                 <div class="dub-meta">
                   <span class="dim">{{ sb.shot_type || '未设景别' }}</span>
                   <span class="dim">{{ sb.duration || 10 }}s</span>
+                  <span class="tag ml-auto" :class="sb.tts_audio_url ? 'tag-success' : ''">{{ sb.tts_audio_url ? '已生成' : '待生成' }}</span>
                 </div>
                 <div class="dub-foot">
-                  <audio v-if="sb.tts_audio_url" :src="sb.tts_audio_url" controls preload="none" class="dub-audio" />
+                  <div v-if="sb.tts_audio_url" class="voice-player">
+                    <button class="voice-play-btn" @click="toggleDubPlay(sb)">
+                      <svg v-if="playingDubId !== sb.id" width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                      <svg v-else width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
+                    </button>
+                    <div class="voice-progress-wrap" @click="seekDubAudio(sb, $event)">
+                      <div class="voice-progress-bg">
+                        <div class="voice-progress-fill" :style="{ width: (playingDubId === sb.id ? dubProgress : 0) + '%' }"></div>
+                      </div>
+                    </div>
+                    <span class="voice-time">{{ playingDubId === sb.id ? formatAudioTime(dubCurrentTime) : '0:00' }}</span>
+                  </div>
                   <div v-else class="dim" style="font-size:12px">尚未生成语音</div>
                 </div>
               </div>
@@ -617,6 +652,12 @@
             <div class="step-indicator"><span class="step-num">10</span><span class="step-name">视频生成</span></div>
             <div class="toolbar-right">
               <span class="char-count">{{ sbs.length }} 镜头 · {{ sbsWithVideo }}/{{ sbs.length }} 已生成</span>
+              <select v-model="videoModelId" class="model-select-sm">
+                <option v-for="m in videoModels" :key="m.id" :value="m.id">{{ m.name }}</option>
+              </select>
+              <button class="btn-sm" :disabled="pendingVideoIds.size > 0 || !videoModelId" @click="() => sbs.filter(s => !pendingVideoIds.has(s.id)).forEach(s => genVideo(s))">
+                {{ pendingVideoIds.size > 0 ? `生成中 (${pendingVideoIds.size})` : '全部生成' }}
+              </button>
             </div>
           </div>
           <div v-if="!sbs.length" class="step-empty">
@@ -626,11 +667,15 @@
           <div v-else class="prod-scroll">
             <div class="prod-grid">
               <div v-for="(sb, i) in sbs" :key="sb.id" class="card prod-card">
-                <div class="prod-cover">
-                  <video v-if="sb.video_url" :src="sb.video_url" class="prod-video" controls preload="metadata" playsinline />
+                <div class="prod-cover" :class="{ 'prod-cover-clickable': sb.video_url }" @click="sb.video_url && openPlayer(sb.video_url)">
+                  <img v-if="sb.video_url" :src="getFirstFrame(sb) ?? locationToUrl(sb.image_url) ?? undefined" class="asset-img" />
+                  <img v-else-if="getFirstFrame(sb)" :src="getFirstFrame(sb) ?? undefined" class="asset-img" />
                   <img v-else-if="sb.image_url" :src="locationToUrl(sb.image_url) ?? undefined" class="asset-img" />
-                <div v-else class="prod-cover-empty">
+                  <div v-else class="prod-cover-empty">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+                  </div>
+                  <div v-if="sb.video_url" class="prod-play-overlay">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
                   </div>
                   <span class="prod-idx">#{{ String(i+1).padStart(2,'0') }}</span>
                 </div>
@@ -638,9 +683,14 @@
                   <div class="prod-desc truncate">{{ sb.description || sb.title || '—' }}</div>
                   <div class="prod-meta-line">{{ sb.shot_type || '未设景别' }} · {{ sb.duration || 10 }}s</div>
                   <div class="prod-dots">
-                    <span :class="['dot', sb.image_url ? 'ok' : '']" /><span style="font-size:10px">图</span>
+                    <span :class="['dot', (sb.first_frame_image || sb.image_url) ? 'ok' : '']" /><span style="font-size:10px">图</span>
                     <span :class="['dot', sb.video_url ? 'ok' : '']" /><span style="font-size:10px">视频</span>
                   </div>
+                  <div v-if="videoErrorMap.get(sb.id)" class="video-error-msg">{{ videoErrorMap.get(sb.id) }}</div>
+                  <button class="btn-sm" style="width:100%;margin-top:6px" :disabled="pendingVideoIds.has(sb.id) || !videoModelId" @click="genVideo(sb)">
+                    <svg v-if="pendingVideoIds.has(sb.id)" class="spin" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                    {{ pendingVideoIds.has(sb.id) ? '生成中' : (sb.video_url ? '重新生成' : '生成视频') }}
+                  </button>
                 </div>
               </div>
             </div>
@@ -653,6 +703,10 @@
             <div class="step-indicator"><span class="step-num">11</span><span class="step-name">视频合成</span></div>
             <div class="toolbar-right">
               <span class="char-count">{{ sbs.length }} 镜头 · {{ sbsComposed }}/{{ sbs.length }} 已合成</span>
+              <button class="btn-sm" :disabled="composeAllPending" @click="composeAll">
+                <svg v-if="composeAllPending" class="spin" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                {{ composeAllPending ? '合成中' : '全部合成' }}
+              </button>
             </div>
           </div>
           <div v-if="!sbs.length" class="step-empty">
@@ -662,12 +716,14 @@
           <div v-else class="prod-scroll">
             <div class="prod-grid">
               <div v-for="(sb, i) in sbs" :key="sb.id" class="card prod-card">
-                <div class="prod-cover">
-                  <video v-if="sb.composed_video_url" :src="sb.composed_video_url" class="prod-video" controls preload="metadata" playsinline />
-                  <video v-else-if="sb.video_url" :src="sb.video_url" class="prod-video" controls preload="metadata" playsinline />
+                <div class="prod-cover" :class="{ 'prod-cover-clickable': sb.composed_video_url || sb.video_url }" @click="(sb.composed_video_url || sb.video_url) && openPlayer(sb.composed_video_url || sb.video_url)">
+                  <img v-if="sb.composed_video_url || sb.video_url" :src="getFirstFrame(sb) ?? locationToUrl(sb.image_url) ?? undefined" class="asset-img" />
                   <img v-else-if="sb.image_url" :src="locationToUrl(sb.image_url) ?? undefined" class="asset-img" />
                   <div v-else class="prod-cover-empty">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+                  </div>
+                  <div v-if="sb.composed_video_url || sb.video_url" class="prod-play-overlay">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
                   </div>
                   <span class="prod-idx">#{{ String(i+1).padStart(2,'0') }}</span>
                   <span v-if="sb.composed_video_url" class="prod-overlay-badge">已合成</span>
@@ -680,6 +736,11 @@
                     <span :class="['dot', sb.tts_audio_url ? 'ok' : '']" /><span style="font-size:10px">配音</span>
                     <span :class="['dot', sb.composed_video_url ? 'ok' : '']" /><span style="font-size:10px">合成</span>
                   </div>
+                  <div v-if="composeErrorMap.get(sb.id)" class="video-error-msg">{{ composeErrorMap.get(sb.id) }}</div>
+                  <button class="btn-sm" style="width:100%;margin-top:6px" :disabled="pendingComposeIds.has(sb.id) || !sb.video_url" @click="composeSb(sb)">
+                    <svg v-if="pendingComposeIds.has(sb.id)" class="spin" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                    {{ pendingComposeIds.has(sb.id) ? '合成中' : (sb.composed_video_url ? '重新合成' : '合成') }}
+                  </button>
                 </div>
               </div>
             </div>
@@ -704,12 +765,16 @@
                 <div class="export-stat"><span>已合成</span><strong>{{ sbsComposed }}</strong></div>
                 <div class="export-stat"><span>总时长</span><strong>{{ totalDuration }}s</strong></div>
               </div>
-              <div v-if="episode?.merged_video_url" class="export-video-wrap">
-                <video :src="episode.merged_video_url" controls class="export-video" />
+              <div v-if="episode?.video_url" class="export-video-wrap">
+                <video :src="episode.video_url" controls class="export-video" />
               </div>
               <div v-else class="export-empty">
                 <div class="dim" style="font-size:13px">尚未导出</div>
               </div>
+              <button class="btn-primary" style="margin-top:16px;width:100%" :disabled="mergePending || sbsComposed === 0" @click="mergeEpisode">
+                <svg v-if="mergePending" class="spin" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                {{ mergePending ? '拼接中...' : (episode?.video_url ? '重新拼接' : '开始拼接导出') }}
+              </button>
             </div>
           </div>
         </div>
@@ -720,13 +785,17 @@
   <div v-else-if="loading" class="loading-full">
     <svg class="spin" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
   </div>
+
+  <VideoPlayer :visible="playerVisible" :src="playerSrc" @close="playerVisible = false" />
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { pollTaskUntilDone, uploadInputImage } from '../api/apiService'
+import { pollTaskUntilDone, uploadInputImage, getApiModels, apiImg2VideoGenerate } from '../api/apiService'
+import VideoPlayer from '../components/VideoPlayer.vue'
+import { addSbPendingTask, removeSbPendingTask, resumeSbPendingTasks } from '../composables/useSbTaskPersist'
 import { getCurrentUserId } from '../utils/user'
 
 const router = useRouter()
@@ -751,7 +820,7 @@ const selectedSb = ref<any>(null)
 const frameMode = ref<'first' | 'first_last'>('first')
 const pendingShotFrameKeys = ref<string[]>([])
 
-const VOICE_PROFILES = ref<{id: number, name: string, gender: string, style: string}[]>([])
+const VOICE_PROFILES = ref<{id: number, name: string, gender: string, voice_id: string}[]>([])
 
 async function loadVoices() {
   const res = await fetch(`${BASE}/timbres`)
@@ -759,9 +828,6 @@ async function loadVoices() {
   VOICE_PROFILES.value = data.items || []
 }
 
-function getVoiceProfile(id: number) {
-  return VOICE_PROFILES.value.find(v => v.id === id)
-}
 
 const SHOT_TYPES = ['全景', '远景', '中景', '近景', '特写', '大特写', '过肩镜头', '两人镜头']
 const SHOT_ANGLES = ['平视', '仰视', '俯视', '斜角', '正面', '侧面', '背面']
@@ -783,6 +849,67 @@ const ttsGeneratedCount = computed(() => sbs.value.filter(s => s.dialogue && s.t
 const pendingCharIds = ref<Set<number>>(new Set())
 const pendingSceneIds = ref<Set<number>>(new Set())
 const pendingShotIds = ref<Set<number>>(new Set())
+const pendingDubIds = ref<Set<number>>(new Set())
+const playingDubId = ref<number | null>(null)
+const dubProgress = ref(0)
+const dubCurrentTime = ref(0)
+let _dubAudio: HTMLAudioElement | null = null
+
+function toggleDubPlay(sb: any) {
+  if (playingDubId.value === sb.id) {
+    _dubAudio?.pause()
+    playingDubId.value = null
+    return
+  }
+  if (_dubAudio) { _dubAudio.pause(); _dubAudio.ontimeupdate = null; _dubAudio.onended = null }
+  const a = new Audio(sb.tts_audio_url)
+  _dubAudio = a
+  playingDubId.value = sb.id
+  dubProgress.value = 0
+  dubCurrentTime.value = 0
+  a.ontimeupdate = () => {
+    dubCurrentTime.value = a.currentTime
+    dubProgress.value = a.duration ? (a.currentTime / a.duration) * 100 : 0
+  }
+  a.onended = () => { playingDubId.value = null; dubProgress.value = 0; dubCurrentTime.value = 0 }
+  a.play()
+}
+
+function seekDubAudio(sb: any, e: MouseEvent) {
+  if (!_dubAudio || playingDubId.value !== sb.id) return
+  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+  _dubAudio.currentTime = ((e.clientX - rect.left) / rect.width) * _dubAudio.duration
+}
+
+async function genDubbing(sb: any) {
+  if (pendingDubIds.value.has(sb.id)) return
+  pendingDubIds.value = new Set([...pendingDubIds.value, sb.id])
+  try {
+    const res = await fetch(`${BASE}/storyboards/${sb.id}/generate-tts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ language: 'zh' }),
+    })
+    if (!res.ok) {
+      const err = await res.text()
+      throw new Error(err || '配音生成失败')
+    }
+    const data = await res.json()
+    sb.tts_audio_url = voiceLocationToUrl(data.location)
+    sb.tts_audio_id = data.id
+  } catch (e: any) {
+    ElMessage.error(e.message || '配音生成失败')
+  } finally {
+    const next = new Set(pendingDubIds.value)
+    next.delete(sb.id)
+    pendingDubIds.value = next
+  }
+}
+
+async function genAllDubbing() {
+  const targets = sbsWithDialogue.value.filter((sb: any) => !pendingDubIds.value.has(sb.id))
+  await Promise.all(targets.map((sb: any) => genDubbing(sb)))
+}
 const IMAGE_MODEL_ID = 4
 
 async function genImage(
@@ -947,6 +1074,7 @@ async function genShotFrame(sb: any, frameType: 'first_frame' | 'last_frame') {
     })
     if (!res.ok) throw new Error(await res.text())
     const { task_id } = await res.json()
+    addSbPendingTask({ sbId: sb.id, taskId: task_id, type: 'frame', frameType, episodeId: episode.value.id })
     const result = await pollTaskUntilDone(task_id, userId ?? undefined, 'image')
     const img = result.images?.[0]
     if (!img?.url) throw new Error('生成结果中没有图片 URL')
@@ -959,6 +1087,7 @@ async function genShotFrame(sb: any, frameType: 'first_frame' | 'last_frame') {
     })
     sb[assetField] = img.asset_id
     sb[imgField] = img.url
+    removeSbPendingTask(sb.id, 'frame', frameType)
     ElMessage.success(frameType === 'first_frame' ? '首帧已生成' : '尾帧已生成')
   } catch (e: any) {
     ElMessage.error(e.message || '生成失败')
@@ -1033,9 +1162,12 @@ async function load() {
       fetch(`${BASE}/episodes/${episode.value.id}/scenes`),
       fetch(`${BASE}/episodes/${episode.value.id}/storyboards`),
     ])
-    chars.value = (await cRes.json()).items || []
+    chars.value = normalizeChars((await cRes.json()).items || [])
     scenes.value = (await sRes.json()).items || []
-    sbs.value = (await sbRes.json()).items || []
+    sbs.value = ((await sbRes.json()).items || []).map((sb: any) => ({
+      ...sb,
+      tts_audio_url: voiceLocationToUrl(sb.tts_audio_url),
+    }))
     await loadVoices()
 
     if (sbs.value.length) activeKey.value = 'storyboard'
@@ -1192,7 +1324,7 @@ async function doExtract() {
       fetch(`${BASE}/episodes/${episode.value.id}/characters`),
       fetch(`${BASE}/episodes/${episode.value.id}/scenes`),
     ])
-    chars.value = (await cRes.json()).items || []
+    chars.value = normalizeChars((await cRes.json()).items || [])
     scenes.value = (await sRes.json()).items || []
     ElMessage.success(`提取完成：${chars.value.length} 角色，${scenes.value.length} 场景`)
   } catch (e: any) {
@@ -1210,7 +1342,7 @@ async function doVoiceAssign() {
   try {
     await streamAgent(`${BASE}/agent/voice`, { episode_id: episode.value.id, drama_id: dramaId }, 'voice')
     const cRes = await fetch(`${BASE}/episodes/${episode.value.id}/characters`)
-    chars.value = (await cRes.json()).items || []
+    chars.value = normalizeChars((await cRes.json()).items || [])
     ElMessage.success('音色分配完成')
   } catch (e: any) {
     ElMessage.error(e.message)
@@ -1220,14 +1352,85 @@ async function doVoiceAssign() {
   }
 }
 
+const previewingCharId = ref<number | null>(null)
+const playingCharId = ref<number | null>(null)
+const audioProgress = ref(0)
+const audioCurrentTime = ref(0)
+let _audio: HTMLAudioElement | null = null
+
+function formatAudioTime(s: number) {
+  const m = Math.floor(s / 60)
+  const sec = Math.floor(s % 60)
+  return `${m}:${sec.toString().padStart(2, '0')}`
+}
+
+function togglePlay(c: any) {
+  if (playingCharId.value === c.id) {
+    _audio?.pause()
+    playingCharId.value = null
+    return
+  }
+  if (_audio) { _audio.pause(); _audio.ontimeupdate = null; _audio.onended = null }
+  const a = new Audio(c.voice_sample_url)
+  _audio = a
+  playingCharId.value = c.id
+  audioProgress.value = 0
+  audioCurrentTime.value = 0
+  a.ontimeupdate = () => {
+    audioCurrentTime.value = a.currentTime
+    audioProgress.value = a.duration ? (a.currentTime / a.duration) * 100 : 0
+  }
+  a.onended = () => { playingCharId.value = null; audioProgress.value = 0; audioCurrentTime.value = 0 }
+  a.play()
+}
+
+function seekAudio(c: any, e: MouseEvent) {
+  if (!_audio || playingCharId.value !== c.id) return
+  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+  const ratio = (e.clientX - rect.left) / rect.width
+  _audio.currentTime = ratio * _audio.duration
+}
+
+function voiceLocationToUrl(location: string | null | undefined): string | null {
+  if (!location) return null
+  const filename = location.replace(/\\/g, '/').split('/').pop()!
+  return `/api/api-proxy/voice/${encodeURIComponent(filename)}`
+}
+
+function normalizeChars(items: any[]) {
+  return items.map(c => ({
+    ...c,
+    voice_sample_url: voiceLocationToUrl(c.voice_sample_url),
+  }))
+}
+
+async function previewVoice(c: any) {
+  previewingCharId.value = c.id
+  try {
+    const res = await fetch(`${BASE}/characters/${c.id}/generate-voice-sample`, { method: 'POST' })
+    if (!res.ok) throw new Error('生成失败')
+    const data = await res.json()
+    c.voice_sample_url = voiceLocationToUrl(data.location)
+    c.voice_sample_id = data.id
+  } catch (e: any) {
+    ElMessage.error(e.message || '试听生成失败')
+  } finally {
+    previewingCharId.value = null
+  }
+}
+
 async function updateCharVoice(charId: number, timbreId: number) {
-  await fetch(`${BASE}/characters/${charId}/voice`, {
+  await fetch(`${BASE}/characters/${charId}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ timbre_id: timbreId }),
   })
   const c = chars.value.find(x => x.id === charId)
-  if (c) c.timbre_id = timbreId
+  if (c) {
+    c.timbre_id = timbreId
+    c.voice_sample_url = null
+    c.voice_sample_id = null
+  }
 }
 
 async function doBreakdown() {
@@ -1276,7 +1479,198 @@ async function deleteShot(sb: any) {
   selectedSb.value = sbs.value[0] || null
 }
 
-onMounted(load)
+// ── 视频生成 ───────────────────────────────────────────────────────────────
+const videoModels = ref<{ id: string; name: string }[]>([])
+const videoModelId = ref('')
+const pendingVideoIds = ref<Set<number>>(new Set())
+const videoErrorMap = ref<Map<number, string>>(new Map())
+const playerVisible = ref(false)
+const playerSrc = ref('')
+
+function openPlayer(url: string) {
+  playerSrc.value = url
+  playerVisible.value = true
+}
+
+async function loadVideoModels() {
+  try {
+    const models = await getApiModels('video')
+    videoModels.value = models
+    if (models.length) videoModelId.value = models[0].id
+  } catch (e) {
+    // 静默失败，不影响页面
+  }
+}
+
+async function genVideo(sb: any) {
+  if (pendingVideoIds.value.has(sb.id)) return
+  if (!videoModelId.value) { ElMessage.warning('请先选择视频模型'); return }
+
+  const prompt = sb.video_prompt || sb.image_prompt || sb.description || sb.title
+  if (!prompt) { ElMessage.warning('镜头缺少描述，无法生成'); return }
+
+  const next = new Set(pendingVideoIds.value)
+  next.add(sb.id)
+  pendingVideoIds.value = next
+
+  try {
+    const userId = getCurrentUserId()
+
+    // 收集首帧/尾帧，上传为 input_assets
+    const input_asset_ids: number[] = []
+    for (const frameLocation of [sb.first_frame_image, sb.last_frame_image]) {
+      if (!frameLocation) continue
+      const filename = frameLocation.replace(/\\/g, '/').split('/').pop()!
+      try {
+        const res = await fetch(`/api/view?filename=${encodeURIComponent(filename)}&type=output`)
+        if (!res.ok) continue
+        const blob = await res.blob()
+        const file = new File([blob], filename, { type: blob.type || 'image/png' })
+        const uploaded = await uploadInputImage(file, userId ?? 1)
+        input_asset_ids.push(uploaded.id)
+      } catch (_) { /* 帧获取失败不阻断 */ }
+    }
+
+    // 若有 tts_audio_url，将音频也传入
+    if (sb.tts_audio_url) {
+      try {
+        const audioRes = await fetch(sb.tts_audio_url)
+        if (audioRes.ok) {
+          const blob = await audioRes.blob()
+          const filename = sb.tts_audio_url.split('/').pop() || 'audio.mp3'
+          const file = new File([blob], filename, { type: 'audio/mpeg' })
+          const uploaded = await uploadInputImage(file, userId ?? 1)
+          input_asset_ids.push(uploaded.id)
+        }
+      } catch (_) { /* 音频获取失败不阻断 */ }
+    }
+
+    const { task_id } = await apiImg2VideoGenerate({
+      model: videoModelId.value,
+      prompt,
+      user_id: userId ?? undefined,
+      ratio: '16:9',
+      duration: sb.duration || 8,
+      input_asset_ids,
+    })
+    addSbPendingTask({ sbId: sb.id, taskId: task_id, type: 'video', episodeId: episode.value.id })
+
+    const result = await pollTaskUntilDone(task_id, userId ?? undefined, 'video')
+    const videoItem = result.images?.[0]
+    if (!videoItem?.url) throw new Error('生成结果中没有视频 URL')
+
+    // 回写 storyboard
+    await fetch(`${BASE}/storyboards/${sb.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ video_url: videoItem.url }),
+    })
+    sb.video_url = videoItem.url
+    videoErrorMap.value.delete(sb.id)
+    removeSbPendingTask(sb.id, 'video')
+    ElMessage.success(`镜头 #${sb.storyboard_number || sb.id} 视频已生成`)
+  } catch (e: any) {
+    const msg = e.message || '视频生成失败'
+    videoErrorMap.value.set(sb.id, msg)
+    ElMessage.error(msg)
+  } finally {
+    const s = new Set(pendingVideoIds.value)
+    s.delete(sb.id)
+    pendingVideoIds.value = s
+  }
+}
+
+// ── 视频合成 ───────────────────────────────────────────────────────────────
+const pendingComposeIds = ref<Set<number>>(new Set())
+const composeErrorMap = ref<Map<number, string>>(new Map())
+const composeAllPending = ref(false)
+
+async function composeSb(sb: any) {
+  if (pendingComposeIds.value.has(sb.id)) return
+  const next = new Set(pendingComposeIds.value)
+  next.add(sb.id)
+  pendingComposeIds.value = next
+  composeErrorMap.value.delete(sb.id)
+  try {
+    const res = await fetch(`${BASE}/storyboards/${sb.id}/compose`, { method: 'POST' })
+    if (!res.ok) throw new Error(await res.text())
+    const data = await res.json()
+    sb.composed_video_url = data.composed_video_url
+    ElMessage.success(`镜头 #${sb.storyboard_number || sb.id} 合成完成`)
+  } catch (e: any) {
+    composeErrorMap.value.set(sb.id, e.message || '合成失败')
+    ElMessage.error(e.message || '合成失败')
+  } finally {
+    const s = new Set(pendingComposeIds.value)
+    s.delete(sb.id)
+    pendingComposeIds.value = s
+  }
+}
+
+async function composeAll() {
+  composeAllPending.value = true
+  try {
+    const targets = sbs.value.filter((sb: any) => sb.video_url && !pendingComposeIds.value.has(sb.id))
+    await Promise.all(targets.map((sb: any) => composeSb(sb)))
+  } finally {
+    composeAllPending.value = false
+  }
+}
+
+// ── 拼接导出 ───────────────────────────────────────────────────────────────
+const mergePending = ref(false)
+
+async function mergeEpisode() {
+  if (!episode.value) return
+  mergePending.value = true
+  try {
+    const res = await fetch(`${BASE}/episodes/${episode.value.id}/merge`, { method: 'POST' })
+    if (!res.ok) throw new Error(await res.text())
+    const data = await res.json()
+    episode.value.video_url = data.merged_video_url
+    ElMessage.success('拼接导出完成')
+  } catch (e: any) {
+    ElMessage.error(e.message || '拼接失败')
+  } finally {
+    mergePending.value = false
+  }
+}
+
+onMounted(async () => {
+  await load()
+  await loadVideoModels()
+
+  const userId = getCurrentUserId()
+  await resumeSbPendingTasks(
+    episode.value.id,
+    userId ?? undefined,
+    // 视频完成回调
+    async (sbId, videoUrl) => {
+      const sb = sbs.value.find((s: any) => s.id === sbId)
+      if (!sb) return
+      await fetch(`${BASE}/storyboards/${sbId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ video_url: videoUrl }),
+      })
+      sb.video_url = videoUrl
+    },
+    // 帧完成回调
+    async (sbId, frameType, imgUrl, assetId) => {
+      const sb = sbs.value.find((s: any) => s.id === sbId)
+      if (!sb) return
+      const assetField = frameType === 'first_frame' ? 'first_asset_id' : 'last_asset_id'
+      const imgField = frameType === 'first_frame' ? 'first_frame_image' : 'last_frame_image'
+      await fetch(`${BASE}/storyboards/${sbId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [assetField]: assetId }),
+      })
+      sb[assetField] = assetId
+      sb[imgField] = imgUrl
+    },
+  )
+})
 </script>
 
 <style scoped>
@@ -1413,7 +1807,6 @@ onMounted(load)
 .voice-lib-item { padding: 10px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 8px; }
 .voice-lib-head { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
 .voice-lib-name { font-size: 13px; font-weight: 600; color: rgba(255,255,255,0.8); }
-.voice-lib-traits { font-size: 11px; color: rgba(255,255,255,0.35); }
 .voice-grid { flex: 1; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; overflow-y: auto; align-content: start; }
 .voice-card { display: flex; flex-direction: column; gap: 10px; padding: 16px; }
 .voice-card-head { display: flex; align-items: center; gap: 10px; }
@@ -1424,7 +1817,17 @@ onMounted(load)
 .voice-profile-card { padding: 10px; background: rgba(167,139,250,0.06); border: 1px solid rgba(167,139,250,0.15); border-radius: 8px; }
 .voice-profile-head { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
 .voice-profile-name { font-size: 13px; font-weight: 600; color: rgba(255,255,255,0.8); }
-.voice-profile-traits { font-size: 11px; color: rgba(255,255,255,0.4); }
+.btn-gen-sample { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; font-size: 10px; border-radius: 5px; border: 1px solid rgba(167,139,250,0.3); background: transparent; color: rgba(167,139,250,0.7); cursor: pointer; white-space: nowrap; margin-left: auto; transition: all 0.15s; }
+.btn-gen-sample:hover:not(:disabled) { background: rgba(167,139,250,0.12); color: rgba(167,139,250,1); border-color: rgba(167,139,250,0.5); }
+.btn-gen-sample:disabled { opacity: 0.45; cursor: not-allowed; }
+.voice-no-sample { font-size: 11px; color: rgba(255,255,255,0.2); margin-top: 6px; }
+.voice-player { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.voice-play-btn { width: 28px; height: 28px; flex-shrink: 0; border-radius: 50%; background: rgba(167,139,250,0.15); border: 1px solid rgba(167,139,250,0.3); color: #a78bfa; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.15s; }
+.voice-play-btn:hover { background: rgba(167,139,250,0.28); border-color: rgba(167,139,250,0.55); }
+.voice-progress-wrap { flex: 1; cursor: pointer; padding: 6px 0; }
+.voice-progress-bg { height: 3px; border-radius: 99px; background: rgba(255,255,255,0.1); overflow: hidden; }
+.voice-progress-fill { height: 100%; border-radius: 99px; background: linear-gradient(90deg, #a78bfa, #818cf8); transition: width 0.1s linear; }
+.voice-time { font-size: 10px; color: rgba(255,255,255,0.3); font-family: monospace; flex-shrink: 0; }
 .voice-profile-suitable { font-size: 11px; color: rgba(167,139,250,0.7); margin-top: 2px; }
 
 /* storyboard split layout */
@@ -1508,6 +1911,12 @@ onMounted(load)
 .btn-sm.btn-accent:hover { background: rgba(167,139,250,0.2); }
 .btn-sm.btn-danger { background: rgba(239,68,68,0.08); border-color: rgba(239,68,68,0.2); color: rgba(239,68,68,0.7); }
 .btn-sm.btn-danger:hover { background: rgba(239,68,68,0.15); }
+.model-select-sm {
+  background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
+  color: rgba(255,255,255,0.75); border-radius: 6px; padding: 3px 8px;
+  font-size: 12px; cursor: pointer; outline: none; max-width: 160px;
+}
+.model-select-sm option { background: #1a1a2e; }
 .btn-primary {
   display: flex; align-items: center; gap: 6px;
   background: #7c3aed; color: #fff; border: none;
@@ -1608,10 +2017,13 @@ onMounted(load)
 .prod-card { display: flex; flex-direction: column; gap: 0; overflow: hidden; padding: 0; }
 .prod-cover { position: relative; width: 100%; aspect-ratio: 16/9; background: rgba(255,255,255,0.03); overflow: hidden; }
 .prod-cover-empty { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: rgba(255,255,255,0.15); }
-.prod-video { width: 100%; height: 100%; object-fit: cover; }
+.prod-cover-clickable { cursor: pointer; }
+.prod-cover-clickable:hover .prod-play-overlay { opacity: 1; }
+.prod-play-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.4); opacity: 0; transition: opacity 0.2s; color: #fff; pointer-events: none; }
 .prod-idx { position: absolute; top: 6px; left: 8px; font-size: 10px; font-weight: 700; color: rgba(255,255,255,0.5); font-family: monospace; }
 .prod-overlay-badge { position: absolute; top: 6px; right: 8px; font-size: 10px; padding: 1px 6px; border-radius: 99px; background: rgba(74,222,128,0.2); color: #4ade80; }
 .prod-info { padding: 8px 10px 10px; display: flex; flex-direction: column; gap: 4px; }
+.video-error-msg { font-size: 11px; color: rgba(239,68,68,0.85); line-height: 1.4; margin-top: 2px; }
 .prod-desc { font-size: 12px; color: rgba(255,255,255,0.7); }
 .prod-meta-line { font-size: 10px; color: rgba(255,255,255,0.3); }
 .prod-dots { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }

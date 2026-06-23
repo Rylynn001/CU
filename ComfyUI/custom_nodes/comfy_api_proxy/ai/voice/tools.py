@@ -33,7 +33,7 @@ class VoiceTools:
         with self._conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT id, name, gender, style, provider FROM timbres"
+                    "SELECT id, name, gender, voice_id, provider FROM timbres"
                     " WHERE deleted_at IS NULL ORDER BY sort_order ASC, id ASC"
                 )
                 rows = cur.fetchall()
@@ -44,11 +44,11 @@ class VoiceTools:
         with self._conn() as conn:
             with conn.cursor() as cur:
                 cur.execute("""
-                    SELECT ch.id, ch.name, ch.role, ch.personality, ch.appearance,
-                           ch.timbre_id, t.name AS timbre_name
+                    SELECT ch.id, ch.name, ch.role, ch.personality, ch.appearance, ch.timbre_id,
+                           t.name AS timbre_name, t.voice_id AS timbre_voice_id
                     FROM characters ch
-                    LEFT JOIN timbres t ON t.id = ch.timbre_id
                     JOIN episode_characters ec ON ec.character_id = ch.id
+                    LEFT JOIN timbres t ON t.id = ch.timbre_id
                     WHERE ec.episode_id = %s AND ch.deleted_at IS NULL
                 """, (self.episode_id,))
                 rows = cur.fetchall()
@@ -59,7 +59,7 @@ class VoiceTools:
         with self._conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT id, name FROM timbres WHERE id=%s AND deleted_at IS NULL",
+                    "SELECT id, name, voice_id FROM timbres WHERE id=%s AND deleted_at IS NULL",
                     (timbre_id,),
                 )
                 timbre = cur.fetchone()

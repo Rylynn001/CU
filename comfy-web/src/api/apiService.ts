@@ -187,25 +187,15 @@ export interface ApiImg2VideoParams {
   ratio?: string
   resolution?: string
   duration?: number
-  input_asset_ids?: number[] // 参考图/视频的资产 id 列表
+  input_asset_ids?: number[]
 }
 
 // 提交图生视频任务，始终返回 task_id（异步）
 export async function apiImg2VideoGenerate(params: ApiImg2VideoParams): Promise<{ task_id: string }> {
-  const form = new FormData()
-  form.append('model', params.model)
-  form.append('prompt', params.prompt)
-  if (params.user_id) form.append('user_id', String(params.user_id))
-  if (params.ratio) form.append('ratio', params.ratio)
-  if (params.resolution) form.append('resolution', params.resolution)
-  if (params.duration) form.append('duration', String(params.duration))
-  if (params.input_asset_ids && params.input_asset_ids.length > 0) {
-    form.append('input_asset_ids', params.input_asset_ids.join(','))
-  }
-
   const res = await fetch(`${BASE}/img2video`, {
     method: 'POST',
-    body: form,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
   })
   if (!res.ok) {
     const text = await res.text()

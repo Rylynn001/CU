@@ -92,6 +92,10 @@ def process_img2video(task: dict) -> None:
 
         all_media = []
         input_asset_ids = task.get('input_asset_ids', [])
+
+        AUDIO_EXTS = {'mp3', 'wav', 'aac', 'ogg', 'flac', 'm4a', 'opus'}
+        VIDEO_EXTS = {'mp4', 'mov', 'avi', 'webm'}
+
         if input_asset_ids:
             conn = pymysql.connect(**get_db_config())
             try:
@@ -104,21 +108,31 @@ def process_img2video(task: dict) -> None:
                             with open(location, 'rb') as f:
                                 file_data = f.read()
                             ext = location.split('.')[-1].lower()
-                            is_video = ext in ['mp4', 'mov', 'avi', 'webm']
+                            if ext in AUDIO_EXTS:
+                                media_type = 'audio'
+                            elif ext in VIDEO_EXTS:
+                                media_type = 'video'
+                            else:
+                                media_type = 'image'
                             object_name = f"seedance/{int(time.time())}_{asset_id}.{ext}"
                             bucket.put_object(object_name, file_data)
                             file_url = f"https://{oss_config['bucket_name']}.{oss_config['endpoint'].replace('https://', '')}/{object_name}"
-                            logger.info(f'[{task_id}] 资产 {asset_id} 已上传至 OSS: {file_url}')
-                            all_media.append({'url': file_url, 'is_video': is_video})
+                            logger.info(f'[{task_id}] 资产 {asset_id}({media_type}) 已上传至 OSS: {file_url}')
+                            all_media.append({'url': file_url, 'media_type': media_type})
             finally:
                 conn.close()
 
         content = [{"type": "text", "text": task['prompt']}]
         for media in all_media:
-            if media['is_video']:
+            mt = media['media_type']
+            if mt == 'video':
                 content.append({"type": "video_url", "video_url": {"url": media['url']}, "role": "reference_video"})
-            else:
+            elif mt == 'audio':
+                content.append({"type": "audio_url", "audio_url": {"url": media['url']}, "role": "reference_audio"})
+            elif mt == 'image':
                 content.append({"type": "image_url", "image_url": {"url": media['url']}, "role": "reference_image"})
+            else:
+                raise ValueError(f'不支持的资产类型: {mt}，asset url: {media["url"]}')
 
         resp = client.content_generation.tasks.create(
             model=task['model'],
@@ -144,7 +158,6 @@ def process_img2video(task: dict) -> None:
         task_queue.set_meta(task_id, 'type', 'img2video')
         task_queue.set_meta(task_id, 'history_id', str(task.get('history_id', '')))
         task_queue.set_status(task_id, 'processing')
-        logger.info(f'[{task_id}] Ark 图生视频已提交，等待轮询')
         logger.info(f'[{task_id}] Ark 图生视频已提交，等待轮询')
 
     except Exception as e:

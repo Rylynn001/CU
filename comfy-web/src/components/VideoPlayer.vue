@@ -173,7 +173,7 @@ async function extractEnds() {
 
 .vp-modal {
   position: relative;
-  width: min(90vw, 1000px);
+  width: min(90vw, 1400px);
   background: #000;
   border-radius: 12px;
   overflow: hidden;
@@ -204,7 +204,7 @@ async function extractEnds() {
 
 .vp-video {
   width: 100%;
-  max-height: 70vh;
+  height: 70vh;
   display: block;
   object-fit: contain;
   cursor: pointer;

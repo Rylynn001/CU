@@ -69,7 +69,7 @@ def process(task: dict) -> None:
                 if hasattr(part, 'as_image'):
                     image = part.as_image()
                     if image:
-                        filename = f'{uuid.uuid4().hex}.png'
+                        filename = f'Gemini{uuid.uuid4().hex}.png'
                         save_path = OUTPUT_DIR / filename
                         with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
                             tmp_path = tmp.name

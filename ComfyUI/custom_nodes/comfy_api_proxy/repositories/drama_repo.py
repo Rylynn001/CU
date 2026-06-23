@@ -161,7 +161,7 @@ def create_episode(data: dict) -> int:
 
 
 def update_episode(episode_id: int, data: dict) -> bool:
-    fields = {k: v for k, v in data.items() if k in ('title', 'content', 'script_content', 'status', 'description')}
+    fields = {k: v for k, v in data.items() if k in ('title', 'content', 'script_content', 'status', 'description', 'video_url')}
     if not fields:
         return False
     conn = get_db_connection()
@@ -193,10 +193,14 @@ def get_episode_characters(episode_id: int) -> list:
         with conn.cursor() as c:
             c.execute("""
                 SELECT ch.*,
-                  a.location AS image_url
+                  a.location AS image_url,
+                  av.location AS voice_sample_url,
+                  t.name AS timbre_name, t.voice_id AS timbre_voice_id
                 FROM characters ch
                 JOIN episode_characters ec ON ec.character_id=ch.id
                 LEFT JOIN assets a ON a.id=ch.asset_id
+                LEFT JOIN ai_voices av ON av.id=ch.voice_sample_id
+                LEFT JOIN timbres t ON t.id=ch.timbre_id
                 WHERE ec.episode_id=%s AND ch.deleted_at IS NULL
             """, (episode_id,))
             return _ser_list(c.fetchall())
@@ -241,7 +245,7 @@ def list_timbres() -> list:
     conn = get_db_connection()
     try:
         with conn.cursor() as c:
-            c.execute("SELECT id, name, gender, style, provider FROM timbres WHERE deleted_at IS NULL ORDER BY sort_order ASC, id ASC")
+            c.execute("SELECT id, name, gender, voice_id, provider FROM timbres WHERE deleted_at IS NULL ORDER BY sort_order ASC, id ASC")
             return _ser_list(c.fetchall())
     finally:
         conn.close()
@@ -261,15 +265,116 @@ def update_character_asset(character_id: int, asset_id: int) -> bool:
         conn.close()
 
 
-# ── Character voice ────────────────────────────────────────────────────────
+def get_character(character_id: int) -> dict | None:
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as c:
+            c.execute("SELECT * FROM characters WHERE id=%s AND deleted_at IS NULL", (character_id,))
+            return _ser(c.fetchone())
+    finally:
+        conn.close()
 
-def update_character_voice(character_id: int, timbre_id: int) -> bool:
+
+def get_timbre(timbre_id: int) -> dict | None:
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as c:
+            c.execute("SELECT * FROM timbres WHERE id=%s AND deleted_at IS NULL", (timbre_id,))
+            return _ser(c.fetchone())
+    finally:
+        conn.close()
+
+
+def create_ai_voice(location: str, voice_name: str, description: str, language: str, character_id: int) -> int:
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as c:
+            now = _NOW()
+            c.execute("""
+                INSERT INTO ai_voices (location, voice_name, description, language, character_id, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """, (location, voice_name, description, language, character_id, now))
+            conn.commit()
+            return c.lastrowid
+    finally:
+        conn.close()
+
+
+def get_ai_voice(voice_id: int) -> dict | None:
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as c:
+            c.execute("SELECT * FROM ai_voices WHERE id=%s", (voice_id,))
+            return _ser(c.fetchone())
+    finally:
+        conn.close()
+
+
+def get_voice_style_by_speaker(episode_id: int, speaker: str) -> dict | None:
+    """根据说话人姓名查找该集角色的 timbre voice_id"""
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as c:
+            c.execute("""
+                SELECT ch.id, t.voice_id AS voice_style FROM characters ch
+                JOIN episode_characters ec ON ec.character_id = ch.id
+                LEFT JOIN timbres t ON t.id = ch.timbre_id
+                WHERE ec.episode_id = %s AND ch.name = %s AND ch.deleted_at IS NULL
+                LIMIT 1
+            """, (episode_id, speaker))
+            row = c.fetchone()
+            return row
+    finally:
+        conn.close()
+
+
+def update_character(character_id: int, data: dict) -> bool:
+    fields = {k: v for k, v in data.items() if k in ('timbre_id', 'voice_provider', 'description', 'personality', 'appearance')}
+    if not fields:
+        return False
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as c:
+            sets = ', '.join(f'{k}=%s' for k in fields)
+            vals = list(fields.values()) + [_NOW(), character_id]
+            c.execute(f"UPDATE characters SET {sets}, updated_at=%s WHERE id=%s AND deleted_at IS NULL", vals)
+            conn.commit()
+            return c.rowcount > 0
+    finally:
+        conn.close()
+
+
+def update_character_voice_sample(character_id: int, voice_id: int) -> bool:
     conn = get_db_connection()
     try:
         with conn.cursor() as c:
             c.execute(
-                "UPDATE characters SET timbre_id=%s, updated_at=%s WHERE id=%s AND deleted_at IS NULL",
-                (timbre_id, _NOW(), character_id),
+                "UPDATE characters SET voice_sample_id=%s, updated_at=%s WHERE id=%s AND deleted_at IS NULL",
+                (voice_id, _NOW(), character_id),
+            )
+            conn.commit()
+            return c.rowcount > 0
+    finally:
+        conn.close()
+
+
+def get_storyboard(storyboard_id: int) -> dict | None:
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as c:
+            c.execute("SELECT * FROM storyboards WHERE id=%s AND deleted_at IS NULL", (storyboard_id,))
+            return _ser(c.fetchone())
+    finally:
+        conn.close()
+
+
+def update_storyboard_tts(storyboard_id: int, voice_id: int) -> bool:
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as c:
+            c.execute(
+                "UPDATE storyboards SET tts_audio_id=%s, updated_at=%s WHERE id=%s AND deleted_at IS NULL",
+                (voice_id, _NOW(), storyboard_id),
             )
             conn.commit()
             return c.rowcount > 0
@@ -287,11 +392,13 @@ def get_episode_storyboards(episode_id: int) -> list:
                 SELECT s.*,
                   IFNULL(GROUP_CONCAT(sc.character_id ORDER BY sc.character_id), '') AS character_ids,
                   fa.location AS first_frame_image,
-                  la.location AS last_frame_image
+                  la.location AS last_frame_image,
+                  av.location AS tts_audio_url
                 FROM storyboards s
                 LEFT JOIN storyboard_characters sc ON sc.storyboard_id = s.id
                 LEFT JOIN assets fa ON fa.id = s.first_asset_id
                 LEFT JOIN assets la ON la.id = s.last_asset_id
+                LEFT JOIN ai_voices av ON av.id = s.tts_audio_id
                 WHERE s.episode_id=%s AND s.deleted_at IS NULL
                 GROUP BY s.id
                 ORDER BY s.storyboard_number ASC, s.id ASC
@@ -368,7 +475,7 @@ _SB_FIELDS = {
     'duration', 'description', 'action', 'result', 'atmosphere',
     'dialogue', 'image_prompt', 'video_prompt', 'bgm_prompt',
     'sound_effect', 'scene_id',
-    'first_asset_id', 'last_asset_id',
+    'first_asset_id', 'last_asset_id', 'video_url', 'composed_video_url',
 }
 
 

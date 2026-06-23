@@ -128,6 +128,19 @@ def get_provider_config_by_id(provider_id: str) -> tuple[str, str] | None:
     return None
 
 
+def get_voice_dir() -> pathlib.Path:
+    path = pathlib.Path(os.environ.get('VOICE_DIR', '/app/voice'))
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def get_minimax_config() -> dict:
+    return {
+        'api_key': os.environ.get('MINIMAX_API_KEY', ''),
+        'base_url': os.environ.get('MINIMAX_BASE_URL', 'https://api.vectorengine.ai/minimax/v1'),
+    }
+
+
 def get_default_provider_config() -> dict | None:
     try:
         from .repositories.provider_repo import get_default_provider

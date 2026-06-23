@@ -128,6 +128,17 @@ const resolutionOptions = [
 // 控制资产选择器弹窗
 const showAssetPicker = ref(false)
 
+// 音频文件（可选）
+const audioFile = ref<File | null>(null)
+const audioFileName = computed(() => audioFile.value?.name ?? '')
+function handleAudioChange(e: Event) {
+  const file = (e.target as HTMLInputElement).files?.[0]
+  if (file) audioFile.value = file
+}
+function removeAudio() {
+  audioFile.value = null
+}
+
 // 3D 模型视角截图
 const showModelViewer = ref(false)
 function handleModelCapture(file: File) {
@@ -348,6 +359,7 @@ async function handleGenerate() {
           userId: userId ?? undefined,
           inputFiles: inputFiles.value,
           inputAssetPreviews: selectedAssetPreviews.value,
+          audioFile: audioFile.value ?? undefined,
         })
         record.taskId = result.taskId
         // 后端可能返回上传后的资产 ID
@@ -599,6 +611,23 @@ onMounted(async () => {
               <button v-if="inputPreviews.length > 0 || selectedAssetPreviews.length > 0" class="clear-all-btn-small" @click="clearAllInputs">
                 清空全部
               </button>
+            </div>
+
+            <!-- 音频上传（可选） -->
+            <div class="audio-upload-row">
+              <template v-if="!audioFile">
+                <label class="audio-upload-btn">
+                  <input type="file" accept="audio/*" @change="handleAudioChange" hidden />
+                  <span>+ 上传音频（可选）</span>
+                </label>
+              </template>
+              <template v-else>
+                <div class="audio-file-card">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+                  <span class="audio-file-name">{{ audioFileName }}</span>
+                  <button class="audio-remove-btn" @click="removeAudio" title="移除音频">×</button>
+                </div>
+              </template>
             </div>
           </template>
 
@@ -864,6 +893,32 @@ onMounted(async () => {
 
 /* upload */
 .upload-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.audio-upload-row { margin-top: 8px; }
+.audio-upload-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  height: 36px; padding: 0 16px; border-radius: 8px;
+  border: 1px dashed rgba(255,255,255,0.15);
+  background: transparent; color: rgba(255,255,255,0.4);
+  font-size: 12px; cursor: pointer; transition: all 0.2s;
+}
+.audio-upload-btn:hover { border-color: rgba(108,99,255,0.45); color: rgba(108,99,255,0.8); }
+.audio-file-card {
+  display: inline-flex; align-items: center; gap: 8px;
+  height: 36px; padding: 0 10px 0 12px; border-radius: 8px;
+  background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
+  color: rgba(255,255,255,0.6); font-size: 12px; max-width: 100%;
+}
+.audio-file-name {
+  max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.audio-remove-btn {
+  flex-shrink: 0; width: 18px; height: 18px; border-radius: 50%;
+  border: none; background: rgba(255,255,255,0.1);
+  color: rgba(255,255,255,0.5); font-size: 12px; line-height: 1;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  transition: background 0.2s;
+}
+.audio-remove-btn:hover { background: rgba(255,80,80,0.3); color: #fff; }
 
 .asset-btn, .local-upload-btn {
   flex: 1; min-width: 120px; height: 60px;

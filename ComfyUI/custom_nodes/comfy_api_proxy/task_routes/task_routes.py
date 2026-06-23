@@ -299,31 +299,10 @@ async def txt2video(request: web.Request):
 
 @routes.post('/api-proxy/img2video')
 async def img2video(request: web.Request):
-    content_type = request.headers.get('Content-Type', '')
-    if not content_type.startswith('multipart/form-data'):
-        raise web.HTTPBadRequest(reason='Content-Type must be multipart/form-data')
-
-    body = {}
-    input_files = []
-
-    try:
-        reader = await request.multipart()
-        async for part in reader:
-            if part.filename:
-                file_data = await part.read(decode=False)
-                input_files.append({
-                    'filename': part.filename,
-                    'data': file_data,
-                    'content_type': part.headers.get('Content-Type', 'application/octet-stream'),
-                })
-            else:
-                value = await part.read(decode=True)
-                body[part.name] = value.decode('utf-8') if isinstance(value, (bytes, bytearray)) else str(value)
-    except Exception as e:
-        raise web.HTTPBadRequest(reason=f'Error reading form data: {e}')
+    body = await request.json()
 
     model_id = body.get('model')
-    prompt = body.get('prompt', '').strip()
+    prompt = (body.get('prompt') or '').strip()
 
     if not model_id:
         raise web.HTTPBadRequest(reason='model is required')
@@ -343,11 +322,12 @@ async def img2video(request: web.Request):
     if task_queue.queue_length('queue:img2video') >= QUEUE_MAX_SIZE:
         raise web.HTTPServiceUnavailable(reason=f'系统繁忙，请稍后再试')
 
-    input_asset_ids_raw = body.get('input_asset_ids', '')
-    input_asset_ids = [int(x.strip()) for x in input_asset_ids_raw.split(',') if x.strip()] if input_asset_ids_raw else []
+    input_asset_ids = body.get('input_asset_ids') or []
+    if isinstance(input_asset_ids, str):
+        input_asset_ids = [int(x.strip()) for x in input_asset_ids.split(',') if x.strip()]
 
-    task_id = str(uuid.uuid4())
     user_id = body.get('user_id')
+    task_id = str(uuid.uuid4())
     history_id = history_repo.save_history(
         task_id=task_id,
         prompt=prompt,
@@ -375,15 +355,11 @@ async def img2video(request: web.Request):
         'base_url': base_url,
         'input_asset_ids': input_asset_ids,
         'history_id': history_id,
-        'input_files': [
-            {'filename': f['filename'], 'data': f['data'].hex(), 'content_type': f['content_type']}
-            for f in input_files
-        ],
     }
 
     task_queue.enqueue('queue:img2video', task_payload)
     task_queue.mark_pending(task_id)
-    logger.info(f'[api-proxy] img2video 任务已入队: {task_id}, 文件数: {len(input_files)}')
+    logger.info(f'[api-proxy] img2video 任务已入队: {task_id}')
     return web.json_response({'task_id': task_id, 'history_id': history_id})
 
 
