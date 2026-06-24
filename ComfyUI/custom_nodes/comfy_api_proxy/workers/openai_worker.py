@@ -89,7 +89,7 @@ def process(task: dict) -> None:
                     img_data = resp.content
 
             if img_data:
-                filename = f'GPT{uuid.uuid4().hex}.png'
+                filename = f'GPT-{uuid.uuid4().hex}.png'
                 save_path = OUTPUT_DIR / filename
                 with open(save_path, 'wb') as f:
                     f.write(img_data)
