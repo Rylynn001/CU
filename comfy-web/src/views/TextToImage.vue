@@ -1,7 +1,7 @@
 <script setup lang="ts">
 defineOptions({ name: 'TextToImage' })
 // Vue 核心：ref 创建响应式变量，onMounted 页面加载后执行，watch 监听变量变化，computed 计算属性
-import { ref, onMounted, watch, computed } from 'vue'
+import { ref, onMounted, watch, computed, nextTick } from 'vue'
 // Element Plus UI 组件：输入框、下拉选择、滑块、数字输入框
 import { ElInput, ElSelect, ElOption, ElSlider, ElInputNumber } from 'element-plus'
 // Element Plus 图标
@@ -9,12 +9,13 @@ import { Refresh, UploadFilled, Close, Setting } from '@element-plus/icons-vue'
 // 图片预览组件（全屏查看大图）
 import { ElImageViewer } from 'element-plus'
 // 资产选择器：从已有素材库中选图
-import AssetPicker from '../components/AssetPicker.vue'
+import AssetSidebar from '../components/AssetSidebar.vue'
 // 历史记录卡片：展示每条生成记录
 import RecordCard from '../components/RecordCard.vue'
 // 图片编辑器：涂抹/裁剪输入图
 import ImageEditor from '../components/ImageEditor.vue'
 import ModelViewer from '../components/ModelViewer.vue'
+import FavoriteHeart from '../components/FavoriteHeart.vue'
 // 本地 ComfyUI 接口：获取模型列表、采样器信息、提交任务、上传图片
 import { getModels, getKSamplerInfo, submitPrompt, uploadImage, type PromptParams } from '../api/comfyui'
 // WebSocket 连接：实时接收本地 ComfyUI 的生成进度和结果图片
@@ -31,6 +32,8 @@ import { useAtMention } from '../composables/useAtMention'
 import { useImageSizeControl } from '../composables/useImageSizeControl'
 // 历史记录编辑面板：点击历史记录的"继续生图"时打开编辑器
 import { useRecordEditor } from '../composables/useRecordEditor'
+// 跨页面定位历史记录：资产库右键"定位历史记录"后，在这里消费并滚动+高亮
+import { useLocateHistory } from '../composables/useLocateHistory'
 // 图片生成服务：封装了上传参考图 + 调用 API 的完整流程
 import { submitImageGeneration, type InputImage } from '../services/imageGenerationService'
 // 工具函数：获取当前登录用户 ID
@@ -186,10 +189,6 @@ const { ratios, resolutions, activeRatio, activeResolution, ratioOpen, sizeCusto
 // ── 输入图片 ──────────────────────────────────────────────
 // 图生图模式下的参考图列表，每项包含：file（本地文件）、preview（预览 URL）、assetLocation（资产路径）
 const inputImages = ref<InputImage[]>([])
-// 控制资产选择器弹窗的显示
-const showAssetPicker = ref(false)
-// 文生图模式下选中的资产路径（暂时保留，实际未使用）
-const selectedAssetLocation = ref('')
 
 // 从本地文件添加参考图（最多 4 张）
 function addLocalImage(file: File) {
@@ -241,8 +240,6 @@ const showEditor = ref(false)
 // 当前正在编辑的参考图索引（对应 inputImages 数组）
 const editingIndex = ref(-1)
 // 资产选择器的目标索引（-1 表示添加新图，>=0 表示替换某张）
-const assetPickerTargetIndex = ref(-1)
-
 // 3D 模型视角截图
 const showModelViewer = ref(false)
 function handleModelCapture(file: File) {
@@ -474,21 +471,18 @@ function downloadImage(url: string, filename?: string) {
   a.click()
 }
 
-// 切换某张结果图的收藏状态
-async function toggleImageFavorite(rec: GenerationRecord, index: number) {
+// 设置某张结果图的收藏颜色（0=未收藏，1-4=红黄绿蓝）
+async function setImageFavorite(rec: GenerationRecord, index: number, tag: 0 | 1 | 2 | 3 | 4) {
   const assetId = rec.outputAssetIds?.[index]
   if (!assetId) return
   const userStr = localStorage.getItem('user')
   if (!userStr) return
   const user = JSON.parse(userStr)
-  // 读取当前收藏状态（1=已收藏，0=未收藏）
-  const currentTag = (rec as any)._favoritedImages?.[index] ? 1 : 0
-  const newTag: 0 | 1 = currentTag === 1 ? 0 : 1
   try {
-    await favoriteAsset(assetId, user.id, newTag)
+    await favoriteAsset(assetId, user.id, tag)
     // 更新本地状态（_favoritedImages 是运行时附加的属性，不持久化）
     if (!(rec as any)._favoritedImages) (rec as any)._favoritedImages = {}
-    ;(rec as any)._favoritedImages[index] = newTag === 1
+    ;(rec as any)._favoritedImages[index] = tag
   } catch {
     // 静默失败
   }
@@ -540,6 +534,29 @@ function mapImgDbRecord(r: any) {
 }
 const filterImgDbRecord = (r: any) => r.status !== 'pending' && r.status !== 'processing'
 
+// ── 定位历史记录（资产库右键"定位历史记录"跳转过来） ──────────────
+const { pendingRecord, consumePendingLocate } = useLocateHistory()
+const locatedRecordId = ref<string | null>(null)
+
+async function locatePendingRecord() {
+  const target = consumePendingLocate()
+  if (!target) return
+  let rec = (records.value as GenerationRecord[]).find(r => r.dbId === target.id)
+  if (!rec) {
+    rec = mapImgDbRecord(target) as GenerationRecord
+    records.value.unshift(rec)
+  }
+  await nextTick()
+  const el = document.querySelector(`[data-record-id="${rec.id}"]`)
+  el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  locatedRecordId.value = rec.id
+  setTimeout(() => {
+    if (locatedRecordId.value === rec!.id) locatedRecordId.value = null
+  }, 1800)
+}
+// 同页面右键"定位历史记录"（无需跳转）时，pendingRecord 会在页面已挂载时变化
+watch(pendingRecord, (r) => { if (r) locatePendingRecord() })
+
 const loadingMore = ref(false)
 async function loadMoreHistory() {
   if (loadingMore.value) return
@@ -588,6 +605,9 @@ onMounted(async () => {
     r.status = 'error'; r.errorMsg = '页面刷新，生成中断'
   })
   saveRecords()
+
+  // 从资产库右键"定位历史记录"跳转过来的，此时消费待定位记录
+  await locatePendingRecord()
 })
 </script>
 
@@ -660,9 +680,6 @@ onMounted(async () => {
 
             <!-- 添加图片按钮（最多4张）-->
             <div v-if="inputImages.length < 4" class="upload-actions">
-              <button class="asset-btn" @click="assetPickerTargetIndex = -1; showAssetPicker = true">
-                <span>从资产选择</span>
-              </button>
               <label class="local-upload-btn">
                 <input type="file" accept="image/*" @change="(e) => {
                   const file = (e.target as HTMLInputElement).files?.[0]
@@ -905,7 +922,7 @@ onMounted(async () => {
                 <input v-model="searchQuery" class="search-input" placeholder="搜索提示词..." />
               </div>
 
-              <div v-for="rec in filteredRecords" :key="rec.id" class="record-row" :class="{ 'editing': showRecordEditor && editingRecordId === rec.id }">
+              <div v-for="rec in filteredRecords" :key="rec.id" class="record-row" :data-record-id="rec.id" :class="{ 'editing': showRecordEditor && editingRecordId === rec.id, 'record-located': locatedRecordId === rec.id }">
                 <!-- 左侧输入图 -->
                 <div class="record-input-col">
                   <template v-if="(rec.inputAssetUrls && rec.inputAssetUrls.length) || (rec.inputPreviews && rec.inputPreviews.length)">
@@ -945,17 +962,13 @@ onMounted(async () => {
                         <button class="download-btn" @click="downloadImage(src)" title="下载">
                           <span>⬇</span>
                         </button>
-                        <button
-                          v-if="rec.outputAssetIds?.[i]"
-                          class="favorite-btn"
-                          :class="{ favorited: (rec as any)._favoritedImages?.[i] }"
-                          @click.stop="toggleImageFavorite(rec as any, i)"
-                          title="收藏"
-                        >
-                          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
-                          </svg>
-                        </button>
+                        <span v-if="rec.outputAssetIds?.[i]" class="fav-slot" @click.stop>
+                          <FavoriteHeart
+                            :tag="(rec as any)._favoritedImages?.[i] || 0"
+                            :size="14"
+                            @change="(t) => setImageFavorite(rec as any, i, t)"
+                          />
+                        </span>
                       </div>
                     </div>
                   </template>
@@ -982,14 +995,9 @@ onMounted(async () => {
             </div>
           </div>
       </main>
+      <!-- ── 右侧资产侧边栏 ── -->
+      <AssetSidebar @select="handleAssetSelect" />
     </div>
-
-    <!-- Asset Picker Dialog -->
-    <AssetPicker
-      v-model:visible="showAssetPicker"
-      :max-select="activeTab === 'img2img' && modelSource === 'api' ? 4 - inputImages.length : 1"
-      @select="handleAssetSelect"
-    />
 
     <!-- Image Viewer -->
     <el-image-viewer
@@ -1184,31 +1192,15 @@ onMounted(async () => {
   display: block; object-fit: contain; cursor: pointer;
 }
 .card-image-wrap:hover .download-btn { opacity: 1; }
-.card-image-wrap:hover .favorite-btn { opacity: 1; }
+.card-image-wrap:hover .fav-slot { opacity: 1; }
 
-.favorite-btn {
+.fav-slot {
   position: absolute;
   top: 8px; right: 8px;
-  width: 28px; height: 28px;
-  border-radius: 50%;
-  background: rgba(0,0,0,0.5);
-  border: none;
-  color: rgba(255,255,255,0.6);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   opacity: 0;
-  transition: all 0.2s;
-  backdrop-filter: blur(4px);
+  transition: opacity 0.2s;
 }
-.favorite-btn.favorited {
-  opacity: 1;
-  color: #f43f5e;
-  background: rgba(244,63,94,0.15);
-}
-.favorite-btn.favorited svg { fill: #f43f5e; stroke: #f43f5e; }
-.favorite-btn:hover { transform: scale(1.15); color: #f43f5e; background: rgba(244,63,94,0.2); }
+.fav-slot:has(.favorited) { opacity: 1; }
 
 /* 进度 */
 .loading-text { font-size: 12px; color: rgba(255,255,255,0.35); }
@@ -1216,6 +1208,16 @@ onMounted(async () => {
 .record-row.editing {
   outline: 1px solid rgba(108,99,255,0.3);
   border-radius: 16px;
+}
+
+.record-row.record-located {
+  border-radius: 16px;
+  animation: record-locate-pulse 1.8s ease;
+}
+@keyframes record-locate-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(108,99,255,0.6); background: rgba(108,99,255,0.12); }
+  60% { box-shadow: 0 0 0 8px rgba(108,99,255,0); background: rgba(108,99,255,0.12); }
+  100% { box-shadow: 0 0 0 0 rgba(108,99,255,0); background: transparent; }
 }
 
 .history-pagination {

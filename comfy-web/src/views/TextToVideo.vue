@@ -1,12 +1,12 @@
 <script setup lang="ts">
 defineOptions({ name: 'TextToVideo' })
 // Vue 核心
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, nextTick, watch } from 'vue'
 // Element Plus UI 组件
 import { ElInput, ElSelect, ElOption, ElImageViewer } from 'element-plus'
 import { UploadFilled } from '@element-plus/icons-vue'
 // 资产选择器弹窗
-import AssetPicker from '../components/AssetPicker.vue'
+import AssetSidebar from '../components/AssetSidebar.vue'
 // 视频播放器弹窗（点击历史记录中的视频时打开）
 import VideoPlayer from '../components/VideoPlayer.vue'
 // 历史记录卡片
@@ -14,6 +14,7 @@ import RecordCard from '../components/RecordCard.vue'
 // 图片编辑器（图生视频时可以涂抹参考图）
 import ImageEditor from '../components/ImageEditor.vue'
 import ModelViewer from '../components/ModelViewer.vue'
+import FavoriteHeart from '../components/FavoriteHeart.vue'
 // 后端 API 接口
 import { getApiModels, retryHistory, favoriteAsset, type ApiModel } from '../api/apiService'
 // 历史记录管理
@@ -26,6 +27,8 @@ import { useAtMention } from '../composables/useAtMention'
 import { useRecordEditor } from '../composables/useRecordEditor'
 // 输入媒体管理：统一管理本地上传文件和资产库选择的图片/视频
 import { useInputMedia } from '../composables/useInputMedia'
+// 跨页面定位历史记录：资产库右键"定位历史记录"后，在这里消费并滚动+高亮
+import { useLocateHistory } from '../composables/useLocateHistory'
 // 视频生成服务：文生视频 和 图生视频 的 API 调用封装
 import { submitVideoGeneration, submitImg2VideoGeneration } from '../services/videoGenerationService'
 import { getCurrentUserId } from '../utils/user'
@@ -125,8 +128,6 @@ const resolutionOptions = [
 ]
 
 // ── 输入媒体 ──────────────────────────────────────────────
-// 控制资产选择器弹窗
-const showAssetPicker = ref(false)
 
 // 音频文件（可选）
 const audioFile = ref<File | null>(null)
@@ -405,20 +406,18 @@ function downloadVideo(url: string, filename?: string) {
   a.click()
 }
 
-// 记录每个视频的收藏状态（key 为记录 ID）
-const favoritedVideos = ref<Record<string, boolean>>({})
+// 记录每个视频的收藏颜色（key 为记录 ID，0=未收藏，1-4=红黄绿蓝）
+const favoritedVideos = ref<Record<string, number>>({})
 
-// 切换某条视频记录的收藏状态
-async function toggleVideoFavorite(rec: VideoRecord) {
+// 设置某条视频记录的收藏颜色
+async function setVideoFavorite(rec: VideoRecord, tag: 0 | 1 | 2 | 3 | 4) {
   if (!rec.outputAssetId) return
   const userStr = localStorage.getItem('user')
   if (!userStr) return
   const user = JSON.parse(userStr)
-  const key = rec.id
-  const newTag: 0 | 1 = favoritedVideos.value[key] ? 0 : 1
   try {
-    await favoriteAsset(rec.outputAssetId, user.id, newTag)
-    favoritedVideos.value[key] = newTag === 1
+    await favoriteAsset(rec.outputAssetId, user.id, tag)
+    favoritedVideos.value[rec.id] = tag
   } catch {
     // 静默失败
   }
@@ -440,6 +439,29 @@ function mapVideoDbRecord(r: any) {
   }
 }
 const filterVideoDbRecord = (r: any) => r.status !== 'pending' && r.status !== 'processing'
+
+// ── 定位历史记录（资产库右键"定位历史记录"跳转过来） ──────────────
+const { pendingRecord, consumePendingLocate } = useLocateHistory()
+const locatedRecordId = ref<string | null>(null)
+
+async function locatePendingRecord() {
+  const target = consumePendingLocate()
+  if (!target) return
+  let rec = (records.value as VideoRecord[]).find(r => r.dbId === target.id)
+  if (!rec) {
+    rec = mapVideoDbRecord(target) as VideoRecord
+    records.value.unshift(rec)
+  }
+  await nextTick()
+  const el = document.querySelector(`[data-record-id="${rec.id}"]`)
+  el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  locatedRecordId.value = rec.id
+  setTimeout(() => {
+    if (locatedRecordId.value === rec!.id) locatedRecordId.value = null
+  }, 1800)
+}
+// 同页面右键"定位历史记录"（无需跳转）时，pendingRecord 会在页面已挂载时变化
+watch(pendingRecord, (r) => { if (r) locatePendingRecord() })
 
 const loadingMore = ref(false)
 async function loadMoreHistory() {
@@ -469,6 +491,9 @@ onMounted(async () => {
     pollVideo(rec as VideoRecord, userId).catch(console.error)
   }
   saveRecords()
+
+  // 从资产库右键"定位历史记录"跳转过来的，此时消费待定位记录
+  await locatePendingRecord()
 })
 </script>
 
@@ -597,9 +622,6 @@ onMounted(async () => {
 
             <!-- 上传按钮 -->
             <div class="upload-actions">
-              <button class="asset-btn" @click="showAssetPicker = true">
-                <span>从资产选择</span>
-              </button>
               <label class="local-upload-btn">
                 <input type="file" accept="image/*,video/*" multiple @change="(e) => handleFilesChange((e.target as HTMLInputElement).files)" hidden />
                 <el-icon><UploadFilled /></el-icon>
@@ -719,7 +741,7 @@ onMounted(async () => {
                 <input v-model="searchQuery" class="search-input" placeholder="搜索提示词..." />
               </div>
 
-              <div v-for="rec in filteredRecords" :key="rec.id" class="record-row" :class="{ 'editing': showRecordEditor && editingRecordId === rec.id }">
+              <div v-for="rec in filteredRecords" :key="rec.id" class="record-row" :data-record-id="rec.id" :class="{ 'editing': showRecordEditor && editingRecordId === rec.id, 'record-located': locatedRecordId === rec.id }">
                 <!-- 左侧输入图 -->
                 <div class="record-input-col">
                   <template v-if="rec.inputAssetUrls && rec.inputAssetUrls.length">
@@ -757,17 +779,13 @@ onMounted(async () => {
                         <button class="download-btn" @click.stop="downloadVideo(rec.videoUrl)" title="下载">
                           <span>⬇</span>
                         </button>
-                        <button
-                          v-if="rec.outputAssetId"
-                          class="favorite-btn"
-                          :class="{ favorited: favoritedVideos[rec.id] }"
-                          @click.stop="toggleVideoFavorite(rec)"
-                          title="收藏"
-                        >
-                          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
-                          </svg>
-                        </button>
+                        <span v-if="rec.outputAssetId" class="fav-slot" @click.stop>
+                          <FavoriteHeart
+                            :tag="favoritedVideos[rec.id] || 0"
+                            :size="14"
+                            @change="(t) => setVideoFavorite(rec, t)"
+                          />
+                        </span>
                       </div>
                     </div>
                   </template>
@@ -794,15 +812,9 @@ onMounted(async () => {
             </div>
           </div>
       </main>
+      <!-- ── 右侧资产侧边栏 ── -->
+      <AssetSidebar @select="handleAssetSelect" />
     </div>
-
-    <!-- Asset Picker Dialog -->
-    <AssetPicker
-      v-model:visible="showAssetPicker"
-      :max-select="12"
-      :allow-video="true"
-      @select="handleAssetSelect"
-    />
 
     <!-- Image Viewer -->
     <el-image-viewer
@@ -1024,36 +1036,30 @@ onMounted(async () => {
 .video-thumb:hover .download-btn {
   opacity: 1;
 }
-.video-thumb:hover .favorite-btn {
+.video-thumb:hover .fav-slot {
   opacity: 1;
 }
 
-.favorite-btn {
+.fav-slot {
   position: absolute;
   top: 10px; right: 10px;
-  width: 30px; height: 30px;
-  border-radius: 50%;
-  background: rgba(0,0,0,0.5);
-  border: none;
-  color: rgba(255,255,255,0.6);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   opacity: 0;
-  transition: all 0.2s;
-  backdrop-filter: blur(4px);
+  transition: opacity 0.2s;
 }
-.favorite-btn.favorited {
-  opacity: 1;
-  color: #f43f5e;
-  background: rgba(244,63,94,0.15);
-}
-.favorite-btn.favorited svg { fill: #f43f5e; stroke: #f43f5e; }
-.favorite-btn:hover { transform: scale(1.15); color: #f43f5e; background: rgba(244,63,94,0.2); }
+.fav-slot:has(.favorited) { opacity: 1; }
 
 .record-row { align-items: center; }
 .record-input-col { width: 240px; }
+
+.record-row.record-located {
+  border-radius: 16px;
+  animation: record-locate-pulse 1.8s ease;
+}
+@keyframes record-locate-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(108,99,255,0.6); background: rgba(108,99,255,0.12); }
+  60% { box-shadow: 0 0 0 8px rgba(108,99,255,0); background: rgba(108,99,255,0.12); }
+  100% { box-shadow: 0 0 0 0 rgba(108,99,255,0); background: transparent; }
+}
 
 .history-pagination {
   display: flex;

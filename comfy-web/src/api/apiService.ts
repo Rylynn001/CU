@@ -244,6 +244,14 @@ export async function saveHistory(params: {
   return res.json()
 }
 
+// 根据资产 id 反查其所属的历史记录（用于资产库右键"定位历史记录"）
+export async function fetchHistoryByAsset(assetId: number, userId: number): Promise<HistoryRecord> {
+  const res = await fetch(`${BASE}/history/by-asset/${assetId}?user_id=${userId}`)
+  if (!res.ok) throw new Error(`fetch history by asset failed: ${res.status}`)
+  const data = await res.json()
+  return data.record
+}
+
 // 拉取指定用户的历史记录，可按 type 过滤（img / video）
 export async function fetchHistory(
   userId: number,
@@ -389,7 +397,7 @@ async function pollTaskStatus(taskId: string, expectedType: 'image' | 'video', u
 
 // ── Assets Favorite ───────────────────────────────────────────────────────
 
-export async function favoriteAsset(assetId: number, userId: number, tag: 0 | 1): Promise<void> {
+export async function favoriteAsset(assetId: number, userId: number, tag: 0 | 1 | 2 | 3 | 4): Promise<void> {
   const res = await fetch(`${BASE}/user/assets/${assetId}/favorite`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

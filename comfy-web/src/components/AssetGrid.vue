@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import FavoriteHeart from './FavoriteHeart.vue'
+
 interface Asset {
   id: number
   location: string
@@ -15,7 +17,7 @@ const emit = defineEmits<{
   preview: [asset: Asset]
   openVideo: [asset: Asset]
   download: [asset: Asset]
-  toggleFavorite: [asset: Asset]
+  setFavorite: [asset: Asset, tag: 0 | 1 | 2 | 3 | 4]
 }>()
 
 function getMediaUrl(location: string) {
@@ -65,16 +67,9 @@ function isVideo(asset: Asset): boolean {
       <button class="download-btn" @click.stop="emit('download', asset)" title="下载">
         <span>⬇</span>
       </button>
-      <button
-        class="favorite-btn"
-        :class="{ favorited: asset.tag === 1 }"
-        @click.stop="emit('toggleFavorite', asset)"
-        title="收藏"
-      >
-        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
-        </svg>
-      </button>
+      <span class="fav-slot">
+        <FavoriteHeart :tag="asset.tag || 0" @change="(t) => emit('setFavorite', asset, t)" />
+      </span>
     </div>
   </div>
 </template>
@@ -217,28 +212,14 @@ function isVideo(asset: Asset): boolean {
 }
 .gallery-item:hover .download-btn { opacity: 1; }
 .download-btn:hover { background: rgba(108,99,255,0.9); transform: scale(1.1); }
-.favorite-btn {
+.fav-slot {
   position: absolute;
   top: 10px; right: 10px;
-  width: 32px; height: 32px;
-  border-radius: 50%;
-  background: rgba(0,0,0,0.5);
-  border: none;
-  color: rgba(255,255,255,0.6);
-  cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
   opacity: 0;
-  transition: all 0.2s;
-  backdrop-filter: blur(4px);
+  transition: opacity 0.2s;
 }
-.gallery-item:hover .favorite-btn { opacity: 1; }
-.favorite-btn.favorited {
-  opacity: 1;
-  color: #f43f5e;
-  background: rgba(244,63,94,0.15);
-}
-.favorite-btn.favorited svg { fill: #f43f5e; stroke: #f43f5e; }
-.favorite-btn:hover { transform: scale(1.15); color: #f43f5e; background: rgba(244,63,94,0.2); }
+.gallery-item:hover .fav-slot,
+.fav-slot:has(.favorited) { opacity: 1; }
 
 @keyframes breathe {
   0%, 100% { opacity: 1; transform: scale(1); }

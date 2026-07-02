@@ -33,6 +33,69 @@ def save_history(
         return cursor.lastrowid
 
 
+def _build_history_item(row: dict) -> dict:
+    """将 history 行数据组装成前端所需的完整结构（含关联资产 URL）"""
+    item = {
+        'id': row['id'],
+        'task_id': row['task_id'],
+        'prompt': row['prompt'],
+        'mode': row['mode'],
+        'status': row['status'],
+        'type': row['type'],
+        'message': row['message'],
+        'model_name': row.get('model_name') or '',
+        'output_urls': [],
+        'input_asset_ids': [],
+        'input_asset_urls': [],
+    }
+
+    if row['output_file']:
+        ids = [int(x) for x in row['output_file'].split(',') if x.strip()]
+        if ids:
+            with get_db_connection() as conn:
+                cursor = conn.cursor()
+                placeholders = ','.join(['%s'] * len(ids))
+                cursor.execute(
+                    f"SELECT id, location, asset_type FROM assets WHERE id IN ({placeholders})",
+                    ids
+                )
+                out_assets = {a['id']: a for a in cursor.fetchall()}
+            for aid in ids:
+                if aid in out_assets:
+                    filename = _pathlib.Path(out_assets[aid]['location']).name
+                    ext = _pathlib.Path(filename).suffix.lower()
+                    asset_type = 'video' if ext in ('.mp4', '.mov', '.avi', '.webm') else 'image'
+                    item['output_urls'].append({
+                        'url': f'/api/api-proxy/output/{filename}',
+                        'type': asset_type,
+                        'id': aid,
+                    })
+
+    if row['input_file']:
+        ids = [int(x) for x in row['input_file'].split(',') if x.strip()]
+        item['input_asset_ids'] = ids
+        if ids:
+            with get_db_connection() as conn:
+                cursor = conn.cursor()
+                placeholders = ','.join(['%s'] * len(ids))
+                cursor.execute(
+                    f"SELECT id, location FROM input_assets WHERE id IN ({placeholders})",
+                    ids
+                )
+                in_assets = {a['id']: a for a in cursor.fetchall()}
+            for aid in ids:
+                if aid in in_assets:
+                    filename = _pathlib.Path(in_assets[aid]['location']).name
+                    ext = _pathlib.Path(filename).suffix.lower()
+                    asset_type = 'video' if ext in ('.mp4', '.mov', '.avi', '.webm') else 'image'
+                    item['input_asset_urls'].append({
+                        'url': f'/api/api-proxy/input/{filename}',
+                        'type': asset_type,
+                    })
+
+    return item
+
+
 def get_user_history(
     user_id: int,
     type_filter: str | None = None,
@@ -73,68 +136,27 @@ def get_user_history(
             )
         rows = cursor.fetchall()
 
-    result = []
-    for row in rows:
-        item = {
-            'id': row['id'],
-            'task_id': row['task_id'],
-            'prompt': row['prompt'],
-            'mode': row['mode'],
-            'status': row['status'],
-            'type': row['type'],
-            'message': row['message'],
-            'model_name': row.get('model_name') or '',
-            'output_urls': [],
-            'input_asset_ids': [],
-            'input_asset_urls': [],
-        }
+    return [_build_history_item(row) for row in rows], total
 
-        if row['output_file']:
-            ids = [int(x) for x in row['output_file'].split(',') if x.strip()]
-            if ids:
-                with get_db_connection() as conn:
-                    cursor = conn.cursor()
-                    placeholders = ','.join(['%s'] * len(ids))
-                    cursor.execute(
-                        f"SELECT id, location, asset_type FROM assets WHERE id IN ({placeholders})",
-                        ids
-                    )
-                    out_assets = {a['id']: a for a in cursor.fetchall()}
-                for aid in ids:
-                    if aid in out_assets:
-                        filename = _pathlib.Path(out_assets[aid]['location']).name
-                        ext = _pathlib.Path(filename).suffix.lower()
-                        asset_type = 'video' if ext in ('.mp4', '.mov', '.avi', '.webm') else 'image'
-                        item['output_urls'].append({
-                            'url': f'/api/api-proxy/output/{filename}',
-                            'type': asset_type,
-                            'id': aid,
-                        })
 
-        if row['input_file']:
-            ids = [int(x) for x in row['input_file'].split(',') if x.strip()]
-            item['input_asset_ids'] = ids
-            if ids:
-                with get_db_connection() as conn:
-                    cursor = conn.cursor()
-                    placeholders = ','.join(['%s'] * len(ids))
-                    cursor.execute(
-                        f"SELECT id, location FROM input_assets WHERE id IN ({placeholders})",
-                        ids
-                    )
-                    in_assets = {a['id']: a for a in cursor.fetchall()}
-                for aid in ids:
-                    if aid in in_assets:
-                        filename = _pathlib.Path(in_assets[aid]['location']).name
-                        ext = _pathlib.Path(filename).suffix.lower()
-                        asset_type = 'video' if ext in ('.mp4', '.mov', '.avi', '.webm') else 'image'
-                        item['input_asset_urls'].append({
-                            'url': f'/api/api-proxy/input/{filename}',
-                            'type': asset_type,
-                        })
-
-        result.append(item)
-    return result, total
+def find_history_by_asset_id(user_id: int, asset_id: int) -> dict | None:
+    """根据输出资产 id 反查所属的历史记录（output_file 存的是逗号分隔的资产 id 列表）"""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """SELECT h.id, h.task_id, h.prompt, h.mode, h.status, h.type, h.message,
+                      h.input_file, h.output_file, m.description AS model_name
+               FROM history h LEFT JOIN api_models m ON h.model_id = m.id
+               WHERE h.user_id = %s AND h.del_flag = 0
+                 AND (h.output_file = %s
+                      OR h.output_file LIKE %s
+                      OR h.output_file LIKE %s
+                      OR h.output_file LIKE %s)
+               ORDER BY h.id DESC LIMIT 1""",
+            (user_id, str(asset_id), f'{asset_id},%', f'%,{asset_id},%', f'%,{asset_id}')
+        )
+        row = cursor.fetchone()
+        return _build_history_item(row) if row else None
 
 
 def get_history_by_id(history_id: int) -> dict | None:

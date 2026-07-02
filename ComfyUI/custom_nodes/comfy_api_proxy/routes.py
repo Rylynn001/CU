@@ -133,13 +133,16 @@ async def get_user_assets(request: web.Request):
     asset_type = request.rel_url.query.get('asset_type')
     tag_str = request.rel_url.query.get('tag')
     tag = int(tag_str) if tag_str is not None else None
+    favorite_only = request.rel_url.query.get('favorite') == '1'
     try:
         page = int(request.rel_url.query.get('page', 1))
     except ValueError:
         page = 1
     try:
         from .repositories import asset_repo
-        assets, total = asset_repo.get_user_assets(user_id, asset_type, tag, page=page, page_size=30)
+        assets, total = asset_repo.get_user_assets(
+            user_id, asset_type, tag, favorite_only, page=page, page_size=30
+        )
         return web.json_response({'assets': assets, 'total': total, 'page': page, 'page_size': 30})
     except Exception as e:
         logger.error(f'[api-proxy] 获取用户资产失败: {e}')
@@ -167,6 +170,8 @@ async def set_asset_favorite(request: web.Request):
         tag = int(tag)
     except (ValueError, TypeError):
         raise web.HTTPBadRequest(reason='参数类型错误')
+    if tag not in (0, 1, 2, 3, 4):
+        raise web.HTTPBadRequest(reason='tag 必须是 0-4')
 
     try:
         from .repositories import asset_repo
@@ -309,6 +314,24 @@ async def get_history(request: web.Request):
     except Exception as e:
         logger.error(f'[api-proxy] 获取历史记录失败: {e}')
         raise web.HTTPInternalServerError(reason=str(e))
+
+
+# ── /api-proxy/history/by-asset/{asset_id} ────────────────────────────────
+
+@routes.get('/api-proxy/history/by-asset/{asset_id}')
+async def get_history_by_asset(request: web.Request):
+    from .repositories import history_repo
+    asset_id = request.match_info['asset_id']
+    user_id = request.rel_url.query.get('user_id')
+    if not user_id:
+        raise web.HTTPBadRequest(reason='user_id is required')
+    try:
+        record = history_repo.find_history_by_asset_id(int(user_id), int(asset_id))
+    except ValueError:
+        raise web.HTTPBadRequest(reason='asset_id 和 user_id 必须为整数')
+    if not record:
+        raise web.HTTPNotFound(reason='未找到该资产对应的历史记录')
+    return web.json_response({'record': record})
 
 
 @routes.delete('/api-proxy/history/{history_id}')

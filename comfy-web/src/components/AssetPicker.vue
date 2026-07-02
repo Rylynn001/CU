@@ -2,6 +2,7 @@
 import { ref, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { favoriteAsset } from '../api/apiService'
+import FavoriteHeart from './FavoriteHeart.vue'
 
 interface Asset {
   id: number
@@ -49,7 +50,7 @@ async function loadAssets(assetType?: 'picture' | 'video') {
   try {
     let url = `/api/api-proxy/user/assets?user_id=${user.id}&page=1&page_size=${PAGE_SIZE}`
     if (assetType) url += `&asset_type=${assetType}`
-    if (favoritesOnly.value) url += `&tag=1`
+    if (favoritesOnly.value) url += `&favorite=1`
     const res = await fetch(url)
     if (!res.ok) throw new Error('加载失败')
     const data = await res.json()
@@ -72,7 +73,7 @@ async function loadMore() {
     const assetType = activeFilter.value === 'all' ? undefined : activeFilter.value
     let url = `/api/api-proxy/user/assets?user_id=${user.id}&page=${nextPage}&page_size=${PAGE_SIZE}`
     if (assetType) url += `&asset_type=${assetType}`
-    if (favoritesOnly.value) url += `&tag=1`
+    if (favoritesOnly.value) url += `&favorite=1`
     const res = await fetch(url)
     if (!res.ok) throw new Error('加载失败')
     const data = await res.json()
@@ -146,18 +147,17 @@ function downloadPreviewImage() {
   a.click()
 }
 
-async function toggleFavorite(asset: Asset) {
+async function setFavorite(asset: Asset, tag: 0 | 1 | 2 | 3 | 4) {
   const userStr = localStorage.getItem('user')
   if (!userStr) return
   const user = JSON.parse(userStr)
-  const newTag = asset.tag === 1 ? 0 : 1
   try {
-    await favoriteAsset(asset.id, user.id, newTag as 0 | 1)
-    asset.tag = newTag
-    if (favoritesOnly.value && newTag === 0) {
+    await favoriteAsset(asset.id, user.id, tag)
+    asset.tag = tag
+    if (favoritesOnly.value && tag === 0) {
       assets.value = assets.value.filter(a => a.id !== asset.id)
     }
-    ElMessage.success(newTag === 1 ? '已收藏' : '已取消收藏')
+    ElMessage.success(tag === 0 ? '已取消收藏' : '已收藏')
   } catch {
     ElMessage.error('操作失败')
   }
@@ -233,11 +233,9 @@ watch(() => props.visible, (val) => {
           {{ selectedAssets.findIndex(a => a.id === asset.id) + 1 }}
         </div>
         <button class="download-btn" @click.stop="downloadAsset(asset)" title="下载">⬇</button>
-        <button class="favorite-btn" :class="{ favorited: asset.tag === 1 }" @click.stop="toggleFavorite(asset)" title="收藏">
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
-          </svg>
-        </button>
+        <span class="fav-slot" @click.stop>
+          <FavoriteHeart :tag="asset.tag || 0" :size="14" @change="(t) => setFavorite(asset, t)" />
+        </span>
       </div>
     </div>
 
@@ -447,30 +445,14 @@ watch(() => props.visible, (val) => {
 .gallery-item:hover .download-btn { opacity: 1; }
 .download-btn:hover { background: rgba(108,99,255,0.9); transform: scale(1.1); }
 
-.favorite-btn {
+.fav-slot {
   position: absolute;
   top: 8px; left: 8px;
-  width: 28px; height: 28px;
-  border-radius: 50%;
-  background: rgba(0,0,0,0.5);
-  border: none;
-  color: rgba(255,255,255,0.6);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   opacity: 0;
-  transition: all 0.2s;
-  backdrop-filter: blur(4px);
+  transition: opacity 0.2s;
 }
-.gallery-item:hover .favorite-btn { opacity: 1; }
-.favorite-btn.favorited {
-  opacity: 1;
-  color: #f43f5e;
-  background: rgba(244,63,94,0.15);
-}
-.favorite-btn.favorited svg { fill: #f43f5e; stroke: #f43f5e; }
-.favorite-btn:hover { transform: scale(1.15); color: #f43f5e; background: rgba(244,63,94,0.2); }
+.gallery-item:hover .fav-slot { opacity: 1; }
+.fav-slot:has(.favorited) { opacity: 1; }
 
 .filter-divider {
   width: 1px;

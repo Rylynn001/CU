@@ -50,10 +50,15 @@ def get_user_assets(
     user_id: int,
     asset_type: str | None = None,
     tag: int | None = None,
+    favorite_only: bool = False,
     page: int = 1,
     page_size: int = 30,
 ) -> tuple[list[dict], int]:
-    """分页获取用户资产，返回 (assets, total)"""
+    """分页获取用户资产，返回 (assets, total)
+
+    tag: 精确匹配指定标签（0=未收藏，1=红，2=黄，3=绿，4=蓝）
+    favorite_only: 为 True 时匹配任意已收藏颜色（tag > 0），tag 参数优先级更高
+    """
     offset = (page - 1) * page_size
     with get_db_connection() as conn:
         cursor = conn.cursor()
@@ -65,6 +70,8 @@ def get_user_assets(
         if tag is not None:
             where += ' AND tag = %s'
             params.append(tag)
+        elif favorite_only:
+            where += ' AND tag > 0'
         cursor.execute(f'SELECT COUNT(*) AS cnt FROM assets {where}', params)
         total = cursor.fetchone()['cnt']
         cursor.execute(
@@ -75,7 +82,7 @@ def get_user_assets(
 
 
 def set_asset_tag(asset_id: int, user_id: int, tag: int) -> bool:
-    """设置资产 tag（1=收藏，0=取消收藏），返回是否成功"""
+    """设置资产 tag（0=未收藏，1=红，2=黄，3=绿，4=蓝），返回是否成功"""
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(

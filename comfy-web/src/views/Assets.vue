@@ -29,7 +29,14 @@ const assets = ref<Asset[]>([])
 const loading = ref(false)
 const loadingMore = ref(false)
 const activeFilter = ref<'all' | 'picture' | 'video'>('all')
-const favoritesOnly = ref(true)
+// 收藏颜色筛选：0=不筛选，1=红，2=黄，3=绿，4=蓝
+const favoriteTag = ref<0 | 1 | 2 | 3 | 4>(1)
+const FAVORITE_COLORS: { tag: 1 | 2 | 3 | 4; color: string; label: string }[] = [
+  { tag: 1, color: '#f43f5e', label: '红' },
+  { tag: 2, color: '#eab308', label: '黄' },
+  { tag: 3, color: '#22c55e', label: '绿' },
+  { tag: 4, color: '#3b82f6', label: '蓝' },
+]
 const currentPage = ref(1)
 const total = ref(0)
 const PAGE_SIZE = 30
@@ -95,7 +102,7 @@ async function loadAssets(assetType?: 'picture' | 'video') {
   try {
     let url = `/api/api-proxy/user/assets?user_id=${user.id}&page=1&page_size=${PAGE_SIZE}`
     if (assetType) url += `&asset_type=${assetType}`
-    if (favoritesOnly.value) url += `&tag=1`
+    if (favoriteTag.value > 0) url += `&tag=${favoriteTag.value}`
     const res = await fetch(url)
     if (!res.ok) throw new Error('加载失败')
     const data = await res.json()
@@ -117,7 +124,7 @@ async function loadMore() {
     const assetType = activeFilter.value === 'all' ? undefined : activeFilter.value
     let url = `/api/api-proxy/user/assets?user_id=${user.id}&page=${nextPage}&page_size=${PAGE_SIZE}`
     if (assetType) url += `&asset_type=${assetType}`
-    if (favoritesOnly.value) url += `&tag=1`
+    if (favoriteTag.value > 0) url += `&tag=${favoriteTag.value}`
     const res = await fetch(url)
     if (!res.ok) throw new Error('加载失败')
     const data = await res.json()
@@ -346,8 +353,8 @@ function setFilter(filter: 'all' | 'picture' | 'video') {
   loadAssets(filter === 'all' ? undefined : filter)
 }
 
-function setFavoritesOnly(val: boolean) {
-  favoritesOnly.value = val
+function setFavoriteTag(tag: 0 | 1 | 2 | 3 | 4) {
+  favoriteTag.value = favoriteTag.value === tag ? 0 : tag
   loadAssets(activeFilter.value === 'all' ? undefined : activeFilter.value)
 }
 
@@ -368,17 +375,16 @@ function downloadAsset(asset: Asset) {
   a.click()
 }
 
-async function toggleFavorite(asset: Asset) {
+async function setFavorite(asset: Asset, tag: 0 | 1 | 2 | 3 | 4) {
   const user = getUser()
   if (!user) return
-  const newTag = asset.tag === 1 ? 0 : 1
   try {
-    await favoriteAsset(asset.id, user.id, newTag as 0 | 1)
-    asset.tag = newTag
-    if (favoritesOnly.value && newTag === 0) {
+    await favoriteAsset(asset.id, user.id, tag)
+    asset.tag = tag
+    if (favoriteTag.value > 0 && tag !== favoriteTag.value) {
       assets.value = assets.value.filter(a => a.id !== asset.id)
     }
-    ElMessage.success(newTag === 1 ? '已收藏' : '已取消收藏')
+    ElMessage.success(tag === 0 ? '已取消收藏' : '已收藏')
   } catch {
     ElMessage.error('操作失败')
   }
@@ -467,8 +473,19 @@ onMounted(() => {
                 <button class="filter-btn" :class="{ active: activeFilter === 'video' }" @click="setFilter('video')">视频</button>
               </div>
               <div class="filter-bar">
-                <button class="filter-btn" :class="{ active: !favoritesOnly }" @click="setFavoritesOnly(false)">生成记录</button>
-                <button class="filter-btn" :class="{ active: favoritesOnly }" @click="setFavoritesOnly(true)">收藏</button>
+                <button class="filter-btn" :class="{ active: favoriteTag === 0 }" @click="setFavoriteTag(0)">生成记录</button>
+                <button
+                  v-for="c in FAVORITE_COLORS" :key="c.tag"
+                  class="fav-filter-btn"
+                  :class="{ active: favoriteTag === c.tag }"
+                  :style="{ color: c.color }"
+                  :title="`${c.label}色收藏`"
+                  @click="setFavoriteTag(c.tag)"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+                  </svg>
+                </button>
               </div>
               <button class="refresh-btn" @click="loadAssets()" :disabled="loading">{{ loading ? '加载中...' : '刷新' }}</button>
             </div>
@@ -480,7 +497,7 @@ onMounted(() => {
             @preview="(a) => previewImage(a, assets)"
             @open-video="openVideo"
             @download="downloadAsset"
-            @toggle-favorite="toggleFavorite"
+            @set-favorite="setFavorite"
           />
 
           <div v-if="assets.length > 0" class="load-more-bar">
@@ -585,7 +602,7 @@ onMounted(() => {
                 @preview="(a) => previewImage(a, categoryAssets)"
                 @open-video="openVideo"
                 @download="downloadAsset"
-                @toggle-favorite="toggleFavorite"
+                @set-favorite="setFavorite"
               />
             </template>
           </template>
@@ -870,6 +887,25 @@ onMounted(() => {
   border-color: rgba(108,99,255,0.7);
   color: rgba(255,255,255,0.95);
 }
+
+.fav-filter-btn {
+  width: 30px; height: 30px;
+  border-radius: 50%;
+  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.03);
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0.55;
+  transition: all 0.2s;
+}
+.fav-filter-btn svg { fill: none; }
+.fav-filter-btn:hover { opacity: 0.85; transform: scale(1.08); }
+.fav-filter-btn.active {
+  opacity: 1;
+  background: color-mix(in srgb, currentColor 18%, transparent);
+  border-color: currentColor;
+}
+.fav-filter-btn.active svg { fill: currentColor; }
 
 .refresh-btn {
   padding: 7px 18px;
