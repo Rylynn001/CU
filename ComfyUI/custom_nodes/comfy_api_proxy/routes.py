@@ -420,3 +420,156 @@ async def extract_frame(request: web.Request):
     logger.info(f'[extract-frame] 抽帧成功: asset_id={new_id}, file={out_filename}')
     return web.json_response({'ok': True, 'asset_id': new_id, 'filename': out_filename})
 
+
+# ── /api-proxy/assets/by-ids ──────────────────────────────────────────────
+
+@routes.post('/api-proxy/assets/by-ids')
+async def get_assets_by_ids(request: web.Request):
+    from .repositories import asset_repo
+    body = await request.json()
+    ids = body.get('ids', [])
+    if not isinstance(ids, list):
+        raise web.HTTPBadRequest(reason='ids must be a list')
+    try:
+        assets = asset_repo.get_assets_by_ids([int(i) for i in ids])
+        return web.json_response({'assets': assets})
+    except Exception as e:
+        logger.error(f'[api-proxy] 按 id 查询资产失败: {e}')
+        raise web.HTTPInternalServerError(reason=str(e))
+
+
+# ── /api-proxy/projects ───────────────────────────────────────────────────
+
+@routes.get('/api-proxy/projects')
+async def get_projects(request: web.Request):
+    from .repositories import asset_repo
+    user_id = request.rel_url.query.get('user_id')
+    if not user_id:
+        raise web.HTTPBadRequest(reason='user_id is required')
+    try:
+        user_id = int(user_id)
+    except ValueError:
+        raise web.HTTPBadRequest(reason='user_id must be an integer')
+    try:
+        projects = asset_repo.get_user_projects(user_id)
+        return web.json_response({'projects': projects})
+    except Exception as e:
+        logger.error(f'[api-proxy] 获取项目失败: {e}')
+        raise web.HTTPInternalServerError(reason=str(e))
+
+
+@routes.post('/api-proxy/projects')
+async def create_project(request: web.Request):
+    from .repositories import asset_repo
+    body = await request.json()
+    user_id = body.get('user_id')
+    name = body.get('name')
+    if not user_id or not name:
+        raise web.HTTPBadRequest(reason='user_id and name are required')
+    try:
+        project_id = asset_repo.create_project(name, int(user_id))
+        return web.json_response({'id': project_id, 'name': name})
+    except Exception as e:
+        logger.error(f'[api-proxy] 创建项目失败: {e}')
+        raise web.HTTPInternalServerError(reason=str(e))
+
+
+@routes.delete('/api-proxy/projects/{project_id}')
+async def delete_project(request: web.Request):
+    from .repositories import asset_repo
+    project_id = int(request.match_info['project_id'])
+    body = await request.json()
+    user_id = body.get('user_id')
+    if not user_id:
+        raise web.HTTPBadRequest(reason='user_id is required')
+    ok = asset_repo.delete_project(project_id, int(user_id))
+    if not ok:
+        raise web.HTTPNotFound(reason='项目不存在或无权限')
+    return web.json_response({'ok': True})
+
+
+@routes.put('/api-proxy/projects/{project_id}')
+async def rename_project(request: web.Request):
+    from .repositories import asset_repo
+    project_id = int(request.match_info['project_id'])
+    body = await request.json()
+    user_id = body.get('user_id')
+    name = body.get('name', '').strip()
+    if not user_id or not name:
+        raise web.HTTPBadRequest(reason='user_id and name are required')
+    ok = asset_repo.rename_project(project_id, int(user_id), name)
+    if not ok:
+        raise web.HTTPNotFound(reason='项目不存在或无权限')
+    return web.json_response({'ok': True})
+
+
+# ── /api-proxy/categories ─────────────────────────────────────────────────
+
+@routes.post('/api-proxy/categories')
+async def create_category(request: web.Request):
+    from .repositories import asset_repo
+    body = await request.json()
+    project_id = body.get('project_id')
+    name = body.get('name')
+    if not project_id or not name:
+        raise web.HTTPBadRequest(reason='project_id and name are required')
+    try:
+        cat_id = asset_repo.create_category(int(project_id), name)
+        return web.json_response({'id': cat_id, 'name': name})
+    except Exception as e:
+        logger.error(f'[api-proxy] 创建分类失败: {e}')
+        raise web.HTTPInternalServerError(reason=str(e))
+
+
+@routes.delete('/api-proxy/categories/{category_id}')
+async def delete_category(request: web.Request):
+    from .repositories import asset_repo
+    category_id = int(request.match_info['category_id'])
+    ok = asset_repo.delete_category(category_id)
+    if not ok:
+        raise web.HTTPNotFound(reason='分类不存在')
+    return web.json_response({'ok': True})
+
+
+@routes.put('/api-proxy/categories/{category_id}')
+async def rename_category(request: web.Request):
+    from .repositories import asset_repo
+    category_id = int(request.match_info['category_id'])
+    body = await request.json()
+    name = body.get('name', '').strip()
+    if not name:
+        raise web.HTTPBadRequest(reason='name is required')
+    ok = asset_repo.rename_category(category_id, name)
+    if not ok:
+        raise web.HTTPNotFound(reason='分类不存在')
+    return web.json_response({'ok': True})
+
+
+# ── /api-proxy/categories/{category_id}/assets ───────────────────────────
+
+@routes.post('/api-proxy/categories/{category_id}/assets')
+async def add_asset_to_category(request: web.Request):
+    from .repositories import asset_repo
+    category_id = int(request.match_info['category_id'])
+    body = await request.json()
+    asset_id = body.get('asset_id')
+    if asset_id is None:
+        raise web.HTTPBadRequest(reason='asset_id is required')
+    try:
+        asset_repo.add_asset_to_category(category_id, int(asset_id))
+        return web.json_response({'ok': True})
+    except Exception as e:
+        logger.error(f'[api-proxy] 添加资产到分类失败: {e}')
+        raise web.HTTPInternalServerError(reason=str(e))
+
+
+@routes.delete('/api-proxy/categories/{category_id}/assets/{asset_id}')
+async def remove_asset_from_category(request: web.Request):
+    from .repositories import asset_repo
+    category_id = int(request.match_info['category_id'])
+    asset_id = int(request.match_info['asset_id'])
+    ok = asset_repo.remove_asset_from_category(category_id, asset_id)
+    if not ok:
+        raise web.HTTPNotFound(reason='关联不存在')
+    return web.json_response({'ok': True})
+

@@ -52,6 +52,3 @@ services:
     depends_on:
       - comfyui
     restart: unless-stopped
-
-volumes:
-  mysql_data:
