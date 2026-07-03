@@ -160,10 +160,11 @@ def get_user_history(
 
 def find_history_by_asset_id(user_id: int, asset_id: int) -> dict | None:
     """根据输出资产 id 反查所属的历史记录（通过 history_assets_rel 关联表查找）"""
+    import json as _json
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            """SELECT h.id, h.task_id, h.prompt, h.mode, h.status, h.type, h.message,
+            """SELECT h.id, h.task_id, h.prompt, h.mode, h.status, h.type, h.message, h.payload, h.model_id,
                       m.description AS model_name,
                       out_a.id AS out_asset_id, out_a.location AS out_location, out_a.asset_type AS out_type,
                       in_a.id AS in_asset_id, in_a.location AS in_location
@@ -184,6 +185,7 @@ def find_history_by_asset_id(user_id: int, asset_id: int) -> dict | None:
 
         # 聚合第一条（ORDER BY DESC 已排序，取最新一条）
         first_id = rows[0]['id']
+        payload_json = rows[0].get('payload')
         item = {
             'id': first_id,
             'task_id': rows[0]['task_id'],
@@ -193,6 +195,8 @@ def find_history_by_asset_id(user_id: int, asset_id: int) -> dict | None:
             'type': rows[0]['type'],
             'message': rows[0]['message'],
             'model_name': rows[0].get('model_name') or '',
+            'model_id': rows[0].get('model_id'),
+            'payload': _json.loads(payload_json) if payload_json else None,
             'output_urls': [],
             'input_asset_ids': set(),
             'input_asset_urls': [],

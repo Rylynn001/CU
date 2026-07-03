@@ -2,8 +2,10 @@
 defineOptions({ name: 'TextToImage' })
 // Vue 核心：ref 创建响应式变量，onMounted 页面加载后执行，watch 监听变量变化，computed 计算属性
 import { ref, onMounted, onUnmounted, watch, computed, nextTick } from 'vue'
+// 路由
+import { useRouter } from 'vue-router'
 // Element Plus UI 组件：输入框、下拉选择、滑块、数字输入框
-import { ElInput, ElSelect, ElOption, ElSlider, ElInputNumber } from 'element-plus'
+import { ElInput, ElSelect, ElOption, ElSlider, ElInputNumber, ElMessage } from 'element-plus'
 // Element Plus 图标
 import { Refresh, UploadFilled, Close, Setting } from '@element-plus/icons-vue'
 // 资产选择器：从已有素材库中选图
@@ -38,6 +40,8 @@ import { submitImageGeneration, type InputImage } from '../services/imageGenerat
 import { getCurrentUserId } from '../utils/user'
 // 工具函数：生成唯一 ID，用于每条生成记录
 import { generateUUID } from '../utils/uuid'
+
+const router = useRouter()
 
 // 解构 WebSocket 相关状态和方法：
 // clientId - 本次连接的唯一标识，提交任务时传给 ComfyUI
@@ -254,6 +258,13 @@ function addLocalImage(file: File) {
 
 // 从资产库选择图片后的回调
 function handleAssetSelect(assets: Array<{ id: number; location: string; asset_type?: string }>) {
+  // 过滤掉视频素材
+  const videoAssets = assets.filter(a => a.asset_type === 'video')
+  if (videoAssets.length > 0) {
+    ElMessage.warning('图片生成不支持视频素材')
+    return
+  }
+
   if (activeTab.value === 'img2img') {
     // 图生图模式：API 最多 4 张，本地模式最多 1 张
     const maxImages = modelSource.value === 'api' ? 4 : 1
@@ -664,16 +675,46 @@ onMounted(async () => {
   // 从资产库右键"定位历史记录"跳转过来的，此时消费待定位记录
   await locatePendingRecord()
 
+  // 检查是否有从视频页面跳转过来的复用参数
+  const reuseData = localStorage.getItem('reuse_record')
+  if (reuseData) {
+    try {
+      const record = JSON.parse(reuseData)
+      localStorage.removeItem('reuse_record')
+      // 延迟执行，确保数据加载完成
+      nextTick(() => {
+        handleReuseParams(record, true)  // fromStorage = true
+      })
+    } catch (e) {
+      console.error('解析复用参数失败:', e)
+    }
+  }
+
   // 注册键盘事件监听
   window.addEventListener('keydown', handleImageKeydown)
 })
 
 // 复用生成记录的参数
-function handleReuseParams(record: any) {
-  // 填充提示词
+function handleReuseParams(record: any, fromStorage = false) {
+  // 只有从侧边栏直接调用时才检查跨页面跳转
+  if (!fromStorage && (record.type === 'txt2video' || record.type === 'img2video')) {
+    // 视频生成记录，跳转到视频生成页面
+    localStorage.setItem('reuse_record', JSON.stringify(record))
+    router.push('/video')
+    ElMessage.success('已跳转到视频生成页面')
+    return
+  }
+
+  // 图片生成记录，在当前页面处理
+  // 1. 先清空图片生成的关键参数（提示词和参考图片）
+  form.value.positive_prompt = ''
+  form.value.negative_prompt = ''
+  inputImages.value = []
+
+  // 2. 填充提示词
   form.value.positive_prompt = record.prompt || ''
 
-  // 尝试匹配模型
+  // 3. 尝试匹配模型
   if (record.model_name) {
     // API 模型
     if (apiModels.value.length > 0) {
@@ -693,7 +734,7 @@ function handleReuseParams(record: any) {
     }
   }
 
-  // 从 payload 中恢复完整参数
+  // 4. 从 payload 中恢复完整参数
   if (record.payload) {
     const p = record.payload
     // 宽高比
@@ -724,7 +765,7 @@ function handleReuseParams(record: any) {
     }
   }
 
-  // 如果有输入资产，加载参考图
+  // 5. 如果有输入资产，加载参考图
   if (record.input_asset_ids && record.input_asset_ids.length > 0 && record.input_asset_urls) {
     // 切换到图生图模式
     activeTab.value = 'img2img'
@@ -791,7 +832,7 @@ onUnmounted(() => {
           <div v-else-if="apiModels.length > 0" class="row-item">
             <span class="row-label">API 模型</span>
             <ElSelect v-model="apiModel" placeholder="选择模型" class="row-select">
-              <ElOption v-for="m in apiModels" :key="m.id" :label="m.name" :value="m.id" />
+              <ElOption v-for="m in apiModels" :key="m.id" :label="m.description" :value="m.id" />
             </ElSelect>
           </div>
           <div v-else class="api-tip">

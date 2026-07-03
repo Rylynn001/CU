@@ -26,6 +26,7 @@ function colorOf(tag: number) {
 const wrapRef = ref<HTMLElement | null>(null)
 const open = ref(false)
 const placement = ref<'above' | 'below'>('above')
+const horizontalAlign = ref<'center' | 'right'>('center')
 const popupStyle = ref<Record<string, string>>({})
 let closeTimer: number | undefined
 
@@ -34,11 +35,30 @@ function showPopup() {
   const el = wrapRef.value
   if (!el) return
   const rect = el.getBoundingClientRect()
+
+  // 垂直位置：上方或下方
   placement.value = rect.top < 70 ? 'below' : 'above'
-  popupStyle.value = {
-    left: `${rect.left + rect.width / 2}px`,
-    top: placement.value === 'above' ? `${rect.top}px` : `${rect.bottom}px`,
+
+  // 水平位置：检测是否会超出右侧边界
+  const centerX = rect.left + rect.width / 2
+  const popupWidth = 180 // 5个心形按钮的大概宽度
+  const windowWidth = window.innerWidth
+
+  // 如果居中会超出右侧，改为右对齐
+  if (centerX + popupWidth / 2 > windowWidth - 10) {
+    horizontalAlign.value = 'right'
+    popupStyle.value = {
+      right: `${windowWidth - rect.right}px`,
+      top: placement.value === 'above' ? `${rect.top}px` : `${rect.bottom}px`,
+    }
+  } else {
+    horizontalAlign.value = 'center'
+    popupStyle.value = {
+      left: `${centerX}px`,
+      top: placement.value === 'above' ? `${rect.top}px` : `${rect.bottom}px`,
+    }
   }
+
   open.value = true
 }
 
@@ -86,7 +106,7 @@ onBeforeUnmount(() => { if (closeTimer) clearTimeout(closeTimer) })
         <div
           v-if="open"
           class="heart-popup"
-          :class="placement"
+          :class="[placement, horizontalAlign]"
           :style="popupStyle"
           @mouseenter="showPopup"
           @mouseleave="hidePopup"
@@ -147,8 +167,19 @@ onBeforeUnmount(() => { if (closeTimer) clearTimeout(closeTimer) })
   opacity: 1;
   transition: opacity 0.5s;
 }
-.heart-popup.above { transform: translate(-50%, calc(-100% - 10px)); }
-.heart-popup.below { transform: translate(-50%, 10px); }
+
+/* 垂直位置 */
+.heart-popup.above { transform: translateY(calc(-100% - 10px)); }
+.heart-popup.below { transform: translateY(10px); }
+
+/* 水平位置 */
+.heart-popup.center { transform-origin: center; }
+.heart-popup.center.above { transform: translate(-50%, calc(-100% - 10px)); }
+.heart-popup.center.below { transform: translate(-50%, 10px); }
+
+.heart-popup.right { transform-origin: right; }
+.heart-popup.right.above { transform: translate(0, calc(-100% - 10px)); }
+.heart-popup.right.below { transform: translate(0, 10px); }
 
 .mini-heart {
   width: 24px; height: 24px;

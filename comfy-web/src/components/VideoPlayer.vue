@@ -25,6 +25,18 @@ watch(() => props.visible, (v) => {
   if (!v) videoRef.value?.pause()
 })
 
+// 监听视频源变化，重置播放器状态
+watch(() => props.src, () => {
+  if (videoRef.value) {
+    videoRef.value.pause()
+    videoRef.value.currentTime = 0
+    isPlaying.value = false
+    currentTime.value = 0
+    duration.value = 0
+    videoRef.value.load()
+  }
+})
+
 function onKeydown(e: KeyboardEvent) {
   if (!props.visible) return
   if (e.code === 'Space') {

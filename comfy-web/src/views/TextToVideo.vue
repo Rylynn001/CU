@@ -33,6 +33,10 @@ import { useLocateHistory } from '../composables/useLocateHistory'
 import { submitVideoGeneration, submitImg2VideoGeneration } from '../services/videoGenerationService'
 import { getCurrentUserId } from '../utils/user'
 import { generateUUID } from '../utils/uuid'
+import { ElMessage } from 'element-plus'
+import { useRouter } from 'vue-router'
+
+const router = useRouter()
 
 // ── 生成记录类型 ──────────────────────────────────────────
 interface VideoRecord {
@@ -545,25 +549,52 @@ onMounted(async () => {
   // 从资产库右键"定位历史记录"跳转过来的，此时消费待定位记录
   await locatePendingRecord()
 
+  // 检查是否有从图片页面跳转过来的复用参数
+  const reuseData = localStorage.getItem('reuse_record')
+  if (reuseData) {
+    try {
+      const record = JSON.parse(reuseData)
+      localStorage.removeItem('reuse_record')
+      // 延迟执行，确保数据加载完成
+      nextTick(() => {
+        handleReuseParams(record, true)  // fromStorage = true
+      })
+    } catch (e) {
+      console.error('解析复用参数失败:', e)
+    }
+  }
+
   // 注册键盘事件监听
   window.addEventListener('keydown', handleImageKeydown)
 })
 
 // 复用生成记录的参数
-function handleReuseParams(record: any) {
-  // 填充提示词
-  prompt.value = record.prompt || ''
-
-  // 根据记录类型切换标签页
-  if (record.type?.includes('video')) {
-    if (record.mode === 'img2video') {
-      activeTab.value = 'img2video'
-    } else {
-      activeTab.value = 'txt2video'
-    }
+function handleReuseParams(record: any, fromStorage = false) {
+  // 只有从侧边栏直接调用时才检查跨页面跳转
+  if (!fromStorage && (record.type === 'txt2img' || record.type === 'img2img')) {
+    // 图片生成记录，跳转到图片生成页面
+    localStorage.setItem('reuse_record', JSON.stringify(record))
+    router.push('/image')
+    ElMessage.success('已跳转到图片生成页面')
+    return
   }
 
-  // 尝试匹配模型
+  // 视频生成记录，在当前页面处理
+  // 1. 先清空视频生成的关键参数（提示词和参考素材）
+  prompt.value = ''
+  clearAllInputs()  // 清空输入素材
+
+  // 2. 根据记录类型切换标签页
+  if (record.type === 'img2video') {
+    activeTab.value = 'img2video'
+  } else {
+    activeTab.value = 'txt2video'
+  }
+
+  // 3. 填充提示词
+  prompt.value = record.prompt || ''
+
+  // 4. 尝试匹配模型
   if (record.model_name && apiModels.value.length > 0) {
     const matchedModel = apiModels.value.find(m => m.name === record.model_name)
     if (matchedModel) {
@@ -571,7 +602,7 @@ function handleReuseParams(record: any) {
     }
   }
 
-  // 从 payload 中恢复完整参数
+  // 5. 从 payload 中恢复完整参数
   if (record.payload) {
     const p = record.payload
     // 视频比例
@@ -582,17 +613,15 @@ function handleReuseParams(record: any) {
     if (p.duration) duration.value = p.duration
   }
 
-  // 如果有输入资产，自动切换到图生视频并加载参考图
+  // 6. 如果有输入资产，加载参考图
   if (record.input_asset_ids && record.input_asset_ids.length > 0 && record.input_asset_urls) {
     activeTab.value = 'img2video'
-    // 清空当前输入素材
-    clearAllInputs()
     // 直接使用后端返回的 URL
     const assets = record.input_asset_ids.map((id: number, idx: number) => {
       const assetUrl = record.input_asset_urls[idx]
       return {
         id,
-        location: assetUrl?.url || `asset_${id}`,  // 直接使用完整 URL 作为 location
+        location: assetUrl?.url || `asset_${id}`,
         asset_type: assetUrl?.type === 'video' ? 'video' : 'picture'
       }
     })
@@ -637,7 +666,7 @@ onUnmounted(() => {
           <div v-if="modelSource === 'api' && apiModels.length > 0" class="row-item">
             <span class="row-label">API 模型</span>
             <ElSelect v-model="apiModel" placeholder="选择模型" class="row-select">
-              <ElOption v-for="m in apiModels" :key="m.id" :label="m.name" :value="m.id" />
+              <ElOption v-for="m in apiModels" :key="m.id" :label="m.description" :value="m.id" />
             </ElSelect>
           </div>
           <div v-else-if="modelSource === 'api'" class="api-tip">

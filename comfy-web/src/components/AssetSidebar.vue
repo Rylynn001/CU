@@ -995,6 +995,8 @@ onUnmounted(() => {
   background: rgba(255,255,255,0.04);
   border: 1px solid rgba(255,255,255,0.07);
   transition: border-color 0.2s, transform 0.15s;
+  /* 防止子元素溢出 */
+  contain: layout;
 }
 .thumb-item:hover {
   border-color: rgba(108,99,255,0.5);
@@ -1005,10 +1007,14 @@ onUnmounted(() => {
 
 .thumb-fav-slot {
   position: absolute;
-  top: 3px; right: 3px;
+  top: 3px;
+  right: 3px;
   z-index: 2;
   opacity: 0;
   transition: opacity 0.2s;
+  pointer-events: auto;
+  /* 确保不超出父容器边界 */
+  max-width: calc(100% - 6px);
 }
 
 .thumb-media {

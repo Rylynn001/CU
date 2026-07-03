@@ -70,11 +70,10 @@ const MAX_SCALE = 5
 
 function previewImage(asset: Asset, list: Asset[]) {
   if (isVideo(asset)) return
-  const imageList = list.filter(a => !isVideo(a))
-  currentAssetList.value = imageList
-  const idx = imageList.findIndex(a => a.id === asset.id)
+  currentAssetList.value = list
+  const idx = list.findIndex(a => a.id === asset.id)
   currentAssetIndex.value = idx >= 0 ? idx : 0
-  previewUrl.value = getMediaUrl(imageList[currentAssetIndex.value].location)
+  previewUrl.value = getMediaUrl(asset.location)
   imageScale.value = 1
   showImageViewer.value = true
 }
@@ -90,20 +89,40 @@ function handleImageWheel(e: WheelEvent) {
   imageScale.value = Math.max(MIN_SCALE, Math.min(MAX_SCALE, imageScale.value + delta))
 }
 
-// 切换到上一张
+// 切换到上一个资产（图片或视频）
 function goToPrev() {
   if (currentAssetList.value.length === 0) return
   currentAssetIndex.value = (currentAssetIndex.value - 1 + currentAssetList.value.length) % currentAssetList.value.length
-  previewUrl.value = getMediaUrl(currentAssetList.value[currentAssetIndex.value].location)
-  imageScale.value = 1
+  const asset = currentAssetList.value[currentAssetIndex.value]
+
+  if (isVideo(asset)) {
+    showImageViewer.value = false
+    activeVideo.value = asset
+    showVideoPlayer.value = true
+  } else {
+    showVideoPlayer.value = false
+    previewUrl.value = getMediaUrl(asset.location)
+    imageScale.value = 1
+    showImageViewer.value = true
+  }
 }
 
-// 切换到下一张
+// 切换到下一个资产（图片或视频）
 function goToNext() {
   if (currentAssetList.value.length === 0) return
   currentAssetIndex.value = (currentAssetIndex.value + 1) % currentAssetList.value.length
-  previewUrl.value = getMediaUrl(currentAssetList.value[currentAssetIndex.value].location)
-  imageScale.value = 1
+  const asset = currentAssetList.value[currentAssetIndex.value]
+
+  if (isVideo(asset)) {
+    showImageViewer.value = false
+    activeVideo.value = asset
+    showVideoPlayer.value = true
+  } else {
+    showVideoPlayer.value = false
+    previewUrl.value = getMediaUrl(asset.location)
+    imageScale.value = 1
+    showImageViewer.value = true
+  }
 }
 
 // 键盘事件监听
@@ -112,10 +131,10 @@ function handleKeydown(e: KeyboardEvent) {
 
   if (e.key === 'ArrowLeft') {
     e.preventDefault()
-    if (showImageViewer.value) goToPrev()
+    goToPrev()
   } else if (e.key === 'ArrowRight') {
     e.preventDefault()
-    if (showImageViewer.value) goToNext()
+    goToNext()
   } else if (e.key === 'Escape') {
     e.preventDefault()
     showImageViewer.value = false
@@ -127,7 +146,10 @@ function handleKeydown(e: KeyboardEvent) {
 const showVideoPlayer = ref(false)
 const activeVideo = ref<Asset | null>(null)
 
-function openVideo(asset: Asset) {
+function openVideo(asset: Asset, list: Asset[]) {
+  currentAssetList.value = list
+  const idx = list.findIndex(a => a.id === asset.id)
+  currentAssetIndex.value = idx >= 0 ? idx : 0
   activeVideo.value = asset
   showVideoPlayer.value = true
 }
@@ -545,7 +567,7 @@ onUnmounted(() => {
             :assets="assets"
             :loading="loading"
             @preview="(a) => previewImage(a, assets)"
-            @open-video="openVideo"
+            @open-video="(a) => openVideo(a, assets)"
             @download="downloadAsset"
             @set-favorite="setFavorite"
           />
@@ -650,7 +672,7 @@ onUnmounted(() => {
                 :assets="categoryAssets"
                 :loading="false"
                 @preview="(a) => previewImage(a, categoryAssets)"
-                @open-video="openVideo"
+                @open-video="(a) => openVideo(a, categoryAssets)"
                 @download="downloadAsset"
                 @set-favorite="setFavorite"
               />
@@ -711,7 +733,10 @@ onUnmounted(() => {
       :visible="showVideoPlayer"
       :src="getMediaUrl(activeVideo.location)"
       :asset-id="activeVideo.id"
+      :show-nav="currentAssetList.length > 1"
       @close="showVideoPlayer = false"
+      @prev="goToPrev"
+      @next="goToNext"
     />
   </div>
 </template>
