@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 迁移脚本：将 history.input_file 字段迁移到 history_input_assets_rel 关联表
 运行方式：cd ComfyUI && python custom_nodes/comfy_api_proxy/migrate_to_input_rel.py

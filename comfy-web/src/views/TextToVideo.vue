@@ -1,9 +1,9 @@
 <script setup lang="ts">
 defineOptions({ name: 'TextToVideo' })
 // Vue 核心
-import { ref, onMounted, computed, nextTick, watch } from 'vue'
+import { ref, onMounted, onUnmounted, computed, nextTick, watch } from 'vue'
 // Element Plus UI 组件
-import { ElInput, ElSelect, ElOption, ElImageViewer } from 'element-plus'
+import { ElInput, ElSelect, ElOption } from 'element-plus'
 import { UploadFilled } from '@element-plus/icons-vue'
 // 资产选择器弹窗
 import AssetSidebar from '../components/AssetSidebar.vue'
@@ -175,10 +175,60 @@ const { atMentionActive, atMentionIndex, onPromptKeyup, onPromptKeydown, insertM
 
 // ── 图片预览 ──────────────────────────────────────────────
 const showImageViewer = ref(false)
-const previewImageUrl = ref('')
-function previewImage(url: string) {
-  previewImageUrl.value = url
+const previewImageList = ref<string[]>([])
+const currentPreviewIndex = ref(0)
+const imageScale = ref(1)
+const MIN_SCALE = 0.5
+const MAX_SCALE = 5
+
+function previewImage(url: string, imageList?: string[]) {
+  if (imageList && imageList.length > 0) {
+    previewImageList.value = imageList
+    const idx = imageList.indexOf(url)
+    currentPreviewIndex.value = idx >= 0 ? idx : 0
+  } else {
+    previewImageList.value = [url]
+    currentPreviewIndex.value = 0
+  }
+  imageScale.value = 1
   showImageViewer.value = true
+}
+
+const currentPreviewUrl = computed(() => {
+  return previewImageList.value[currentPreviewIndex.value] || ''
+})
+
+function handleImageWheel(e: WheelEvent) {
+  e.preventDefault()
+  const delta = e.deltaY > 0 ? -0.1 : 0.1
+  imageScale.value = Math.max(MIN_SCALE, Math.min(MAX_SCALE, imageScale.value + delta))
+}
+
+function goToPrevImage() {
+  if (previewImageList.value.length === 0) return
+  currentPreviewIndex.value = (currentPreviewIndex.value - 1 + previewImageList.value.length) % previewImageList.value.length
+  imageScale.value = 1
+}
+
+function goToNextImage() {
+  if (previewImageList.value.length === 0) return
+  currentPreviewIndex.value = (currentPreviewIndex.value + 1) % previewImageList.value.length
+  imageScale.value = 1
+}
+
+function handleImageKeydown(e: KeyboardEvent) {
+  if (!showImageViewer.value) return
+
+  if (e.key === 'ArrowLeft') {
+    e.preventDefault()
+    goToPrevImage()
+  } else if (e.key === 'ArrowRight') {
+    e.preventDefault()
+    goToNextImage()
+  } else if (e.key === 'Escape') {
+    e.preventDefault()
+    showImageViewer.value = false
+  }
 }
 
 // ── 视频播放器弹窗 ────────────────────────────────────────
@@ -494,6 +544,65 @@ onMounted(async () => {
 
   // 从资产库右键"定位历史记录"跳转过来的，此时消费待定位记录
   await locatePendingRecord()
+
+  // 注册键盘事件监听
+  window.addEventListener('keydown', handleImageKeydown)
+})
+
+// 复用生成记录的参数
+function handleReuseParams(record: any) {
+  // 填充提示词
+  prompt.value = record.prompt || ''
+
+  // 根据记录类型切换标签页
+  if (record.type?.includes('video')) {
+    if (record.mode === 'img2video') {
+      activeTab.value = 'img2video'
+    } else {
+      activeTab.value = 'txt2video'
+    }
+  }
+
+  // 尝试匹配模型
+  if (record.model_name && apiModels.value.length > 0) {
+    const matchedModel = apiModels.value.find(m => m.name === record.model_name)
+    if (matchedModel) {
+      apiModel.value = matchedModel.id
+    }
+  }
+
+  // 从 payload 中恢复完整参数
+  if (record.payload) {
+    const p = record.payload
+    // 视频比例
+    if (p.ratio) ratio.value = p.ratio
+    // 分辨率
+    if (p.resolution) resolution.value = p.resolution
+    // 时长
+    if (p.duration) duration.value = p.duration
+  }
+
+  // 如果有输入资产，自动切换到图生视频并加载参考图
+  if (record.input_asset_ids && record.input_asset_ids.length > 0 && record.input_asset_urls) {
+    activeTab.value = 'img2video'
+    // 清空当前输入素材
+    clearAllInputs()
+    // 直接使用后端返回的 URL
+    const assets = record.input_asset_ids.map((id: number, idx: number) => {
+      const assetUrl = record.input_asset_urls[idx]
+      return {
+        id,
+        location: assetUrl?.url || `asset_${id}`,  // 直接使用完整 URL 作为 location
+        asset_type: assetUrl?.type === 'video' ? 'video' : 'picture'
+      }
+    })
+    handleAssetSelect(assets)
+  }
+}
+
+onUnmounted(() => {
+  // 移除键盘事件监听
+  window.removeEventListener('keydown', handleImageKeydown)
 })
 </script>
 
@@ -741,7 +850,7 @@ onMounted(async () => {
                 <input v-model="searchQuery" class="search-input" placeholder="搜索提示词..." />
               </div>
 
-              <div v-for="rec in filteredRecords" :key="rec.id" class="record-row" :data-record-id="rec.id" :class="{ 'editing': showRecordEditor && editingRecordId === rec.id, 'record-located': locatedRecordId === rec.id }">
+              <div v-for="rec in filteredRecords" :key="rec.id" class="record-row" :data-record-id="rec.id" :class="{ 'record-located': locatedRecordId === rec.id }">
                 <!-- 左侧输入图 -->
                 <div class="record-input-col">
                   <template v-if="rec.inputAssetUrls && rec.inputAssetUrls.length">
@@ -813,16 +922,31 @@ onMounted(async () => {
           </div>
       </main>
       <!-- ── 右侧资产侧边栏 ── -->
-      <AssetSidebar @select="handleAssetSelect" />
+      <AssetSidebar @select="handleAssetSelect" @reuse-params="handleReuseParams" />
     </div>
 
     <!-- Image Viewer -->
-    <el-image-viewer
-      v-if="showImageViewer"
-      :url-list="[previewImageUrl]"
-      @close="showImageViewer = false"
-      :hide-on-click-modal="true"
-    />
+    <Teleport to="body">
+      <Transition name="img-viewer">
+        <div v-if="showImageViewer" class="custom-image-viewer" @click="showImageViewer = false" @wheel="handleImageWheel">
+          <div class="viewer-content" @click.stop>
+            <img :src="currentPreviewUrl" class="viewer-image" :style="{ transform: `scale(${imageScale})` }" />
+            <button class="viewer-close" @click="showImageViewer = false" title="关闭 (ESC)">✕</button>
+            <button v-if="previewImageList.length > 1" class="viewer-nav viewer-prev" @click="goToPrevImage" title="上一张 (←)">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <polyline points="15 18 9 12 15 6"/>
+              </svg>
+            </button>
+            <button v-if="previewImageList.length > 1" class="viewer-nav viewer-next" @click="goToNextImage" title="下一张 (→)">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <polyline points="9 18 15 12 9 6"/>
+              </svg>
+            </button>
+            <div class="viewer-scale-info">{{ Math.round(imageScale * 100) }}%</div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
 
     <!-- Image Editor（输入素材编辑） -->
     <ImageEditor
@@ -1113,6 +1237,119 @@ onMounted(async () => {
 .no-more-text {
   font-size: 11px;
   color: rgba(255,255,255,0.25);
+}
+
+/* ── 自定义图片查看器 ── */
+.custom-image-viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 2500;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.viewer-content {
+  position: relative;
+  max-width: 90vw;
+  max-height: 90vh;
+  cursor: default;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.viewer-image {
+  max-width: 90vw;
+  max-height: 90vh;
+  object-fit: contain;
+  display: block;
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  transition: transform 0.1s ease-out;
+  transform-origin: center center;
+}
+.viewer-close {
+  position: absolute;
+  top: -40px;
+  right: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.4);
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+.viewer-close:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.4);
+  transform: scale(1.1);
+}
+.viewer-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.5);
+  color: rgba(255, 255, 255, 0.9);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+.viewer-nav:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.4);
+  transform: translateY(-50%) scale(1.1);
+}
+.viewer-prev {
+  left: -60px;
+}
+.viewer-next {
+  right: -60px;
+}
+.viewer-scale-info {
+  position: absolute;
+  bottom: -35px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 12px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 12px;
+  pointer-events: none;
+}
+
+.img-viewer-enter-active,
+.img-viewer-leave-active {
+  transition: opacity 0.25s ease;
+}
+.img-viewer-enter-active .viewer-content,
+.img-viewer-leave-active .viewer-content {
+  transition: transform 0.25s ease, opacity 0.25s ease;
+}
+.img-viewer-enter-from,
+.img-viewer-leave-to {
+  opacity: 0;
+}
+.img-viewer-enter-from .viewer-content,
+.img-viewer-leave-to .viewer-content {
+  transform: scale(0.9);
+  opacity: 0;
 }
 </style>
 

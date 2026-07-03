@@ -1,9 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
-import { ElMessage, ElDialog, ElInput, ElImageViewer } from 'element-plus'
+import { ElMessage, ElDialog, ElInput } from 'element-plus'
 import { favoriteAsset, fetchHistoryByAsset } from '../api/apiService'
-import { useLocateHistory } from '../composables/useLocateHistory'
 import FavoriteHeart from './FavoriteHeart.vue'
 import VideoPlayer from './VideoPlayer.vue'
 
@@ -26,13 +24,26 @@ interface Project {
   categories: Category[]
 }
 
+interface HistoryRecord {
+  id: number
+  task_id?: string
+  prompt: string
+  mode?: string
+  status?: string
+  type?: string
+  message?: string
+  model_name?: string
+  model_id?: number
+  output_urls: Array<{ url: string; type: string; id?: number }>
+  input_asset_ids: number[]
+  input_asset_urls: Array<{ url: string; type: string }>
+  payload?: any
+}
+
 const emit = defineEmits<{
   select: [asset: Asset]
+  reuseParams: [record: HistoryRecord]
 }>()
-
-const router = useRouter()
-const route = useRoute()
-const { requestLocateHistory } = useLocateHistory()
 
 // ── 视图切换 ──────────────────────────────────────────────────────────────
 const activeView = ref<'assets' | 'project'>('assets')
@@ -338,19 +349,94 @@ const previewUrl = ref('')
 const showVideoPlayer = ref(false)
 const activeVideoUrl = ref('')
 const activeVideoId = ref<number | undefined>(undefined)
+const currentAssetIndex = ref(0)
+const imageScale = ref(1)
+const MIN_SCALE = 0.5
+const MAX_SCALE = 5
+
+// 获取当前视图的资产列表
+const currentAssetList = computed(() => {
+  return activeView.value === 'assets' ? assets.value : categoryAssets.value
+})
 
 function handleAssetClick(asset: Asset) {
+  const index = currentAssetList.value.findIndex(a => a.id === asset.id)
+  if (index !== -1) currentAssetIndex.value = index
+
   if (isVideo(asset)) {
     activeVideoUrl.value = getMediaUrl(asset.location)
     activeVideoId.value = asset.id
     showVideoPlayer.value = true
   } else {
     previewUrl.value = getMediaUrl(asset.location)
+    imageScale.value = 1
     showImageViewer.value = true
   }
 }
 
-// ── 右键菜单：添加到素材 / 定位历史记录 ──────────────────────────────────
+// 图片滚轮缩放
+function handleImageWheel(e: WheelEvent) {
+  e.preventDefault()
+  const delta = e.deltaY > 0 ? -0.1 : 0.1
+  imageScale.value = Math.max(MIN_SCALE, Math.min(MAX_SCALE, imageScale.value + delta))
+}
+
+// 切换到上一个资产
+function goToPrev() {
+  if (currentAssetList.value.length === 0) return
+  currentAssetIndex.value = (currentAssetIndex.value - 1 + currentAssetList.value.length) % currentAssetList.value.length
+  const asset = currentAssetList.value[currentAssetIndex.value]
+
+  if (isVideo(asset)) {
+    showImageViewer.value = false
+    activeVideoUrl.value = getMediaUrl(asset.location)
+    activeVideoId.value = asset.id
+    showVideoPlayer.value = true
+  } else {
+    showVideoPlayer.value = false
+    previewUrl.value = getMediaUrl(asset.location)
+    imageScale.value = 1
+    showImageViewer.value = true
+  }
+}
+
+// 切换到下一个资产
+function goToNext() {
+  if (currentAssetList.value.length === 0) return
+  currentAssetIndex.value = (currentAssetIndex.value + 1) % currentAssetList.value.length
+  const asset = currentAssetList.value[currentAssetIndex.value]
+
+  if (isVideo(asset)) {
+    showImageViewer.value = false
+    activeVideoUrl.value = getMediaUrl(asset.location)
+    activeVideoId.value = asset.id
+    showVideoPlayer.value = true
+  } else {
+    showVideoPlayer.value = false
+    previewUrl.value = getMediaUrl(asset.location)
+    imageScale.value = 1
+    showImageViewer.value = true
+  }
+}
+
+// 键盘事件监听
+function handleKeydown(e: KeyboardEvent) {
+  if (!showImageViewer.value && !showVideoPlayer.value) return
+
+  if (e.key === 'ArrowLeft') {
+    e.preventDefault()
+    goToPrev()
+  } else if (e.key === 'ArrowRight') {
+    e.preventDefault()
+    goToNext()
+  } else if (e.key === 'Escape') {
+    e.preventDefault()
+    showImageViewer.value = false
+    showVideoPlayer.value = false
+  }
+}
+
+// ── 右键菜单：添加到素材 / 查看生成记录 ──────────────────────────────────
 const contextMenu = ref<{ visible: boolean; x: number; y: number; asset: Asset | null }>({
   visible: false, x: 0, y: 0, asset: null,
 })
@@ -365,31 +451,56 @@ function closeContextMenu() {
 function addToMaterial() {
   const asset = contextMenu.value.asset
   closeContextMenu()
-  if (asset) emit('select', asset)
+  if (asset) emit('select', [asset])
 }
 
-async function locateHistory() {
+// ── 查看生成记录弹窗 ──────────────────────────────────────────────────────
+const showRecordDetail = ref(false)
+const recordDetail = ref<HistoryRecord | null>(null)
+const loadingRecord = ref(false)
+
+async function viewGenerationRecord() {
   const asset = contextMenu.value.asset
   closeContextMenu()
   if (!asset) return
   const user = getUser()
   if (!user) return
+
+  loadingRecord.value = true
   try {
     const record = await fetchHistoryByAsset(asset.id, user.id)
-    const targetPath = record.type?.includes('video') ? '/video' : '/image'
-    requestLocateHistory(record)
-    if (route.path !== targetPath) router.push(targetPath)
+    recordDetail.value = record
+    showRecordDetail.value = true
   } catch {
-    ElMessage.error('未找到该资产对应的历史记录')
+    ElMessage.error('未找到该资产对应的生成记录')
+  } finally {
+    loadingRecord.value = false
+  }
+}
+
+function closeRecordDetail() {
+  showRecordDetail.value = false
+  setTimeout(() => {
+    recordDetail.value = null
+  }, 300)
+}
+
+function reuseRecordParams() {
+  if (recordDetail.value) {
+    emit('reuseParams', recordDetail.value)
+    closeRecordDetail()
+    ElMessage.success('参数已复用到左侧面板')
   }
 }
 
 onMounted(() => {
   loadAssets()
   window.addEventListener('click', closeContextMenu)
+  window.addEventListener('keydown', handleKeydown)
 })
 onUnmounted(() => {
   window.removeEventListener('click', closeContextMenu)
+  window.removeEventListener('keydown', handleKeydown)
 })
 </script>
 
@@ -584,12 +695,32 @@ onUnmounted(() => {
     </el-dialog>
 
     <!-- 图片查看器 -->
-    <el-image-viewer v-if="showImageViewer" :url-list="[previewUrl]" @close="showImageViewer = false" :hide-on-click-modal="true" />
+    <Teleport to="body">
+      <Transition name="img-viewer">
+        <div v-if="showImageViewer" class="custom-image-viewer" @click="showImageViewer = false" @wheel="handleImageWheel">
+          <div class="viewer-content" @click.stop>
+            <img :src="previewUrl" class="viewer-image" :style="{ transform: `scale(${imageScale})` }" />
+            <button class="viewer-close" @click="showImageViewer = false">✕</button>
+            <button v-if="currentAssetList.length > 1" class="viewer-nav viewer-prev" @click="goToPrev" title="上一张 (←)">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <polyline points="15 18 9 12 15 6"/>
+              </svg>
+            </button>
+            <button v-if="currentAssetList.length > 1" class="viewer-nav viewer-next" @click="goToNext" title="下一张 (→)">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <polyline points="9 18 15 12 9 6"/>
+              </svg>
+            </button>
+            <div class="viewer-scale-info">{{ Math.round(imageScale * 100) }}%</div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
 
     <!-- 视频播放器 -->
-    <VideoPlayer :visible="showVideoPlayer" :src="activeVideoUrl" :asset-id="activeVideoId" @close="showVideoPlayer = false" />
+    <VideoPlayer :visible="showVideoPlayer" :src="activeVideoUrl" :asset-id="activeVideoId" @close="showVideoPlayer = false" @prev="goToPrev" @next="goToNext" :show-nav="currentAssetList.length > 1" />
 
-    <!-- 右键菜单：添加到素材 / 定位历史记录 -->
+    <!-- 右键菜单：添加到素材 / 查看生成记录 -->
     <Teleport to="body">
       <Transition name="ctx-menu">
         <div
@@ -602,9 +733,139 @@ onUnmounted(() => {
             <span class="context-menu-icon">＋</span>
             <span>添加到素材</span>
           </div>
-          <div class="context-menu-item" @click="locateHistory">
-            <span class="context-menu-icon">◎</span>
-            <span>定位历史记录</span>
+          <div class="context-menu-item" @click="viewGenerationRecord">
+            <span class="context-menu-icon">◉</span>
+            <span>查看生成记录</span>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <!-- 生成记录详情弹窗 -->
+    <Teleport to="body">
+      <Transition name="record-detail">
+        <div v-if="showRecordDetail" class="record-detail-overlay" @click="closeRecordDetail">
+          <div class="record-detail-modal" @click.stop>
+            <!-- 头部 -->
+            <div class="modal-header">
+              <span class="modal-title">生成记录详情</span>
+              <button class="modal-close-btn" @click="closeRecordDetail">✕</button>
+            </div>
+
+            <!-- 内容 -->
+            <div v-if="recordDetail" class="modal-body">
+              <!-- 参考素材 -->
+              <div v-if="recordDetail.input_asset_urls && recordDetail.input_asset_urls.length > 0" class="detail-section">
+                <div class="section-title">参考素材</div>
+                <div class="reference-grid">
+                  <div v-for="(asset, idx) in recordDetail.input_asset_urls" :key="idx" class="reference-item">
+                    <video v-if="asset.type === 'video'" :src="asset.url" class="reference-media" controls />
+                    <img v-else :src="asset.url" class="reference-media" />
+                    <span class="reference-badge">{{ asset.type === 'video' ? '视频' : '图片' }}{{ idx + 1 }}</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 提示词 -->
+              <div class="detail-section">
+                <div class="section-title">提示词</div>
+                <div class="prompt-box">{{ recordDetail.prompt || '无' }}</div>
+              </div>
+
+              <!-- 模型信息 -->
+              <div class="detail-section">
+                <div class="section-title">模型</div>
+                <div class="model-tag">{{ recordDetail.model_name || '未知' }}</div>
+              </div>
+
+              <!-- 生成参数 -->
+              <div class="detail-section">
+                <div class="section-title">生成参数</div>
+                <div class="param-row">
+                  <span class="param-label">类型：</span>
+                  <span class="param-value">{{ recordDetail.type?.includes('video') ? '视频生成' : '图片生成' }}</span>
+                </div>
+                <div class="param-row" v-if="recordDetail.mode">
+                  <span class="param-label">模式：</span>
+                  <span class="param-value">{{ recordDetail.mode === 'img2video' ? '图生视频' : recordDetail.mode === 'txt2video' ? '文生视频' : recordDetail.mode === 'img2img' ? '图生图' : recordDetail.mode === 'txt2img' ? '文生图' : recordDetail.mode }}</span>
+                </div>
+                <template v-if="recordDetail.payload">
+                  <!-- 视频参数 -->
+                  <div class="param-row" v-if="recordDetail.payload.ratio">
+                    <span class="param-label">比例：</span>
+                    <span class="param-value">{{ recordDetail.payload.ratio }}</span>
+                  </div>
+                  <div class="param-row" v-if="recordDetail.payload.resolution">
+                    <span class="param-label">分辨率：</span>
+                    <span class="param-value">{{ recordDetail.payload.resolution }}</span>
+                  </div>
+                  <div class="param-row" v-if="recordDetail.payload.duration">
+                    <span class="param-label">时长：</span>
+                    <span class="param-value">{{ recordDetail.payload.duration }}秒</span>
+                  </div>
+                  <!-- 图片参数 -->
+                  <div class="param-row" v-if="recordDetail.payload.aspect_ratio">
+                    <span class="param-label">宽高比：</span>
+                    <span class="param-value">{{ recordDetail.payload.aspect_ratio }}</span>
+                  </div>
+                  <div class="param-row" v-if="recordDetail.payload.quality">
+                    <span class="param-label">质量：</span>
+                    <span class="param-value">{{ recordDetail.payload.quality }}</span>
+                  </div>
+                  <div class="param-row" v-if="recordDetail.payload.width && recordDetail.payload.height">
+                    <span class="param-label">尺寸：</span>
+                    <span class="param-value">{{ recordDetail.payload.width }} × {{ recordDetail.payload.height }}</span>
+                  </div>
+                  <div class="param-row" v-if="recordDetail.payload.steps">
+                    <span class="param-label">采样步数：</span>
+                    <span class="param-value">{{ recordDetail.payload.steps }}</span>
+                  </div>
+                  <div class="param-row" v-if="recordDetail.payload.cfg">
+                    <span class="param-label">CFG：</span>
+                    <span class="param-value">{{ recordDetail.payload.cfg }}</span>
+                  </div>
+                  <div class="param-row" v-if="recordDetail.payload.sampler_name">
+                    <span class="param-label">采样器：</span>
+                    <span class="param-value">{{ recordDetail.payload.sampler_name }}</span>
+                  </div>
+                  <div class="param-row" v-if="recordDetail.payload.scheduler">
+                    <span class="param-label">调度器：</span>
+                    <span class="param-value">{{ recordDetail.payload.scheduler }}</span>
+                  </div>
+                  <div class="param-row" v-if="recordDetail.payload.seed !== undefined">
+                    <span class="param-label">种子：</span>
+                    <span class="param-value">{{ recordDetail.payload.seed }}</span>
+                  </div>
+                  <div class="param-row" v-if="recordDetail.payload.n || recordDetail.payload.batchSize">
+                    <span class="param-label">生成数量：</span>
+                    <span class="param-value">{{ recordDetail.payload.n || recordDetail.payload.batchSize }}</span>
+                  </div>
+                </template>
+              </div>
+
+              <!-- 生成结果 -->
+              <div v-if="recordDetail.output_urls && recordDetail.output_urls.length > 0" class="detail-section">
+                <div class="section-title">生成结果</div>
+                <div class="output-grid">
+                  <div v-for="(output, idx) in recordDetail.output_urls" :key="idx" class="output-item">
+                    <video v-if="output.type === 'video'" :src="output.url" class="output-media" controls />
+                    <img v-else :src="output.url" class="output-media" />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 底部操作 -->
+            <div class="modal-footer">
+              <button class="modal-btn cancel-btn" @click="closeRecordDetail">关闭</button>
+              <button class="modal-btn reuse-btn" @click="reuseRecordParams">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="1 4 1 10 7 10"/>
+                  <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+                </svg>
+                复用参数
+              </button>
+            </div>
           </div>
         </div>
       </Transition>
@@ -997,6 +1258,119 @@ onUnmounted(() => {
 
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* ── 自定义图片查看器 ── */
+.custom-image-viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 2500;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.viewer-content {
+  position: relative;
+  max-width: 90vw;
+  max-height: 90vh;
+  cursor: default;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.viewer-image {
+  max-width: 90vw;
+  max-height: 90vh;
+  object-fit: contain;
+  display: block;
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  transition: transform 0.1s ease-out;
+  transform-origin: center center;
+}
+.viewer-close {
+  position: absolute;
+  top: -40px;
+  right: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.4);
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+.viewer-close:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.4);
+  transform: scale(1.1);
+}
+.viewer-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.5);
+  color: rgba(255, 255, 255, 0.9);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+.viewer-nav:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.4);
+  transform: translateY(-50%) scale(1.1);
+}
+.viewer-prev {
+  left: -60px;
+}
+.viewer-next {
+  right: -60px;
+}
+.viewer-scale-info {
+  position: absolute;
+  bottom: -35px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 12px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 12px;
+  pointer-events: none;
+}
+
+.img-viewer-enter-active,
+.img-viewer-leave-active {
+  transition: opacity 0.25s ease;
+}
+.img-viewer-enter-active .viewer-content,
+.img-viewer-leave-active .viewer-content {
+  transition: transform 0.25s ease, opacity 0.25s ease;
+}
+.img-viewer-enter-from,
+.img-viewer-leave-to {
+  opacity: 0;
+}
+.img-viewer-enter-from .viewer-content,
+.img-viewer-leave-to .viewer-content {
+  transform: scale(0.9);
+  opacity: 0;
+}
+
 /* ── 右键菜单 ── */
 .context-menu {
   position: fixed;
@@ -1035,5 +1409,302 @@ onUnmounted(() => {
 .ctx-menu-leave-to {
   opacity: 0;
   transform: scale(0.92);
+}
+
+/* ── 生成记录详情弹窗 ── */
+.record-detail-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 3500;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(12px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.record-detail-modal {
+  width: 90%;
+  max-width: 800px;
+  max-height: 85vh;
+  background: rgba(25, 25, 30, 0.98);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 20px;
+  box-shadow: 0 25px 80px rgba(0, 0, 0, 0.6);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+}
+
+.modal-title {
+  font-size: 16px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.9);
+  letter-spacing: 0.5px;
+}
+
+.modal-close-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: transparent;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.modal-close-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.9);
+  transform: rotate(90deg);
+}
+
+.modal-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.modal-body::-webkit-scrollbar { width: 6px; }
+.modal-body::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.03); }
+.modal-body::-webkit-scrollbar-thumb {
+  background: rgba(108, 99, 255, 0.3);
+  border-radius: 3px;
+}
+.modal-body::-webkit-scrollbar-thumb:hover { background: rgba(108, 99, 255, 0.5); }
+
+.detail-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.section-title {
+  font-size: 12px;
+  font-weight: 500;
+  color: rgba(167, 139, 250, 0.8);
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+}
+
+.reference-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.reference-item {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.reference-media {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.reference-badge {
+  position: absolute;
+  bottom: 6px;
+  left: 6px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.75);
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 10px;
+  backdrop-filter: blur(4px);
+}
+
+.prompt-box {
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.model-tag {
+  display: inline-flex;
+  padding: 8px 16px;
+  border-radius: 8px;
+  background: rgba(108, 99, 255, 0.12);
+  border: 1px solid rgba(108, 99, 255, 0.25);
+  color: rgba(167, 139, 250, 0.9);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.param-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.param-label {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.45);
+  min-width: 60px;
+}
+
+.param-value {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.output-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 16px;
+}
+
+.output-item {
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(108, 99, 255, 0.2);
+  background: rgba(0, 0, 0, 0.4);
+  aspect-ratio: 16 / 9;
+}
+
+.output-media {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 16px 24px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+}
+
+.modal-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 20px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 1px solid transparent;
+}
+
+.cancel-btn {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.cancel-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.reuse-btn {
+  background: linear-gradient(135deg, rgba(108, 99, 255, 0.25), rgba(167, 139, 250, 0.25));
+  border-color: rgba(108, 99, 255, 0.4);
+  color: rgba(255, 255, 255, 0.95);
+  position: relative;
+  overflow: hidden;
+}
+
+.reuse-btn::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(108, 99, 255, 0.15), rgba(167, 139, 250, 0.15));
+  opacity: 0;
+  transition: opacity 0.25s;
+}
+
+.reuse-btn:hover::before {
+  opacity: 1;
+}
+
+.reuse-btn:hover {
+  border-color: rgba(108, 99, 255, 0.6);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(108, 99, 255, 0.25);
+}
+
+.reuse-btn:active {
+  transform: translateY(0);
+}
+
+/* 弹窗动画 - 呼吸感 */
+.record-detail-enter-active {
+  transition: all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.record-detail-leave-active {
+  transition: all 0.25s cubic-bezier(0.4, 0, 1, 1);
+}
+
+.record-detail-enter-from,
+.record-detail-leave-to {
+  opacity: 0;
+}
+
+.record-detail-enter-from .record-detail-modal,
+.record-detail-leave-to .record-detail-modal {
+  opacity: 0;
+  transform: scale(0.85) translateY(30px);
+}
+
+.record-detail-enter-active .record-detail-modal {
+  animation: breathe-in 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes breathe-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.85) translateY(30px);
+  }
+  50% {
+    transform: scale(1.02) translateY(-5px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
 </style>

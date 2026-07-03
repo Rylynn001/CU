@@ -1,13 +1,11 @@
 <script setup lang="ts">
 defineOptions({ name: 'TextToImage' })
 // Vue 核心：ref 创建响应式变量，onMounted 页面加载后执行，watch 监听变量变化，computed 计算属性
-import { ref, onMounted, watch, computed, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, watch, computed, nextTick } from 'vue'
 // Element Plus UI 组件：输入框、下拉选择、滑块、数字输入框
 import { ElInput, ElSelect, ElOption, ElSlider, ElInputNumber } from 'element-plus'
 // Element Plus 图标
 import { Refresh, UploadFilled, Close, Setting } from '@element-plus/icons-vue'
-// 图片预览组件（全屏查看大图）
-import { ElImageViewer } from 'element-plus'
 // 资产选择器：从已有素材库中选图
 import AssetSidebar from '../components/AssetSidebar.vue'
 // 历史记录卡片：展示每条生成记录
@@ -53,12 +51,69 @@ const { clientId, progress, generating, imageUrl, connect, startGeneration } = u
 // ── 图片预览 ──────────────────────────────────────────────
 // 控制全屏图片预览弹窗的显示/隐藏
 const showImageViewer = ref(false)
-// 当前要预览的图片 URL
-const previewImageUrl = ref('')
+// 当前预览的图片列表
+const previewImageList = ref<string[]>([])
+// 当前预览索引
+const currentPreviewIndex = ref(0)
+// 图片缩放
+const imageScale = ref(1)
+const MIN_SCALE = 0.5
+const MAX_SCALE = 5
+
 // 点击图片时调用，打开全屏预览
-function previewImage(url: string) {
-  previewImageUrl.value = url
+function previewImage(url: string, imageList?: string[]) {
+  if (imageList && imageList.length > 0) {
+    previewImageList.value = imageList
+    const idx = imageList.indexOf(url)
+    currentPreviewIndex.value = idx >= 0 ? idx : 0
+  } else {
+    previewImageList.value = [url]
+    currentPreviewIndex.value = 0
+  }
+  imageScale.value = 1
   showImageViewer.value = true
+}
+
+// 当前预览的图片 URL
+const currentPreviewUrl = computed(() => {
+  return previewImageList.value[currentPreviewIndex.value] || ''
+})
+
+// 图片滚轮缩放
+function handleImageWheel(e: WheelEvent) {
+  e.preventDefault()
+  const delta = e.deltaY > 0 ? -0.1 : 0.1
+  imageScale.value = Math.max(MIN_SCALE, Math.min(MAX_SCALE, imageScale.value + delta))
+}
+
+// 切换到上一张
+function goToPrevImage() {
+  if (previewImageList.value.length === 0) return
+  currentPreviewIndex.value = (currentPreviewIndex.value - 1 + previewImageList.value.length) % previewImageList.value.length
+  imageScale.value = 1
+}
+
+// 切换到下一张
+function goToNextImage() {
+  if (previewImageList.value.length === 0) return
+  currentPreviewIndex.value = (currentPreviewIndex.value + 1) % previewImageList.value.length
+  imageScale.value = 1
+}
+
+// 键盘事件监听
+function handleImageKeydown(e: KeyboardEvent) {
+  if (!showImageViewer.value) return
+
+  if (e.key === 'ArrowLeft') {
+    e.preventDefault()
+    goToPrevImage()
+  } else if (e.key === 'ArrowRight') {
+    e.preventDefault()
+    goToNextImage()
+  } else if (e.key === 'Escape') {
+    e.preventDefault()
+    showImageViewer.value = false
+  }
 }
 
 // ── 生成记录类型 ──────────────────────────────────────────
@@ -608,6 +663,93 @@ onMounted(async () => {
 
   // 从资产库右键"定位历史记录"跳转过来的，此时消费待定位记录
   await locatePendingRecord()
+
+  // 注册键盘事件监听
+  window.addEventListener('keydown', handleImageKeydown)
+})
+
+// 复用生成记录的参数
+function handleReuseParams(record: any) {
+  // 填充提示词
+  form.value.positive_prompt = record.prompt || ''
+
+  // 尝试匹配模型
+  if (record.model_name) {
+    // API 模型
+    if (apiModels.value.length > 0) {
+      const matchedModel = apiModels.value.find(m => m.name === record.model_name)
+      if (matchedModel) {
+        modelSource.value = 'api'
+        apiModel.value = matchedModel.id
+      }
+    }
+    // 本地模型
+    if (models.value.length > 0) {
+      const matchedLocal = models.value.find(m => m === record.model_name)
+      if (matchedLocal) {
+        modelSource.value = 'local'
+        form.value.ckpt_name = matchedLocal
+      }
+    }
+  }
+
+  // 从 payload 中恢复完整参数
+  if (record.payload) {
+    const p = record.payload
+    // 宽高比
+    if (p.aspect_ratio) {
+      const foundRatio = ratios.find((r: any) => r.label === p.aspect_ratio)
+      if (foundRatio) {
+        activeRatio.value = foundRatio
+      }
+    }
+    // 清晰度
+    if (p.quality) {
+      apiQuality.value = p.quality
+    }
+    // 生成数量
+    if (p.n || p.batchSize) {
+      form.value.batch_size = p.n || p.batchSize
+    }
+    // 本地模型参数
+    if (modelSource.value === 'local') {
+      if (p.steps) form.value.steps = p.steps
+      if (p.cfg) form.value.cfg = p.cfg
+      if (p.sampler_name) form.value.sampler_name = p.sampler_name
+      if (p.scheduler) form.value.scheduler = p.scheduler
+      if (p.seed !== undefined) form.value.seed = p.seed
+      if (p.negative_prompt) form.value.negative_prompt = p.negative_prompt
+      if (p.width) form.value.width = p.width
+      if (p.height) form.value.height = p.height
+    }
+  }
+
+  // 如果有输入资产，加载参考图
+  if (record.input_asset_ids && record.input_asset_ids.length > 0 && record.input_asset_urls) {
+    // 切换到图生图模式
+    activeTab.value = 'img2img'
+    // 清空当前输入图片
+    inputImages.value = []
+    // 直接使用后端返回的 URL，不需要重新构造
+    const maxImages = modelSource.value === 'api' ? 4 : 1
+    for (let idx = 0; idx < Math.min(record.input_asset_ids.length, maxImages); idx++) {
+      const assetUrl = record.input_asset_urls[idx]
+      if (assetUrl?.url) {
+        // 提取文件名用于 assetLocation
+        const filename = assetUrl.url.split('/').pop() || ''
+        inputImages.value.push({
+          file: null,
+          preview: assetUrl.url,  // 直接使用后端返回的完整 URL
+          assetLocation: filename
+        })
+      }
+    }
+  }
+}
+
+onUnmounted(() => {
+  // 移除键盘事件监听
+  window.removeEventListener('keydown', handleImageKeydown)
 })
 </script>
 
@@ -958,7 +1100,7 @@ onMounted(async () => {
                   <template #result>
                     <div class="card-images">
                       <div v-for="(src, i) in rec.images" :key="i" class="card-image-wrap">
-                        <img :src="src" class="card-image" @click="previewImage(src)" />
+                        <img :src="src" class="card-image" @click="previewImage(src, rec.images)" />
                         <button class="download-btn" @click="downloadImage(src)" title="下载">
                           <span>⬇</span>
                         </button>
@@ -996,16 +1138,32 @@ onMounted(async () => {
           </div>
       </main>
       <!-- ── 右侧资产侧边栏 ── -->
-      <AssetSidebar @select="handleAssetSelect" />
+      <AssetSidebar @select="handleAssetSelect" @reuse-params="handleReuseParams" />
     </div>
 
     <!-- Image Viewer -->
-    <el-image-viewer
-      v-if="showImageViewer"
-      :url-list="[previewImageUrl]"
-      @close="showImageViewer = false"
-      :hide-on-click-modal="true"
-    />
+    <Teleport to="body">
+      <Transition name="img-viewer">
+        <div v-if="showImageViewer" class="custom-image-viewer" @click="showImageViewer = false" @wheel="handleImageWheel">
+          <div class="viewer-content" @click.stop>
+            <img :src="currentPreviewUrl" class="viewer-image" :style="{ transform: `scale(${imageScale})` }" />
+            <button class="viewer-close" @click="showImageViewer = false" title="关闭 (ESC)">✕</button>
+            <button v-if="previewImageList.length > 1" class="viewer-nav viewer-prev" @click="goToPrevImage" title="上一张 (←)">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <polyline points="15 18 9 12 15 6"/>
+              </svg>
+            </button>
+            <button v-if="previewImageList.length > 1" class="viewer-nav viewer-next" @click="goToNextImage" title="下一张 (→)">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <polyline points="9 18 15 12 9 6"/>
+              </svg>
+            </button>
+            <div class="viewer-scale-info">{{ Math.round(imageScale * 100) }}%</div>
+            <div v-if="previewImageList.length > 1" class="viewer-index-info">{{ currentPreviewIndex + 1 }} / {{ previewImageList.length }}</div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
 
     <!-- Image Editor（输入图编辑） -->
     <ImageEditor
@@ -1272,6 +1430,131 @@ onMounted(async () => {
 .no-more-text {
   font-size: 11px;
   color: rgba(255,255,255,0.25);
+}
+
+/* ── 自定义图片查看器 ── */
+.custom-image-viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 2500;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.viewer-content {
+  position: relative;
+  max-width: 90vw;
+  max-height: 90vh;
+  cursor: default;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.viewer-image {
+  max-width: 90vw;
+  max-height: 90vh;
+  object-fit: contain;
+  display: block;
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  transition: transform 0.1s ease-out;
+  transform-origin: center center;
+}
+.viewer-close {
+  position: absolute;
+  top: -40px;
+  right: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.4);
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+.viewer-close:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.4);
+  transform: scale(1.1);
+}
+.viewer-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.5);
+  color: rgba(255, 255, 255, 0.9);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+.viewer-nav:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.4);
+  transform: translateY(-50%) scale(1.1);
+}
+.viewer-prev {
+  left: -60px;
+}
+.viewer-next {
+  right: -60px;
+}
+.viewer-scale-info {
+  position: absolute;
+  bottom: -35px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 12px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 12px;
+  pointer-events: none;
+}
+.viewer-index-info {
+  position: absolute;
+  bottom: -35px;
+  right: 0;
+  padding: 4px 12px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 12px;
+  pointer-events: none;
+}
+
+.img-viewer-enter-active,
+.img-viewer-leave-active {
+  transition: opacity 0.25s ease;
+}
+.img-viewer-enter-active .viewer-content,
+.img-viewer-leave-active .viewer-content {
+  transition: transform 0.25s ease, opacity 0.25s ease;
+}
+.img-viewer-enter-from,
+.img-viewer-leave-to {
+  opacity: 0;
+}
+.img-viewer-enter-from .viewer-content,
+.img-viewer-leave-to .viewer-content {
+  transform: scale(0.9);
+  opacity: 0;
 }
 </style>
 

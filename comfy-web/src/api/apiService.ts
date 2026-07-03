@@ -217,9 +217,11 @@ export interface HistoryRecord {
   type?: string
   message?: string
   model_name?: string
+  model_id?: number
   output_urls: Array<{ url: string; type: string; id?: number }>
   input_asset_ids: number[]
   input_asset_urls: Array<{ url: string; type: string }>
+  payload?: any  // 完整的生成参数，包含所有配置
 }
 
 // 保存一条历史记录到后端数据库

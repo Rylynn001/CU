@@ -6,9 +6,14 @@ const props = defineProps<{
   visible: boolean
   src: string
   assetId?: number
+  showNav?: boolean
 }>()
 
-const emit = defineEmits<{ (e: 'close'): void }>()
+const emit = defineEmits<{
+  close: []
+  prev: []
+  next: []
+}>()
 
 const videoRef = ref<HTMLVideoElement | null>(null)
 const isPlaying = ref(false)
@@ -25,6 +30,15 @@ function onKeydown(e: KeyboardEvent) {
   if (e.code === 'Space') {
     e.preventDefault()
     togglePlay()
+  } else if (e.key === 'ArrowLeft') {
+    e.preventDefault()
+    emit('prev')
+  } else if (e.key === 'ArrowRight') {
+    e.preventDefault()
+    emit('next')
+  } else if (e.key === 'Escape') {
+    e.preventDefault()
+    close()
   }
 }
 
@@ -114,6 +128,16 @@ async function extractEnds() {
     <div v-if="visible" class="vp-overlay" @click.self="close">
       <div class="vp-modal">
         <button class="vp-close" @click="close">×</button>
+        <button v-if="showNav" class="vp-nav vp-nav-prev" @click="emit('prev')" title="上一个 (←)">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <polyline points="15 18 9 12 15 6"/>
+          </svg>
+        </button>
+        <button v-if="showNav" class="vp-nav vp-nav-next" @click="emit('next')" title="下一个 (→)">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <polyline points="9 18 15 12 9 6"/>
+          </svg>
+        </button>
         <video
           ref="videoRef"
           :src="src"
@@ -200,6 +224,35 @@ async function extractEnds() {
 }
 .vp-close:hover {
   background: rgba(220, 50, 50, 0.7);
+}
+
+.vp-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 10;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+.vp-nav:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.4);
+  transform: translateY(-50%) scale(1.1);
+}
+.vp-nav-prev {
+  left: 20px;
+}
+.vp-nav-next {
+  right: 20px;
 }
 
 .vp-video {

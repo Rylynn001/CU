@@ -104,10 +104,13 @@ export function useInputMedia(
     for (const asset of newAssets) {
       selectedAssetIds.value.push(asset.id)
       const isVideo = asset.asset_type === 'video'
-      const filename = asset.location.replace(/\\/g, '/').split('/').pop()!
+      // 如果 location 是完整 URL（包含 /api/），直接使用；否则构造 /api/view URL
+      const previewUrl = asset.location.includes('/api/')
+        ? asset.location
+        : `/api/view?filename=${encodeURIComponent(asset.location.replace(/\\/g, '/').split('/').pop()!)}&type=output`
       selectedAssetPreviews.value.push({
         id: asset.id,
-        url: `/api/view?filename=${encodeURIComponent(filename)}&type=output`,
+        url: previewUrl,
         type: isVideo ? 'video' : 'image',
       })
     }
