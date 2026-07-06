@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElDialog, ElInput } from 'element-plus'
 import VideoPlayer from '../components/VideoPlayer.vue'
 import AssetGrid from '../components/AssetGrid.vue'
+import ConfirmDialog from '../components/ConfirmDialog.vue'
 import { favoriteAsset } from '../api/apiService'
 
 interface Asset {
@@ -303,23 +304,59 @@ async function confirmCreateProject() {
   }
 }
 
-// ── 删除项目 ──────────────────────────────────────────────────────────────
+// ── 删除项目 / 分类 ───────────────────────────────────────────────────────
+// 确认弹窗状态
+const showDeleteConfirm = ref(false)
+const deleteConfirmLoading = ref(false)
+const deleteTarget = ref<{ type: 'project' | 'category'; data: Project | Category } | null>(null)
+
+function confirmDeleteProject(p: Project) {
+  deleteTarget.value = { type: 'project', data: p }
+  showDeleteConfirm.value = true
+}
+
+function confirmDeleteCategory(cat: Category) {
+  deleteTarget.value = { type: 'category', data: cat }
+  showDeleteConfirm.value = true
+}
+
+async function handleDeleteConfirm() {
+  if (!deleteTarget.value) return
+  deleteConfirmLoading.value = true
+
+  try {
+    if (deleteTarget.value.type === 'project') {
+      await deleteProject(deleteTarget.value.data as Project)
+    } else {
+      await deleteCategory(deleteTarget.value.data as Category)
+    }
+    showDeleteConfirm.value = false
+  } catch (e) {
+    // 错误已在 deleteProject/deleteCategory 中处理
+  } finally {
+    deleteConfirmLoading.value = false
+    deleteTarget.value = null
+  }
+}
+
+function handleDeleteCancel() {
+  showDeleteConfirm.value = false
+  deleteTarget.value = null
+  deleteConfirmLoading.value = false
+}
+
 async function deleteProject(p: Project) {
   const user = getUser()
   if (!user) return
-  try {
-    const res = await fetch(`/api/api-proxy/projects/${p.id}`, {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ user_id: user.id }),
-    })
-    if (!res.ok) throw new Error('删除失败')
-    projects.value = projects.value.filter(x => x.id !== p.id)
-    if (selectedProject.value?.id === p.id) { selectedProject.value = null; selectedCategory.value = null }
-    ElMessage.success('已删除')
-  } catch (e: any) {
-    ElMessage.error(e.message || '删除失败')
-  }
+  const res = await fetch(`/api/api-proxy/projects/${p.id}`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id: user.id }),
+  })
+  if (!res.ok) throw new Error('删除失败')
+  projects.value = projects.value.filter(x => x.id !== p.id)
+  if (selectedProject.value?.id === p.id) { selectedProject.value = null; selectedCategory.value = null }
+  ElMessage.success('已删除')
 }
 
 // ── 创建分类 ──────────────────────────────────────────────────────────────
@@ -349,17 +386,13 @@ async function confirmCreateCategory() {
 
 // ── 删除分类 ──────────────────────────────────────────────────────────────
 async function deleteCategory(cat: Category) {
-  try {
-    const res = await fetch(`/api/api-proxy/categories/${cat.id}`, { method: 'DELETE' })
-    if (!res.ok) throw new Error('删除失败')
-    if (selectedProject.value) {
-      selectedProject.value.categories = selectedProject.value.categories.filter(c => c.id !== cat.id)
-    }
-    if (selectedCategory.value?.id === cat.id) { selectedCategory.value = null; categoryAssets.value = [] }
-    ElMessage.success('已删除')
-  } catch (e: any) {
-    ElMessage.error(e.message || '删除失败')
+  const res = await fetch(`/api/api-proxy/categories/${cat.id}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error('删除失败')
+  if (selectedProject.value) {
+    selectedProject.value.categories = selectedProject.value.categories.filter(c => c.id !== cat.id)
   }
+  if (selectedCategory.value?.id === cat.id) { selectedCategory.value = null; categoryAssets.value = [] }
+  ElMessage.success('已删除')
 }
 
 async function removeAssetFromCategory(asset: Asset) {
@@ -538,7 +571,7 @@ onUnmounted(() => {
               </template>
               <template v-else>
                 <span class="project-name" @dblclick.stop="startEdit('project', p.id, p.name)">{{ p.name }}</span>
-                <button class="del-btn" title="删除" @click.stop="deleteProject(p)">
+                <button class="del-btn" title="删除" @click.stop="confirmDeleteProject(p)">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                 </button>
               </template>
@@ -664,7 +697,7 @@ onUnmounted(() => {
                   <template v-else>
                     <span @dblclick.stop="startEdit('category', cat.id, cat.name)">{{ cat.name }}</span>
                     <span class="cat-count">{{ cat.assets.length }}</span>
-                    <span class="cat-del-tab" title="删除" @click.stop="deleteCategory(cat)">✕</span>
+                    <span class="cat-del-tab" title="删除" @click.stop="confirmDeleteCategory(cat)">✕</span>
                   </template>
                 </div>
               </div>
@@ -770,6 +803,21 @@ onUnmounted(() => {
       @close="showVideoPlayer = false"
       @prev="goToPrev"
       @next="goToNext"
+    />
+
+    <!-- 确认删除弹窗 -->
+    <ConfirmDialog
+      :visible="showDeleteConfirm"
+      :title="deleteTarget?.type === 'project' ? '删除项目' : '删除标签'"
+      :message="deleteTarget?.type === 'project'
+        ? `确定要删除项目「${(deleteTarget?.data as Project)?.name || ''}」吗？删除后，该项目下的所有分类也将被删除。`
+        : `确定要删除标签「${(deleteTarget?.data as Category)?.name || ''}」吗？删除后，该标签下的资产关联将被移除。`"
+      confirm-text="删除"
+      cancel-text="取消"
+      type="danger"
+      :confirm-loading="deleteConfirmLoading"
+      @confirm="handleDeleteConfirm"
+      @cancel="handleDeleteCancel"
     />
   </div>
 </template>

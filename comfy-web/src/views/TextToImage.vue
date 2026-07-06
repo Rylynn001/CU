@@ -661,7 +661,7 @@ onMounted(async () => {
     samplers.value = ksInfo.samplers
     schedulers.value = ksInfo.schedulers
     if (modelList.length > 0) form.value.ckpt_name = modelList[0]  // 默认选第一个模型
-    else errorMsg.value = '未找到任何 checkpoint 模型'
+    // else errorMsg.value = '未找到任何 checkpoint 模型'
   } catch {
     errorMsg.value = '无法连接 ComfyUI 后端（默认 127.0.0.1:8188）'
   }
