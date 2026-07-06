@@ -1,25 +1,3 @@
-volumes:
-  nas_output:
-    driver: local
-    driver_opts:
-      type: cifs
-      o: addr=192.168.0.3,guest,uid=1000,gid=1000
-      device: //192.168.0.3/mnt/aistudio/Comfy/output
-
-  nas_input:
-    driver: local
-    driver_opts:
-      type: cifs
-      o: addr=192.168.0.3,guest,uid=1000,gid=1000
-      device: //192.168.0.3/mnt/aistudio/Comfy/input
-
-  nas_voice:
-    driver: local
-    driver_opts:
-      type: cifs
-      o: addr=192.168.0.3,guest,uid=1000,gid=1000
-      device: //192.168.0.3/mnt/aistudio/Comfy/voice
-
 services:
   mysql:
     image: mysql:8.0
@@ -52,9 +30,9 @@ services:
       - ./ComfyUI:/app                          # 挂载源码，git pull 后 restart 即生效
       - ./ComfyUI/models:/app/models            # 覆盖模型目录（大文件单独管理）
       - ./ComfyUI/custom_nodes:/app/custom_nodes
-      - nas_output:/app/output
-      - nas_input:/app/input
-      - nas_voice:/app/voice
+      - /mnt/aistudio/Comfy/output:/app/output
+      - /mnt/aistudio/Comfy/input:/app/input
+      - /mnt/aistudio/Comfy/voice:/app/voice
       - /etc/localtime:/etc/localtime:ro
     ports:
       - "8188:8188"
