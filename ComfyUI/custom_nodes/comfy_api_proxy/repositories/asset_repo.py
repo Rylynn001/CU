@@ -148,7 +148,7 @@ def get_user_projects(user_id: int) -> list[dict]:
             cat_ids = [c['id'] for c in categories]
             ph2 = ','.join(['%s'] * len(cat_ids))
             cursor.execute(
-                f'SELECT category_id, assets_id FROM assets_category WHERE category_id IN ({ph2})',
+                f'SELECT category_id, assets_id FROM category_assets WHERE category_id IN ({ph2})',
                 cat_ids
             )
             for row in cursor.fetchall():
@@ -226,7 +226,7 @@ def add_asset_to_category(category_id: int, asset_id: int) -> None:
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            'INSERT IGNORE INTO assets_category (assets_id, category_id) VALUES (%s, %s)',
+            'INSERT IGNORE INTO category_assets (assets_id, category_id) VALUES (%s, %s)',
             (asset_id, category_id)
         )
         conn.commit()
@@ -236,7 +236,7 @@ def remove_asset_from_category(category_id: int, asset_id: int) -> bool:
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            'DELETE FROM assets_category WHERE category_id = %s AND assets_id = %s',
+            'DELETE FROM category_assets WHERE category_id = %s AND assets_id = %s',
             (category_id, asset_id)
         )
         conn.commit()

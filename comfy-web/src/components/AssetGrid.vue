@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import FavoriteHeart from './FavoriteHeart.vue'
+import ProjectManager from './ProjectManager.vue'
+import { ref } from 'vue'
 
 interface Asset {
   id: number
@@ -19,6 +21,19 @@ const emit = defineEmits<{
   download: [asset: Asset]
   setFavorite: [asset: Asset, tag: 0 | 1 | 2 | 3 | 4]
 }>()
+
+const showProjectManager = ref(false)
+const currentAssetId = ref<number | undefined>(undefined)
+
+function openAddToProjectDialog(asset: Asset) {
+  currentAssetId.value = asset.id
+  showProjectManager.value = true
+}
+
+function handleProjectManagerClose() {
+  showProjectManager.value = false
+  currentAssetId.value = undefined
+}
 
 function getMediaUrl(location: string) {
   return `/api/api-proxy/output/${location.split(/[/\\]/).pop()}`
@@ -67,11 +82,26 @@ function isVideo(asset: Asset): boolean {
       <button class="download-btn" @click.stop="emit('download', asset)" title="下载">
         <span>⬇</span>
       </button>
-      <span class="fav-slot">
-        <FavoriteHeart :tag="asset.tag || 0" @change="(t) => emit('setFavorite', asset, t)" />
-      </span>
+      <div class="action-buttons">
+        <button class="action-btn folder-btn" @click.stop="openAddToProjectDialog(asset)" title="添加到项目">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+          </svg>
+        </button>
+        <span class="fav-slot">
+          <FavoriteHeart :tag="asset.tag || 0" @change="(t) => emit('setFavorite', asset, t)" />
+        </span>
+      </div>
     </div>
   </div>
+
+  <!-- 项目管理器 -->
+  <ProjectManager
+    :visible="showProjectManager"
+    :asset-id="currentAssetId"
+    mode="add"
+    @close="handleProjectManagerClose"
+  />
 </template>
 
 <style scoped>
@@ -212,14 +242,52 @@ function isVideo(asset: Asset): boolean {
 }
 .gallery-item:hover .download-btn { opacity: 1; }
 .download-btn:hover { background: rgba(108,99,255,0.9); transform: scale(1.1); }
-.fav-slot {
+
+.action-buttons {
   position: absolute;
-  top: 10px; right: 10px;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
   opacity: 0;
   transition: opacity 0.2s;
+  z-index: 2;
 }
-.gallery-item:hover .fav-slot,
-.fav-slot:has(.favorited) { opacity: 1; }
+
+.gallery-item:hover .action-buttons { opacity: 1; }
+
+.action-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.6);
+  border: 1px solid rgba(255,255,255,0.2);
+  color: rgba(255,255,255,0.85);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  backdrop-filter: blur(4px);
+}
+
+.action-btn:hover {
+  background: rgba(108,99,255,0.9);
+  border-color: rgba(108,99,255,0.8);
+  transform: scale(1.1);
+}
+
+.fav-slot {
+  position: relative;
+  top: 0;
+  left: 0;
+  opacity: 1;
+  transition: opacity 0.2s;
+  pointer-events: auto;
+}
+
+.action-buttons:has(.favorited) { opacity: 1; }
 
 @keyframes breathe {
   0%, 100% { opacity: 1; transform: scale(1); }

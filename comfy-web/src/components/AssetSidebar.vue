@@ -4,6 +4,7 @@ import { ElMessage, ElDialog, ElInput } from 'element-plus'
 import { favoriteAsset, fetchHistoryByAsset } from '../api/apiService'
 import FavoriteHeart from './FavoriteHeart.vue'
 import VideoPlayer from './VideoPlayer.vue'
+import ProjectManager from './ProjectManager.vue'
 
 interface Asset {
   id: number
@@ -52,6 +53,20 @@ const activeView = ref<'assets' | 'project'>('assets')
 function getUser() {
   const s = localStorage.getItem('user')
   return s ? JSON.parse(s) : null
+}
+
+// ── 添加到项目弹窗 ────────────────────────────────────────────────────────
+const showProjectManager = ref(false)
+const currentAssetIdForProject = ref<number | undefined>(undefined)
+
+function openAddToProjectDialog(asset: Asset) {
+  currentAssetIdForProject.value = asset.id
+  showProjectManager.value = true
+}
+
+function handleProjectManagerClose() {
+  showProjectManager.value = false
+  currentAssetIdForProject.value = undefined
 }
 
 // ── 我的资产 ──────────────────────────────────────────────────────────────
@@ -271,6 +286,22 @@ async function deleteCategory(cat: Category) {
     if (selectedCategory.value?.id === cat.id) { selectedCategory.value = null; categoryAssets.value = [] }
   } catch {
     ElMessage.error('删除失败')
+  }
+}
+
+async function removeAssetFromCategory(asset: Asset) {
+  if (!selectedCategory.value) return
+  try {
+    const res = await fetch(`/api/api-proxy/categories/${selectedCategory.value.id}/assets/${asset.id}`, {
+      method: 'DELETE',
+    })
+    if (!res.ok) throw new Error()
+    // 从当前分类的资产列表中移除
+    selectedCategory.value.assets = selectedCategory.value.assets.filter(id => id !== asset.id)
+    categoryAssets.value = categoryAssets.value.filter(a => a.id !== asset.id)
+    ElMessage.success('已移除')
+  } catch {
+    ElMessage.error('移除失败')
   }
 }
 
@@ -566,9 +597,16 @@ onUnmounted(() => {
           <video v-if="isVideo(asset)" :src="getThumb(asset)" class="thumb-media" preload="metadata" />
           <img v-else :src="getThumb(asset)" class="thumb-media" loading="lazy" />
           <div v-if="isVideo(asset)" class="thumb-play">▶</div>
-          <span class="thumb-fav-slot" @click.stop>
-            <FavoriteHeart :tag="asset.tag || 0" :size="11" @change="(t) => setFavorite(asset, t)" />
-          </span>
+          <div class="thumb-action-buttons">
+            <button class="thumb-action-btn" @click.stop="openAddToProjectDialog(asset)" title="添加到项目">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+              </svg>
+            </button>
+            <span class="thumb-fav-slot" @click.stop>
+              <FavoriteHeart :tag="asset.tag || 0" :size="11" @change="(t) => setFavorite(asset, t)" />
+            </span>
+          </div>
         </div>
       </div>
 
@@ -671,6 +709,17 @@ onUnmounted(() => {
             <video v-if="isVideo(asset)" :src="getThumb(asset)" class="thumb-media" preload="metadata" />
             <img v-else :src="getThumb(asset)" class="thumb-media" loading="lazy" />
             <div v-if="isVideo(asset)" class="thumb-play">▶</div>
+            <div class="thumb-action-buttons">
+              <button class="thumb-action-btn" @click.stop="openAddToProjectDialog(asset)" title="添加到项目">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                </svg>
+              </button>
+              <span class="thumb-fav-slot" @click.stop>
+                <FavoriteHeart :tag="asset.tag || 0" :size="11" @change="(t) => setFavorite(asset, t)" />
+              </span>
+            </div>
+            <button class="thumb-remove-btn" @click.stop="removeAssetFromCategory(asset)" title="移除">✕</button>
           </div>
         </div>
       </template>
@@ -870,6 +919,14 @@ onUnmounted(() => {
         </div>
       </Transition>
     </Teleport>
+
+    <!-- 项目管理器 -->
+    <ProjectManager
+      :visible="showProjectManager"
+      :asset-id="currentAssetIdForProject"
+      mode="add"
+      @close="handleProjectManagerClose"
+    />
   </div>
 </template>
 
@@ -1002,19 +1059,49 @@ onUnmounted(() => {
   border-color: rgba(108,99,255,0.5);
   transform: scale(1.03);
 }
-.thumb-item:hover .thumb-fav-slot,
-.thumb-fav-slot:has(.favorited) { opacity: 1; }
+.thumb-item:hover .thumb-action-buttons,
+.thumb-action-buttons:has(.favorited) { opacity: 1; }
 
-.thumb-fav-slot {
+.thumb-action-buttons {
   position: absolute;
   top: 3px;
   right: 3px;
-  z-index: 2;
+  display: flex;
+  gap: 4px;
+  align-items: center;
   opacity: 0;
   transition: opacity 0.2s;
+  z-index: 2;
+}
+
+.thumb-action-btn {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.6);
+  border: 1px solid rgba(255,255,255,0.2);
+  color: rgba(255,255,255,0.85);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  backdrop-filter: blur(4px);
+}
+
+.thumb-action-btn:hover {
+  background: rgba(108,99,255,0.9);
+  border-color: rgba(108,99,255,0.8);
+  transform: scale(1.1);
+}
+
+.thumb-fav-slot {
+  position: relative;
+  top: 0;
+  left: 0;
+  opacity: 1;
+  transition: opacity 0.2s;
   pointer-events: auto;
-  /* 确保不超出父容器边界 */
-  max-width: calc(100% - 6px);
 }
 
 .thumb-media {
@@ -1028,6 +1115,33 @@ onUnmounted(() => {
   font-size: 16px; color: rgba(255,255,255,0.85);
   background: rgba(0,0,0,0.3);
   pointer-events: none;
+}
+
+.thumb-remove-btn {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.6);
+  border: 1px solid rgba(255,255,255,0.2);
+  color: rgba(255,255,255,0.8);
+  font-size: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: all 0.2s;
+  z-index: 3;
+  backdrop-filter: blur(4px);
+}
+.thumb-item:hover .thumb-remove-btn { opacity: 1; }
+.thumb-remove-btn:hover {
+  background: rgba(244,63,94,0.9);
+  border-color: rgba(244,63,94,0.8);
+  transform: scale(1.15);
 }
 
 /* ── 加载更多 ── */

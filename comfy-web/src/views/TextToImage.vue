@@ -16,6 +16,7 @@ import RecordCard from '../components/RecordCard.vue'
 import ImageEditor from '../components/ImageEditor.vue'
 import ModelViewer from '../components/ModelViewer.vue'
 import FavoriteHeart from '../components/FavoriteHeart.vue'
+import ProjectManager from '../components/ProjectManager.vue'
 // 本地 ComfyUI 接口：获取模型列表、采样器信息、提交任务、上传图片
 import { getModels, getKSamplerInfo, submitPrompt, uploadImage, type PromptParams } from '../api/comfyui'
 // WebSocket 连接：实时接收本地 ComfyUI 的生成进度和结果图片
@@ -634,6 +635,20 @@ async function loadMoreHistory() {
   }
 }
 
+// ── 添加到项目 ────────────────────────────────────────────
+const showProjectManager = ref(false)
+const currentAssetId = ref<number | undefined>(undefined)
+
+function openAddToProjectDialog(assetId: number) {
+  currentAssetId.value = assetId
+  showProjectManager.value = true
+}
+
+function handleProjectManagerClose() {
+  showProjectManager.value = false
+  currentAssetId.value = undefined
+}
+
 // ── 初始化 ────────────────────────────────────────────────
 onMounted(async () => {
   // 建立 WebSocket 连接，用于接收本地 ComfyUI 的实时进度
@@ -1145,6 +1160,11 @@ onUnmounted(() => {
                         <button class="download-btn" @click="downloadImage(src)" title="下载">
                           <span>⬇</span>
                         </button>
+                        <button v-if="rec.outputAssetIds?.[i]" class="add-to-project-btn" @click.stop="openAddToProjectDialog(rec.outputAssetIds[i])" title="添加到项目">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                          </svg>
+                        </button>
                         <span v-if="rec.outputAssetIds?.[i]" class="fav-slot" @click.stop>
                           <FavoriteHeart
                             :tag="(rec as any)._favoritedImages?.[i] || 0"
@@ -1219,6 +1239,14 @@ onUnmounted(() => {
 
     <!-- 3D 模型视角截图 -->
     <ModelViewer v-model:visible="showModelViewer" @capture="handleModelCapture" />
+
+    <!-- 项目管理器 -->
+    <ProjectManager
+      :visible="showProjectManager"
+      :asset-id="currentAssetId"
+      mode="add"
+      @close="handleProjectManagerClose"
+    />
   </div>
 </template>
 
@@ -1391,6 +1419,7 @@ onUnmounted(() => {
   display: block; object-fit: contain; cursor: pointer;
 }
 .card-image-wrap:hover .download-btn { opacity: 1; }
+.card-image-wrap:hover .add-to-project-btn { opacity: 1; }
 .card-image-wrap:hover .fav-slot { opacity: 1; }
 
 .fav-slot {
@@ -1400,6 +1429,27 @@ onUnmounted(() => {
   transition: opacity 0.2s;
 }
 .fav-slot:has(.favorited) { opacity: 1; }
+
+.add-to-project-btn {
+  position: absolute;
+  top: 8px; right: 36px;
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.8);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  opacity: 0;
+}
+.add-to-project-btn:hover {
+  background: rgba(108, 99, 255, 0.8);
+  border-color: rgba(167, 139, 250, 0.5);
+  transform: scale(1.1);
+}
 
 /* 进度 */
 .loading-text { font-size: 12px; color: rgba(255,255,255,0.35); }

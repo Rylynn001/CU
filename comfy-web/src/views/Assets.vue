@@ -362,6 +362,22 @@ async function deleteCategory(cat: Category) {
   }
 }
 
+async function removeAssetFromCategory(asset: Asset) {
+  if (!selectedCategory.value) return
+  try {
+    const res = await fetch(`/api/api-proxy/categories/${selectedCategory.value.id}/assets/${asset.id}`, {
+      method: 'DELETE',
+    })
+    if (!res.ok) throw new Error()
+    // 从当前分类的资产列表中移除
+    selectedCategory.value.assets = selectedCategory.value.assets.filter(id => id !== asset.id)
+    categoryAssets.value = categoryAssets.value.filter(a => a.id !== asset.id)
+    ElMessage.success('已移除')
+  } catch {
+    ElMessage.error('移除失败')
+  }
+}
+
 // ── 重命名 ────────────────────────────────────────────────────────────────
 const editingType = ref<'project' | 'category' | null>(null)
 const editingId = ref<number | null>(null)
@@ -667,15 +683,32 @@ onUnmounted(() => {
                 <p class="empty-text">该分类下暂无资产</p>
               </div>
 
-              <AssetGrid
-                v-else
-                :assets="categoryAssets"
-                :loading="false"
-                @preview="(a) => previewImage(a, categoryAssets)"
-                @open-video="(a) => openVideo(a, categoryAssets)"
-                @download="downloadAsset"
-                @set-favorite="setFavorite"
-              />
+              <div v-else class="gallery">
+                <div v-for="asset in categoryAssets" :key="asset.id" class="gallery-item">
+                  <div
+                    v-if="isVideo(asset)"
+                    class="gallery-media video-thumb"
+                    @click="openVideo(asset, categoryAssets)"
+                  >
+                    <video :src="getMediaUrl(asset.location)" class="gallery-media" preload="metadata" />
+                    <div class="video-play-icon">▶</div>
+                  </div>
+                  <img
+                    v-else
+                    :src="getMediaUrl(asset.location)"
+                    class="gallery-media"
+                    @click="previewImage(asset, categoryAssets)"
+                  />
+                  <div class="gallery-info">
+                    <span class="gallery-name">{{ asset.location.split(/[/\\]/).pop() }}</span>
+                    <span v-if="isVideo(asset)" class="gallery-type">视频</span>
+                  </div>
+                  <button class="download-btn" @click.stop="downloadAsset(asset)" title="下载">
+                    <span>⬇</span>
+                  </button>
+                  <button class="remove-asset-btn" @click.stop="removeAssetFromCategory(asset)" title="移除">✕</button>
+                </div>
+              </div>
             </template>
           </template>
         </template>
@@ -1254,6 +1287,121 @@ onUnmounted(() => {
 }
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+/* ── 资产网格 ── */
+.gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 20px;
+}
+.gallery-item {
+  position: relative;
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.08);
+  transition: transform 0.2s, border-color 0.2s;
+}
+.gallery-item:hover {
+  transform: translateY(-4px);
+  border-color: rgba(108,99,255,0.3);
+}
+.gallery-media {
+  width: 100%;
+  height: 260px;
+  object-fit: cover;
+  display: block;
+  cursor: pointer;
+}
+.video-thumb {
+  position: relative;
+  height: 260px;
+  background: #000;
+  cursor: pointer;
+}
+.video-thumb video {
+  height: 260px;
+}
+.video-play-icon {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 32px;
+  color: rgba(255,255,255,0.8);
+  background: rgba(0,0,0,0.25);
+  transition: background 0.2s;
+}
+.video-thumb:hover .video-play-icon {
+  background: rgba(0,0,0,0.4);
+}
+.gallery-info {
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.gallery-name {
+  font-size: 12px;
+  color: rgba(255,255,255,0.4);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 85%;
+}
+.gallery-type {
+  font-size: 11px;
+  color: rgba(167,139,250,0.6);
+  background: rgba(167,139,250,0.1);
+  padding: 2px 7px;
+  border-radius: 10px;
+}
+.download-btn {
+  position: absolute;
+  bottom: 44px;
+  right: 10px;
+  width: 30px; height: 30px;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.5);
+  border: none;
+  color: #fff;
+  font-size: 13px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0;
+  transition: all 0.2s;
+  backdrop-filter: blur(4px);
+}
+.gallery-item:hover .download-btn { opacity: 1; }
+.download-btn:hover { background: rgba(108,99,255,0.9); transform: scale(1.1); }
+
+.remove-asset-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.6);
+  border: 1px solid rgba(255,255,255,0.2);
+  color: rgba(255,255,255,0.8);
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: all 0.2s;
+  z-index: 2;
+  backdrop-filter: blur(4px);
+}
+.gallery-item:hover .remove-asset-btn { opacity: 1; }
+.remove-asset-btn:hover {
+  background: rgba(244,63,94,0.9);
+  border-color: rgba(244,63,94,0.8);
+  transform: scale(1.15);
 }
 
 /* ── 自定义图片查看器 ── */
