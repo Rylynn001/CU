@@ -7,7 +7,8 @@ import { ElInput, ElSelect, ElOption } from 'element-plus'
 import { UploadFilled } from '@element-plus/icons-vue'
 // 璧勪骇閫夋嫨鍣ㄥ脊绐?
 import AssetSidebar from '../components/AssetSidebar.vue'
-// 瑙嗛鎾斁鍣ㄥ脊绐楋紙鐐瑰嚮鍘嗗彶璁板綍涓殑瑙嗛鏃舵墦寮€锛?import VideoPlayer from '../components/VideoPlayer.vue'
+// 视频播放器弹窗
+import VideoPlayer from '../components/VideoPlayer.vue'
 // 鍘嗗彶璁板綍鍗＄墖
 import RecordCard from '../components/RecordCard.vue'
 // 鍥剧墖缂栬緫鍣紙鍥剧敓瑙嗛鏃跺彲浠ユ秱鎶瑰弬鑰冨浘锛?
@@ -920,7 +921,7 @@ onUnmounted(() => {
                         <video :src="rec.videoUrl" class="video-player" preload="metadata" />
                         <div class="video-play-icon">▶</div>
                         <button class="download-btn" @click.stop="downloadVideo(rec.videoUrl)" title="下载">
-                          <span>下载</span>
+                          <span>⬇</span>
                         </button>
                         <button v-if="rec.outputAssetId" class="add-to-project-btn" @click.stop="openAddToProjectDialog(rec.outputAssetId)" title="添加到项目">
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
