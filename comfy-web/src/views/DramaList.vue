@@ -324,4 +324,65 @@ onMounted(load)
   padding: 8px 16px; font-size: 13px; cursor: pointer; transition: background 0.2s;
 }
 .btn-ghost:hover { background: rgba(255,255,255,0.1); }
+
+/* 统一为参数面板的玻璃风格 */
+.project-card {
+  background: linear-gradient(180deg, rgba(25, 29, 39, 0.5), rgba(6, 8, 13, 0.34));
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-soft);
+  backdrop-filter: var(--glass-blur);
+}
+.project-card:hover {
+  border-color: rgba(255,255,255,0.24);
+  background: linear-gradient(180deg, rgba(32, 37, 49, 0.54), rgba(8, 10, 16, 0.4));
+  box-shadow: var(--shadow-lift);
+}
+.card-film-strip {
+  display: none;
+}
+.episode-badge,
+.style-tag,
+.meta-item {
+  color: var(--color-muted);
+}
+.episode-badge svg {
+  color: var(--color-muted);
+}
+.style-tag {
+  background: rgba(255,255,255,0.08);
+  border: 1px solid var(--color-border);
+}
+.card-footer {
+  border-top: 1px solid var(--color-border);
+}
+.btn-primary {
+  background: rgba(255,255,255,0.12);
+  border: 1px solid rgba(255,255,255,0.24);
+  color: var(--color-text);
+  box-shadow: 0 12px 32px rgba(0,0,0,0.24);
+}
+.btn-primary:hover {
+  background: rgba(255,255,255,0.18);
+  border-color: rgba(255,255,255,0.34);
+}
+.empty-card {
+  background: linear-gradient(180deg, rgba(25, 29, 39, 0.42), rgba(6, 8, 13, 0.3));
+  border-color: var(--color-border);
+  backdrop-filter: var(--glass-blur);
+}
+.empty-card:hover {
+  border-color: rgba(255,255,255,0.24);
+  background: rgba(255,255,255,0.08);
+  color: var(--color-text);
+}
+.modal {
+  background: rgba(9, 12, 18, 0.78);
+  border: 1px solid var(--color-border);
+  backdrop-filter: var(--glass-blur);
+  box-shadow: var(--shadow-lift);
+}
+.field-input:focus {
+  border-color: var(--color-border);
+}
 </style>

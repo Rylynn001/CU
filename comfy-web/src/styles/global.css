@@ -6,38 +6,86 @@
   box-sizing: border-box;
 }
 
+:root {
+  color-scheme: dark;
+  --color-bg: #03050a;
+  --color-surface: rgba(18, 22, 31, 0.46);
+  --color-surface-soft: rgba(255, 255, 255, 0.045);
+  --color-border: rgba(255, 255, 255, 0.13);
+  --color-border-strong: rgba(166, 231, 226, 0.34);
+  --color-text: rgba(255, 255, 255, 0.94);
+  --color-muted: rgba(226, 232, 240, 0.54);
+  --color-faint: rgba(226, 232, 240, 0.28);
+  --color-primary: #a6e7e2;
+  --color-primary-strong: #d8fffb;
+  --color-accent: #ffffff;
+  --color-success: #34d399;
+  --color-danger: #fb7185;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --shadow-soft: 0 24px 80px rgba(0, 0, 0, 0.42);
+  --shadow-lift: 0 26px 80px rgba(0, 0, 0, 0.54);
+  --glass-blur: blur(24px) saturate(130%);
+}
+
 html, body {
   width: 100%;
   min-height: 100vh;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
-  background: #080810;
-  color: rgba(255, 255, 255, 0.85);
+  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  background:
+    radial-gradient(circle at 42% 42%, rgba(166, 231, 226, 0.07), transparent 34%),
+    linear-gradient(180deg, #070a10 0%, var(--color-bg) 52%, #010208 100%);
+  color: var(--color-text);
   overflow-x: hidden;
+  -webkit-tap-highlight-color: rgba(166, 231, 226, 0.18);
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  touch-action: manipulation;
 }
 
 #app {
   min-height: 100vh;
 }
 
-/* ── Breathing keyframes ── */
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid rgba(166, 231, 226, 0.72);
+  outline-offset: 2px;
+}
+
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: none;
+}
+
+/* 基础动画 */
 @keyframes breathe {
-  0%, 100% { opacity: 0.5; transform: scale(1); }
-  50%       { opacity: 1;   transform: scale(1.04); }
+  0%, 100% { opacity: 0.74; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.015); }
 }
 
 @keyframes breathe-glow {
-  0%, 100% { box-shadow: 0 0 18px 2px rgba(108, 99, 255, 0.18), 0 4px 32px rgba(0,0,0,0.5); }
-  50%       { box-shadow: 0 0 38px 8px rgba(108, 99, 255, 0.38), 0 4px 48px rgba(0,0,0,0.6); }
+  0%, 100% { box-shadow: 0 18px 60px rgba(0, 0, 0, 0.32); }
+  50% { box-shadow: 0 20px 70px rgba(56, 189, 248, 0.14); }
 }
 
 @keyframes breathe-border {
-  0%, 100% { border-color: rgba(255,255,255,0.07); }
-  50%       { border-color: rgba(108, 99, 255, 0.35); }
+  0%, 100% { border-color: var(--color-border); }
+  50% { border-color: rgba(166, 231, 226, 0.24); }
 }
 
 @keyframes pulse-dot {
-  0%, 100% { opacity: 0.4; transform: scale(0.85); }
-  50%       { opacity: 1;   transform: scale(1.15); }
+  0%, 100% { opacity: 0.65; transform: scale(0.92); }
+  50% { opacity: 1; transform: scale(1.12); }
 }
 
 @keyframes shimmer {
@@ -45,51 +93,63 @@ html, body {
   100% { background-position:  200% center; }
 }
 
-/* ── Element Plus dark overrides ── */
+@keyframes page-enter {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Element Plus 暗色覆盖 */
 .el-form-item__label {
-  color: rgba(255, 255, 255, 0.5) !important;
+  color: var(--color-muted) !important;
   font-size: 12px !important;
-  letter-spacing: 0.5px !important;
+  letter-spacing: 0 !important;
 }
 
 .el-input__wrapper,
 .el-textarea__inner,
 .el-select__wrapper {
-  background: rgba(255, 255, 255, 0.04) !important;
-  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  background: rgba(255, 255, 255, 0.045) !important;
+  border: 1px solid var(--color-border) !important;
   box-shadow: none !important;
-  color: rgba(255, 255, 255, 0.9) !important;
-  border-radius: 10px !important;
+  color: var(--color-text) !important;
+  border-radius: var(--radius-md) !important;
   transition: border-color 0.3s ease, background 0.3s ease !important;
 }
 
 .el-input__wrapper:hover,
+.el-textarea__inner:hover,
 .el-select__wrapper:hover {
-  border-color: rgba(108, 99, 255, 0.4) !important;
-  background: rgba(255, 255, 255, 0.06) !important;
+  border-color: var(--color-border) !important;
+  background: rgba(255, 255, 255, 0.065) !important;
 }
 
 .el-input__wrapper.is-focus,
+.el-input__wrapper:focus-within,
+.el-textarea__inner:focus,
+.el-textarea__inner:focus-visible,
+.el-select__wrapper:focus-within,
 .el-select__wrapper.is-focused {
-  border-color: rgba(108, 99, 255, 0.7) !important;
-  box-shadow: 0 0 0 2px rgba(108, 99, 255, 0.15) !important;
+  border-color: var(--color-border) !important;
+  box-shadow: none !important;
+  outline: none !important;
 }
 
 .el-input__inner,
 .el-textarea__inner {
-  color: rgba(255, 255, 255, 0.9) !important;
+  color: var(--color-text) !important;
 }
 
 .el-input__inner::placeholder,
 .el-textarea__inner::placeholder {
-  color: rgba(255, 255, 255, 0.25) !important;
+  color: var(--color-faint) !important;
 }
 
 .el-select-dropdown {
-  background: rgba(14, 14, 26, 0.97) !important;
-  backdrop-filter: blur(20px) !important;
-  border: 1px solid rgba(255, 255, 255, 0.08) !important;
-  border-radius: 12px !important;
+  background: rgba(9, 12, 18, 0.78) !important;
+  backdrop-filter: var(--glass-blur) !important;
+  border: 1px solid var(--color-border) !important;
+  border-radius: var(--radius-md) !important;
+  box-shadow: var(--shadow-soft) !important;
 }
 
 .el-select-dropdown__item {
@@ -98,12 +158,12 @@ html, body {
 }
 
 .el-select-dropdown__item.is-hovering {
-  background: rgba(108, 99, 255, 0.15) !important;
+  background: rgba(166, 231, 226, 0.12) !important;
   color: rgba(255,255,255,0.95) !important;
 }
 
 .el-select-dropdown__item.is-selected {
-  color: #a78bfa !important;
+  color: var(--color-primary) !important;
 }
 
 .el-slider__runway {
@@ -112,13 +172,13 @@ html, body {
 }
 
 .el-slider__bar {
-  background: linear-gradient(90deg, #6c63ff, #a78bfa) !important;
+  background: linear-gradient(90deg, var(--color-primary), #ffffff) !important;
   border-radius: 4px !important;
 }
 
 .el-slider__button {
-  border-color: #a78bfa !important;
-  background: #1a1a2e !important;
+  border-color: var(--color-primary) !important;
+  background: #0b1018 !important;
   width: 14px !important;
   height: 14px !important;
   transition: transform 0.2s ease, box-shadow 0.2s ease !important;
@@ -126,7 +186,7 @@ html, body {
 
 .el-slider__button:hover {
   transform: scale(1.3) !important;
-  box-shadow: 0 0 8px rgba(167, 139, 250, 0.6) !important;
+  box-shadow: 0 0 12px rgba(166, 231, 226, 0.42) !important;
 }
 
 .el-input-number {
@@ -149,19 +209,20 @@ html, body {
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
-  background: rgba(108, 99, 255, 0.25);
+  background: rgba(166, 231, 226, 0.26);
   border-radius: 2px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(108, 99, 255, 0.45);
+  background: rgba(166, 231, 226, 0.48);
 }
 
-/* ── Element Plus dialog dark overrides ── */
+/* Element Plus 弹窗暗色覆盖 */
 .el-dialog {
-  background: rgba(14, 14, 26, 0.97) !important;
-  border: 1px solid rgba(255, 255, 255, 0.08) !important;
-  border-radius: 16px !important;
-  backdrop-filter: blur(20px) !important;
+  background: rgba(9, 12, 18, 0.76) !important;
+  border: 1px solid var(--color-border) !important;
+  border-radius: var(--radius-lg) !important;
+  backdrop-filter: var(--glass-blur) !important;
+  box-shadow: var(--shadow-lift) !important;
 }
 
 .el-dialog__header {
@@ -170,9 +231,9 @@ html, body {
 }
 
 .el-dialog__title {
-  color: rgba(255, 255, 255, 0.85) !important;
+  color: var(--color-text) !important;
   font-size: 14px !important;
-  letter-spacing: 1px !important;
+  letter-spacing: 0 !important;
 }
 
 .el-dialog__headerbtn .el-dialog__close {
@@ -194,5 +255,17 @@ html, body {
 }
 
 .el-overlay {
-  background: rgba(0, 0, 0, 0.7) !important;
+  background: rgba(0, 0, 0, 0.64) !important;
+  backdrop-filter: blur(4px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.001ms !important;
+  }
 }

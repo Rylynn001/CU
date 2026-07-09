@@ -5,16 +5,17 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "type-check": "vue-tsc --noEmit",
+    "check": "npm run type-check && npm run build",
     "build": "vite build",
     "preview": "vite preview"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.2",
-    "@tsparticles/slim": "^3.9.1",
-    "@tsparticles/vue3": "^3.0.1",
     "@types/three": "^0.184.1",
     "element-plus": "^2.13.7",
     "fabric": "^6.9.1",
+    "postprocessing": "^6.39.2",
     "three": "^0.184.0",
     "vue": "^3.5.32",
     "vue-router": "^4.6.4"

@@ -107,20 +107,24 @@ function formatTime(ts: number): string {
 
 <style scoped>
 .record-card {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(32, 36, 48, 0.42), rgba(7, 9, 15, 0.28));
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
   overflow: hidden;
-  transition: border-color 0.2s;
+  transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
+  backdrop-filter: blur(18px);
+  box-shadow: 0 12px 38px rgba(0, 0, 0, 0.2);
 }
 .record-card:hover {
-  border-color: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.24);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-soft);
 }
 .record-card.generating {
-  border-color: rgba(108, 99, 255, 0.2);
+  border-color: rgba(166, 231, 226, 0.3);
 }
 .record-card.error {
-  border-color: rgba(248, 113, 113, 0.2);
+  border-color: rgba(248, 113, 113, 0.28);
 }
 
 .card-body {
@@ -135,8 +139,8 @@ function formatTime(ts: number): string {
   flex-direction: column;
   justify-content: flex-start;
   padding: 12px;
-  border-right: 1px solid rgba(255, 255, 255, 0.05);
-  background: rgba(0, 0, 0, 0.1);
+  border-right: 1px solid var(--color-border);
+  background: rgba(0, 0, 0, 0.14);
 }
 
 /* 右侧主内容 */
@@ -166,16 +170,16 @@ function formatTime(ts: number): string {
 }
 .card-time {
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.3);
-  letter-spacing: 0.5px;
+  color: var(--color-faint);
+  letter-spacing: 0;
 }
 .card-model {
   font-size: 11px;
-  color: rgba(167, 139, 250, 0.7);
-  background: rgba(108, 99, 255, 0.1);
+  color: var(--color-muted);
+  background: rgba(255, 255, 255, 0.06);
   padding: 2px 8px;
   border-radius: 6px;
-  border: 1px solid rgba(108, 99, 255, 0.15);
+  border: 1px solid var(--color-border);
   max-width: 200px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -186,40 +190,41 @@ function formatTime(ts: number): string {
   align-items: center;
   gap: 4px;
   padding: 3px 10px;
-  border-radius: 6px;
-  background: rgba(108, 99, 255, 0.12);
-  border: 1px solid rgba(108, 99, 255, 0.25);
-  color: rgba(167, 139, 250, 0.85);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--color-border);
+  color: var(--color-muted);
   font-size: 11px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: background 0.2s, border-color 0.2s, color 0.2s, transform 0.2s;
   flex-shrink: 0;
 }
 .card-edit-btn:hover {
-  background: rgba(108, 99, 255, 0.28);
-  border-color: rgba(108, 99, 255, 0.5);
-  color: #a78bfa;
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.24);
+  color: var(--color-text);
+  transform: translateY(-1px);
 }
 .card-delete-btn {
   width: 24px;
   height: 24px;
   border-radius: 50%;
   background: none;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.3);
+  border: 1px solid var(--color-border);
+  color: var(--color-faint);
   font-size: 16px;
   line-height: 1;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.2s;
+  transition: background 0.2s, border-color 0.2s, color 0.2s;
   flex-shrink: 0;
 }
 .card-delete-btn:hover {
   background: rgba(248, 113, 113, 0.15);
   border-color: rgba(248, 113, 113, 0.3);
-  color: #f87171;
+  color: var(--color-danger);
 }
 
 /* 生成中 */
@@ -233,13 +238,13 @@ function formatTime(ts: number): string {
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  border: 2px solid rgba(108, 99, 255, 0.5);
+  border: 2px solid rgba(166, 231, 226, 0.5);
   flex-shrink: 0;
   animation: breathe-ring 2s ease-in-out infinite;
 }
 @keyframes breathe-ring {
-  0%, 100% { border-color: rgba(108, 99, 255, 0.5); transform: scale(1); }
-  50% { border-color: rgba(167, 139, 250, 0.8); transform: scale(1.08); }
+  0%, 100% { border-color: rgba(166, 231, 226, 0.42); transform: scale(1); }
+  50% { border-color: rgba(255, 255, 255, 0.72); transform: scale(1.08); }
 }
 .generating-content {
   flex: 1;
@@ -247,23 +252,23 @@ function formatTime(ts: number): string {
 }
 .loading-text {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.35);
-  letter-spacing: 1px;
+  color: var(--color-muted);
+  letter-spacing: 0;
 }
 .prioritize-btn {
   padding: 4px 12px;
-  border-radius: 6px;
-  background: rgba(108, 99, 255, 0.15);
-  border: 1px solid rgba(108, 99, 255, 0.3);
-  color: rgba(167, 139, 250, 0.9);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: var(--color-primary);
   font-size: 11px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: background 0.2s, border-color 0.2s, color 0.2s;
   flex-shrink: 0;
 }
 .prioritize-btn:hover {
-  background: rgba(108, 99, 255, 0.3);
-  border-color: rgba(108, 99, 255, 0.5);
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.28);
 }
 
 /* 错误 */
@@ -273,24 +278,24 @@ function formatTime(ts: number): string {
   gap: 12px;
   padding: 8px 12px;
   background: rgba(248, 113, 113, 0.06);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   border: 1px solid rgba(248, 113, 113, 0.12);
 }
 .error-text {
   flex: 1;
   font-size: 12px;
-  color: #f87171;
+  color: var(--color-danger);
   word-break: break-all;
 }
 .retry-btn {
   padding: 4px 12px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: rgba(248, 113, 113, 0.1);
   border: 1px solid rgba(248, 113, 113, 0.25);
-  color: #f87171;
+  color: var(--color-danger);
   font-size: 11px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: background 0.2s;
   flex-shrink: 0;
 }
 .retry-btn:hover {

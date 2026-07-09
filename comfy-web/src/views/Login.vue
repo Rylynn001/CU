@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElInput, ElMessage } from 'element-plus'
 import { User, Lock } from '@element-plus/icons-vue'
+import LiquidButton from '../components/LiquidButton.vue'
 
 const router = useRouter()
 
@@ -65,7 +66,7 @@ function handleKeydown(e: KeyboardEvent) {
 
     <div class="login-card">
       <div class="card-header">
-        <h2 class="title">泰然若晴</h2>
+        <h2 class="title">灵枢AI</h2>
         <p class="subtitle">AI Creative Studio</p>
       </div>
 
@@ -94,15 +95,13 @@ function handleKeydown(e: KeyboardEvent) {
           />
         </div>
 
-        <button
+        <LiquidButton
           class="login-btn"
-          :class="{ loading }"
-          :disabled="loading"
+          :loading="loading"
           @click="handleLogin"
         >
-          <span class="btn-glow" />
-          <span class="btn-label">{{ loading ? '登录中...' : '登录' }}</span>
-        </button>
+          {{ loading ? '登录中...' : '登录' }}
+        </LiquidButton>
       </div>
     </div>
   </div>
@@ -194,62 +193,30 @@ function handleKeydown(e: KeyboardEvent) {
   letter-spacing: 0.5px;
 }
 
+:deep(.el-input),
+:deep(.el-input__wrapper),
+:deep(.el-input__inner) {
+  background: transparent !important;
+}
+
+:deep(.el-input__wrapper:hover),
+:deep(.el-input__wrapper.is-focus) {
+  background: transparent !important;
+}
+
+:deep(.el-input__inner:-webkit-autofill),
+:deep(.el-input__inner:-webkit-autofill:hover),
+:deep(.el-input__inner:-webkit-autofill:focus) {
+  -webkit-text-fill-color: rgba(255, 255, 255, 0.92) !important;
+  caret-color: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 0 0 1000px transparent inset !important;
+  transition: background-color 9999s ease-out;
+}
+
 .login-btn {
-  position: relative;
   width: 100%;
-  height: 46px;
   margin-top: 12px;
-  border-radius: 12px;
-  border: none;
-  cursor: pointer;
-  overflow: hidden;
-  background: linear-gradient(135deg, #6c63ff, #a78bfa, #6c63ff);
-  background-size: 200% auto;
-  color: #fff;
-  font-size: 14px;
-  font-weight: 600;
   letter-spacing: 2px;
-  transition: opacity 0.2s, transform 0.15s;
-  animation: shimmer 3s linear infinite;
-}
-.login-btn:hover:not(:disabled) {
-  transform: translateY(-1px);
-  opacity: 0.9;
-}
-.login-btn:active:not(:disabled) {
-  transform: translateY(0);
-}
-.login-btn:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-  animation: none;
-}
-.login-btn.loading {
-  animation: breathe 2s ease-in-out infinite;
-}
-
-.btn-glow {
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: inherit;
-  filter: blur(12px);
-  opacity: 0;
-  transition: opacity 0.3s;
-  z-index: -1;
-}
-.login-btn:not(:disabled):hover .btn-glow {
-  opacity: 0.5;
-}
-.btn-label {
-  position: relative;
-  z-index: 1;
-}
-
-@keyframes shimmer {
-  0% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
 }
 
 @keyframes breathe {

@@ -14,18 +14,20 @@ defineProps<{ title?: string }>()
 
 <style scoped>
 .glass-card {
-  backdrop-filter: blur(24px) saturate(140%);
-  -webkit-backdrop-filter: blur(24px) saturate(140%);
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 20px;
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  background: linear-gradient(180deg, rgba(32, 36, 48, 0.42), rgba(7, 9, 15, 0.28));
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
   padding: 28px 32px;
-  animation: breathe-glow 4s ease-in-out infinite, breathe-border 4s ease-in-out infinite;
-  transition: background 0.3s ease;
+  box-shadow: var(--shadow-soft);
+  transition: background 0.3s ease, border-color 0.3s ease, transform 0.3s ease;
 }
 
 .glass-card:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: linear-gradient(180deg, rgba(46, 50, 64, 0.5), rgba(9, 11, 18, 0.34));
+  border-color: rgba(255, 255, 255, 0.24);
+  transform: translateY(-2px);
 }
 
 .glass-card-header {
@@ -39,7 +41,7 @@ defineProps<{ title?: string }>()
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #a78bfa;
+  background: var(--color-primary);
   animation: pulse-dot 2.5s ease-in-out infinite;
   flex-shrink: 0;
 }
@@ -48,8 +50,8 @@ defineProps<{ title?: string }>()
   margin: 0;
   font-size: 11px;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.35);
-  letter-spacing: 3px;
+  color: var(--color-faint);
+  letter-spacing: 0;
   text-transform: uppercase;
 }
 </style>

@@ -1580,4 +1580,93 @@ onUnmounted(() => {
   width: 90px;
   padding: 1px 6px;
 }
+
+/* 统一为参数面板风格 */
+.icon-btn:hover,
+.project-item.active,
+.project-card:hover,
+.filter-btn:hover,
+.filter-btn.active,
+.cat-tab:hover,
+.cat-tab.active,
+.refresh-btn,
+.load-more-btn,
+.dialog-btn.confirm,
+.gallery-item:hover {
+  border-color: rgba(255,255,255,0.24);
+}
+
+.icon-btn:hover,
+.project-item.active,
+.filter-btn.active,
+.cat-tab.active,
+.refresh-btn,
+.load-more-btn,
+.dialog-btn.confirm {
+  background: rgba(255,255,255,0.1);
+  color: var(--color-text);
+}
+
+.project-card:hover,
+.refresh-btn:hover:not(:disabled),
+.load-more-btn:hover:not(:disabled),
+.dialog-btn.confirm:hover:not(:disabled) {
+  background: rgba(255,255,255,0.12);
+}
+
+.filter-btn,
+.cat-tab,
+.refresh-btn,
+.load-more-btn {
+  border-color: var(--color-border);
+}
+
+.filter-btn:hover,
+.cat-tab:hover {
+  color: var(--color-muted);
+}
+
+.project-card-icon,
+.empty-orb {
+  background: rgba(255,255,255,0.06);
+  border-color: var(--color-border);
+  color: var(--color-muted);
+}
+
+.bc-link,
+.gallery-type,
+.cat-tab.active .cat-count {
+  color: var(--color-muted);
+}
+.bc-link:hover {
+  color: var(--color-text);
+}
+
+.cat-tab.active .cat-count,
+.gallery-type {
+  background: rgba(255,255,255,0.08);
+}
+
+.ring {
+  border-color: rgba(255,255,255,0.24);
+}
+.r2,
+.r3 {
+  border-color: rgba(255,255,255,0.18);
+}
+.center-dot {
+  background: rgba(255,255,255,0.72);
+}
+
+.gallery-item:hover {
+  transform: translateY(-4px);
+}
+.download-btn:hover {
+  background: rgba(255,255,255,0.18);
+}
+
+.inline-input {
+  background: rgba(255,255,255,0.07);
+  border-color: rgba(255,255,255,0.22);
+}
 </style>

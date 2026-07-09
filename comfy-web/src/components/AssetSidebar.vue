@@ -987,9 +987,11 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   height: 100%;
-  border-left: 1px solid rgba(255,255,255,0.06);
-  background: rgba(255,255,255,0.015);
-  backdrop-filter: blur(16px);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(180deg, rgba(25, 29, 39, 0.5), rgba(6, 8, 13, 0.34));
+  backdrop-filter: var(--glass-blur);
+  box-shadow: var(--shadow-soft);
   overflow: hidden;
 }
 
@@ -1005,7 +1007,11 @@ onUnmounted(() => {
 .sidebar-tabs {
   display: flex;
   flex-shrink: 0;
-  border-bottom: 1px solid rgba(255,255,255,0.06);
+  margin: 14px 12px 0;
+  padding: 3px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: rgba(255,255,255,0.05);
 }
 .stab {
   flex: 1;
@@ -1013,20 +1019,20 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  height: 44px;
+  height: 34px;
   background: none;
   border: none;
-  color: rgba(255,255,255,0.35);
+  border-radius: 9px;
+  color: var(--color-faint);
   font-size: 12px;
   cursor: pointer;
-  transition: all 0.2s;
-  border-bottom: 2px solid transparent;
+  transition: color 0.2s, background 0.2s;
 }
-.stab:hover { color: rgba(255,255,255,0.7); }
+.stab:hover { color: var(--color-muted); }
 .stab.active {
-  color: rgba(255,255,255,0.9);
-  border-bottom-color: rgba(108,99,255,0.8);
-  background: rgba(108,99,255,0.06);
+  color: var(--color-text);
+  background: rgba(255, 255, 255, 0.11);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.24);
 }
 
 /* ── 筛选栏 ── */
@@ -1034,35 +1040,41 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 10px 12px 8px;
+  padding: 12px 12px 8px;
   flex-shrink: 0;
   flex-wrap: wrap;
 }
-.chip-group { display: flex; gap: 4px; }
+.chip-group {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: rgba(255,255,255,0.055);
+}
 .chip {
   display: flex; align-items: center; gap: 4px;
-  padding: 4px 10px;
-  border-radius: 14px;
-  border: 1px solid rgba(255,255,255,0.08);
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: none;
   background: transparent;
-  color: rgba(255,255,255,0.4);
-  font-size: 11px;
+  color: var(--color-faint);
+  font-size: 12px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: color 0.2s, background 0.2s;
 }
-.chip:hover { border-color: rgba(108,99,255,0.35); color: rgba(255,255,255,0.75); }
+.chip:hover { color: var(--color-muted); }
 .chip.active {
-  background: rgba(108,99,255,0.2);
-  border-color: rgba(108,99,255,0.6);
-  color: rgba(255,255,255,0.95);
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--color-text);
 }
 
 .fav-chip-group { display: flex; gap: 3px; }
 .fav-chip {
   width: 22px; height: 22px;
   border-radius: 50%;
-  border: 1px solid rgba(255,255,255,0.08);
-  background: transparent;
+  border: 1px solid var(--color-border);
+  background: rgba(255,255,255,0.045);
   cursor: pointer;
   display: flex; align-items: center; justify-content: center;
   opacity: 0.5;
@@ -1081,7 +1093,7 @@ onUnmounted(() => {
 .thumb-grid {
   flex: 1;
   overflow-y: auto;
-  padding: 8px 10px;
+  padding: 8px 12px;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   grid-auto-rows: 80px;
@@ -1100,13 +1112,13 @@ onUnmounted(() => {
   overflow: hidden;
   cursor: pointer;
   background: rgba(255,255,255,0.04);
-  border: 1px solid rgba(255,255,255,0.07);
+  border: 1px solid var(--color-border);
   transition: border-color 0.2s, transform 0.15s;
   /* 防止子元素溢出 */
   contain: layout;
 }
 .thumb-item:hover {
-  border-color: rgba(108,99,255,0.5);
+  border-color: rgba(255, 255, 255, 0.24);
   transform: scale(1.03);
 }
 .thumb-item:hover .thumb-action-buttons,
@@ -1140,8 +1152,8 @@ onUnmounted(() => {
 }
 
 .thumb-action-btn:hover {
-  background: rgba(108,99,255,0.9);
-  border-color: rgba(108,99,255,0.8);
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.34);
   transform: scale(1.1);
 }
 
@@ -1203,15 +1215,19 @@ onUnmounted(() => {
 }
 .load-more-btn {
   padding: 6px 20px;
-  border-radius: 8px;
-  border: 1px solid rgba(108,99,255,0.3);
-  background: rgba(108,99,255,0.08);
-  color: rgba(255,255,255,0.6);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: rgba(255,255,255,0.055);
+  color: var(--color-muted);
   font-size: 12px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: background 0.2s, border-color 0.2s, color 0.2s;
 }
-.load-more-btn:hover:not(:disabled) { background: rgba(108,99,255,0.2); color: #fff; }
+.load-more-btn:hover:not(:disabled) {
+  background: rgba(255,255,255,0.1);
+  border-color: rgba(255,255,255,0.24);
+  color: var(--color-text);
+}
 .load-more-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 /* ── 项目列表 ── */
@@ -1253,7 +1269,11 @@ onUnmounted(() => {
   flex-shrink: 0;
   transition: all 0.2s;
 }
-.icon-btn:hover { background: rgba(108,99,255,0.2); border-color: rgba(108,99,255,0.5); color: rgba(255,255,255,0.9); }
+.icon-btn:hover {
+  background: rgba(255,255,255,0.1);
+  border-color: rgba(255,255,255,0.24);
+  color: var(--color-text);
+}
 
 .proj-list {
   flex: 1;
@@ -1277,15 +1297,15 @@ onUnmounted(() => {
   border: 1px solid transparent;
 }
 .proj-item:hover {
-  background: rgba(108,99,255,0.08);
-  border-color: rgba(108,99,255,0.2);
+  background: rgba(255,255,255,0.06);
+  border-color: rgba(255,255,255,0.16);
 }
 .proj-item-icon {
   width: 32px; height: 32px;
   border-radius: 8px;
-  background: rgba(108,99,255,0.12);
+  background: rgba(255,255,255,0.06);
   display: flex; align-items: center; justify-content: center;
-  color: rgba(167,139,250,0.7);
+  color: var(--color-muted);
   flex-shrink: 0;
 }
 .proj-item-info {
@@ -1336,18 +1356,21 @@ onUnmounted(() => {
   gap: 4px;
   padding: 4px 10px;
   border-radius: 14px;
-  border: 1px solid rgba(255,255,255,0.08);
-  background: transparent;
-  color: rgba(255,255,255,0.45);
+  border: 1px solid var(--color-border);
+  background: rgba(255,255,255,0.045);
+  color: var(--color-faint);
   font-size: 11px;
   cursor: pointer;
   transition: all 0.2s;
 }
-.cat-chip:hover { border-color: rgba(167,139,250,0.4); color: rgba(255,255,255,0.8); }
+.cat-chip:hover {
+  border-color: rgba(255,255,255,0.22);
+  color: var(--color-muted);
+}
 .cat-chip.active {
-  background: rgba(167,139,250,0.18);
-  border-color: rgba(167,139,250,0.55);
-  color: rgba(255,255,255,0.95);
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255,255,255,0.24);
+  color: var(--color-text);
 }
 .cat-count {
   font-size: 10px;
@@ -1356,7 +1379,10 @@ onUnmounted(() => {
   border-radius: 8px;
   color: rgba(255,255,255,0.35);
 }
-.cat-chip.active .cat-count { background: rgba(167,139,250,0.2); color: rgba(167,139,250,0.9); }
+.cat-chip.active .cat-count {
+  background: rgba(255,255,255,0.12);
+  color: var(--color-text);
+}
 .cat-del {
   font-size: 10px;
   color: rgba(255,255,255,0.2);
@@ -1385,15 +1411,15 @@ onUnmounted(() => {
 .mini-spin {
   width: 24px; height: 24px;
   border-radius: 50%;
-  border: 2px solid rgba(108,99,255,0.3);
-  border-top-color: rgba(108,99,255,0.9);
+  border: 2px solid rgba(255,255,255,0.14);
+  border-top-color: var(--color-primary);
   animation: spin 0.8s linear infinite;
 }
 
 /* ── 内联编辑 ── */
 .inline-input {
-  background: rgba(108,99,255,0.15);
-  border: 1px solid rgba(108,99,255,0.5);
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.22);
   border-radius: 5px;
   color: rgba(255,255,255,0.9);
   font-size: 12px;
@@ -1419,11 +1445,11 @@ onUnmounted(() => {
 }
 .dlg-btn.cancel:hover { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.8); }
 .dlg-btn.confirm {
-  background: rgba(108,99,255,0.3);
-  border-color: rgba(108,99,255,0.6);
+  background: rgba(255,255,255,0.12);
+  border-color: rgba(255,255,255,0.24);
   color: rgba(255,255,255,0.95);
 }
-.dlg-btn.confirm:hover:not(:disabled) { background: rgba(108,99,255,0.45); }
+.dlg-btn.confirm:hover:not(:disabled) { background: rgba(255,255,255,0.18); }
 .dlg-btn.confirm:disabled { opacity: 0.5; cursor: not-allowed; }
 
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -1565,10 +1591,10 @@ onUnmounted(() => {
   cursor: pointer;
   transition: background 0.15s;
 }
-.context-menu-item:hover { background: rgba(108,99,255,0.25); }
+.context-menu-item:hover { background: rgba(255,255,255,0.1); }
 .context-menu-item .context-menu-icon {
   font-size: 13px;
-  color: rgba(167,139,250,0.9);
+  color: var(--color-muted);
   font-weight: 400;
   line-height: 1;
 }
@@ -1876,5 +1902,34 @@ onUnmounted(() => {
     opacity: 1;
     transform: scale(1) translateY(0);
   }
+}
+
+/* 统一为参数面板风格 */
+.modal-body::-webkit-scrollbar-thumb,
+.modal-body::-webkit-scrollbar-thumb:hover {
+  background: rgba(255,255,255,0.16);
+}
+
+.section-title,
+.model-tag {
+  color: var(--color-muted);
+}
+
+.model-tag,
+.output-item {
+  background: rgba(255,255,255,0.04);
+  border-color: var(--color-border);
+}
+
+.reuse-btn {
+  background: rgba(255,255,255,0.1);
+  border-color: rgba(255,255,255,0.24);
+}
+.reuse-btn::before {
+  background: rgba(255,255,255,0.08);
+}
+.reuse-btn:hover {
+  border-color: rgba(255,255,255,0.32);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.28);
 }
 </style>

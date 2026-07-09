@@ -1,16 +1,16 @@
 <script setup lang="ts">
-import { useRouter, useRoute } from 'vue-router'
-import { House, Picture, VideoCamera, FolderOpened, SwitchButton, Film } from '@element-plus/icons-vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
+import { Film, FolderOpened, House, Picture, SwitchButton, VideoCamera } from '@element-plus/icons-vue'
 
 const router = useRouter()
 const route = useRoute()
 
 const navItems = [
-  { path: '/',       icon: House,        label: '首页' },
-  { path: '/image',  icon: Picture,      label: '图片生成' },
-  { path: '/video',  icon: VideoCamera,  label: '视频生成' },
-  { path: '/drama',  icon: Film,         label: '导演台' },
+  { path: '/', icon: House, label: '首页' },
+  { path: '/image', icon: Picture, label: '图片生成' },
+  { path: '/video', icon: VideoCamera, label: '视频生成' },
+  { path: '/drama', icon: Film, label: '导演台' },
   { path: '/assets', icon: FolderOpened, label: '我的资产' },
 ]
 
@@ -37,33 +37,31 @@ async function handleLogout() {
 </script>
 
 <template>
-  <nav class="side-nav">
-    <!-- logo -->
-    <div class="nav-logo">
-      <span class="logo-dot" />
-    </div>
+  <nav class="side-nav" aria-label="主导航">
+    <RouterLink class="nav-logo" to="/" aria-label="返回首页">
+      <span class="logo-dot" aria-hidden="true" />
+    </RouterLink>
 
-    <!-- nav items -->
     <ul class="nav-list">
-      <li
-        v-for="item in navItems"
-        :key="item.path"
-        class="nav-item"
-        :class="{ active: isActive(item.path) }"
-        @click="router.push(item.path)"
-      >
-        <span class="active-bar" />
-        <el-icon class="nav-icon"><component :is="item.icon" /></el-icon>
-        <span class="nav-label">{{ item.label }}</span>
+      <li v-for="item in navItems" :key="item.path">
+        <RouterLink
+          :to="item.path"
+          class="nav-item"
+          :class="{ active: isActive(item.path) }"
+          :aria-current="isActive(item.path) ? 'page' : undefined"
+        >
+          <span class="active-bar" aria-hidden="true" />
+          <el-icon class="nav-icon" aria-hidden="true"><component :is="item.icon" /></el-icon>
+          <span class="nav-label">{{ item.label }}</span>
+        </RouterLink>
       </li>
     </ul>
 
-    <!-- logout button -->
     <div class="nav-footer">
-      <div class="nav-item logout-item" @click="handleLogout">
-        <el-icon class="nav-icon"><SwitchButton /></el-icon>
+      <button type="button" class="nav-item logout-item" aria-label="退出登录" @click="handleLogout">
+        <el-icon class="nav-icon" aria-hidden="true"><SwitchButton /></el-icon>
         <span class="nav-label">退出登录</span>
-      </div>
+      </button>
     </div>
   </nav>
 </template>
@@ -74,113 +72,121 @@ async function handleLogout() {
   left: 0;
   top: 0;
   height: 100vh;
-  width: 56px;
-  background: rgba(255, 255, 255, 0.02);
-  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  width: 64px;
+  background: rgba(5, 7, 12, 0.58);
+  border-right: 1px solid var(--color-border);
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 20px 0;
+  padding: 18px 8px;
   z-index: 100;
   overflow: hidden;
-  transition: width 0.25s ease;
-  backdrop-filter: blur(12px);
+  transition: width 0.25s ease, background 0.25s ease, box-shadow 0.25s ease;
+  backdrop-filter: var(--glass-blur);
+  box-shadow: 12px 0 48px rgba(0, 0, 0, 0.22);
 }
 
-.side-nav:hover {
-  width: 180px;
+.side-nav:hover,
+.side-nav:focus-within {
+  width: 190px;
   align-items: flex-start;
+  background: rgba(5, 7, 12, 0.74);
 }
 
-/* logo */
 .nav-logo {
-  width: 56px;
-  height: 40px;
+  width: 48px;
+  height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
   margin-bottom: 16px;
+  border-radius: var(--radius-md);
 }
 
-.side-nav:hover .nav-logo {
-  padding-left: 18px;
+.side-nav:hover .nav-logo,
+.side-nav:focus-within .nav-logo {
+  padding-left: 12px;
   justify-content: flex-start;
 }
 
 .logo-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #a78bfa;
+  width: 18px;
+  height: 18px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.9);
   animation: pulse-dot 2.5s ease-in-out infinite;
   flex-shrink: 0;
+  box-shadow: 0 0 24px rgba(166, 231, 226, 0.24);
 }
 
-/* list */
 .nav-list {
   list-style: none;
   width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
   padding: 0;
   margin: 0;
   flex: 1;
 }
 
-/* footer */
 .nav-footer {
   width: 100%;
   padding-top: 12px;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-top: 1px solid var(--color-border);
   margin-top: auto;
 }
 
-.logout-item {
-  color: rgba(255, 255, 255, 0.35) !important;
-}
-
-.logout-item:hover {
-  color: rgba(248, 113, 113, 0.85) !important;
-  background: rgba(248, 113, 113, 0.08) !important;
-}
-
-/* item */
 .nav-item {
   position: relative;
   display: flex;
   align-items: center;
-  height: 44px;
-  cursor: pointer;
-  padding: 0 16px;
+  height: 42px;
+  width: 100%;
+  padding: 0 12px;
   gap: 12px;
-  color: rgba(255, 255, 255, 0.4);
-  transition: color 0.2s, background 0.2s;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-faint);
+  cursor: pointer;
+  text-decoration: none;
   white-space: nowrap;
-  border-radius: 0;
+  transition: color 0.2s, background 0.2s, transform 0.2s;
 }
 
-.nav-item:hover {
-  color: rgba(255, 255, 255, 0.85);
-  background: rgba(255, 255, 255, 0.04);
+.nav-item:hover,
+.nav-item:focus-visible {
+  color: var(--color-text);
+  background: rgba(255, 255, 255, 0.06);
+  transform: translateX(2px);
 }
 
 .nav-item.active {
-  color: rgba(255, 255, 255, 0.95);
-  background: rgba(108, 99, 255, 0.1);
+  color: var(--color-text);
+  background: rgba(255, 255, 255, 0.1);
 }
 
-/* active left bar */
+.logout-item {
+  color: var(--color-faint);
+}
+
+.logout-item:hover,
+.logout-item:focus-visible {
+  color: var(--color-danger);
+  background: rgba(248, 113, 113, 0.08);
+}
+
 .active-bar {
   position: absolute;
-  left: 0;
+  left: -8px;
   top: 50%;
   transform: translateY(-50%);
   width: 2px;
   height: 20px;
   border-radius: 0 2px 2px 0;
-  background: #a78bfa;
+  background: var(--color-primary);
   opacity: 0;
   transition: opacity 0.2s;
 }
@@ -189,28 +195,27 @@ async function handleLogout() {
   opacity: 1;
 }
 
-/* icon */
 .nav-icon {
-  font-size: 18px;
-  flex-shrink: 0;
   width: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
+  font-size: 18px;
 }
 
-/* label — hidden until nav expands */
 .nav-label {
   font-size: 13px;
   font-weight: 400;
-  letter-spacing: 0.3px;
+  letter-spacing: 0;
   opacity: 0;
   transform: translateX(-6px);
   transition: opacity 0.2s ease, transform 0.2s ease;
   pointer-events: none;
 }
 
-.side-nav:hover .nav-label {
+.side-nav:hover .nav-label,
+.side-nav:focus-within .nav-label {
   opacity: 1;
   transform: translateX(0);
 }

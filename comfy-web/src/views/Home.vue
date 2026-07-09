@@ -1,280 +1,185 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
-import { Picture, VideoCamera, FolderOpened } from '@element-plus/icons-vue'
-
 const router = useRouter()
 
 const features = [
   {
     path: '/image',
-    icon: Picture,
     title: '图片生成',
-    desc: '基于 ComfyUI 的文生图、图生图工作台，支持多模型、多参数精细调控',
-    tag: '已上线',
-    tagActive: true,
+    desc: '基于 ComfyUI 的文生图、图生图工作台，支持多模型、多参数精细调控。',
   },
   {
     path: '/video',
-    icon: VideoCamera,
     title: '视频生成',
-    desc: '输入文字或图片，生成流畅的 AI 视频内容，支持多种风格与时长',
-    tag: '已上线',
-    tagActive: true,
+    desc: '输入文字或图片，生成连贯的 AI 视频内容，支持多种风格与时长。',
   },
   {
     path: '/assets',
-    icon: FolderOpened,
     title: '我的资产',
-    desc: '管理你的图片、视频等生成内容，集中查看与下载所有创作成果',
-    tag: '已上线',
-    tagActive: true,
+    desc: '集中管理图片、视频等生成内容，方便查看、复用与下载创作成果。',
   },
 ]
 </script>
 
 <template>
   <div class="home">
-    <!-- background orbs -->
-    <div class="orb orb-1" />
-    <div class="orb orb-2" />
+    <main class="home-stage">
+      <section class="hero" aria-labelledby="home-title">
+        <div class="hero-kicker">AI 创作中枢</div>
+        <h1 id="home-title" class="hero-title">灵枢AI</h1>
+        <p class="hero-sub">从提示词、参考素材到历史记录，用清晰的工作台承载连续创作流程。</p>
+      </section>
 
-    <!-- hero -->
-    <section class="hero">
-      <div class="hero-badge">AI Creative Studio</div>
-      <h1 class="hero-title">
-        泰然若晴
-        <span class="hero-title-accent">创作平台</span>
-      </h1>
-      <p class="hero-sub">用 AI 释放创意，从图片到视频，一站式生成工作台</p>
-    </section>
-
-    <!-- feature cards -->
-    <section class="cards">
-      <div
-        v-for="f in features"
-        :key="f.path"
-        class="feature-card"
-        :class="{ clickable: f.tagActive }"
-        @click="f.tagActive && router.push(f.path)"
-      >
-        <div class="card-glow" />
-        <div class="card-top">
-          <div class="card-icon">
-            <el-icon><component :is="f.icon" /></el-icon>
-          </div>
-          <span class="card-tag" :class="{ active: f.tagActive }">{{ f.tag }}</span>
-        </div>
-        <h3 class="card-title">{{ f.title }}</h3>
-        <p class="card-desc">{{ f.desc }}</p>
-        <div v-if="f.tagActive" class="card-arrow">
-          <span>进入</span>
-          <span class="arrow">→</span>
-        </div>
-      </div>
-    </section>
+      <section class="cards" aria-label="主要入口">
+        <button
+          v-for="feature in features"
+          :key="feature.path"
+          type="button"
+          class="feature-card"
+          @click="router.push(feature.path)"
+        >
+          <h2 class="card-title">{{ feature.title }}</h2>
+          <p class="card-desc">{{ feature.desc }}</p>
+        </button>
+      </section>
+    </main>
   </div>
 </template>
 
 <style scoped>
 .home {
   min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 60px 48px;
   position: relative;
   overflow: hidden;
-  gap: 56px;
+  padding: 48px clamp(28px, 5vw, 96px);
+  animation: page-enter 0.5s ease both;
 }
 
-/* orbs */
-.orb {
-  position: fixed;
-  border-radius: 50%;
-  filter: blur(90px);
-  pointer-events: none;
-  z-index: 0;
-  animation: breathe 7s ease-in-out infinite;
-}
-.orb-1 {
-  width: 600px; height: 600px;
-  background: radial-gradient(circle, rgba(108,99,255,0.14) 0%, transparent 70%);
-  top: -160px; left: -160px;
-}
-.orb-2 {
-  width: 500px; height: 500px;
-  background: radial-gradient(circle, rgba(167,139,250,0.1) 0%, transparent 70%);
-  bottom: -120px; right: -100px;
-  animation-delay: 3.5s;
+.home-stage {
+  position: relative;
+  z-index: 1;
+  min-height: calc(100vh - 96px);
+  display: grid;
+  grid-template-columns: minmax(360px, 0.95fr) minmax(520px, 1.05fr);
+  align-items: center;
+  gap: clamp(42px, 7vw, 110px);
 }
 
-/* hero */
 .hero {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
   gap: 18px;
-  z-index: 1;
-  text-align: center;
 }
 
-.hero-badge {
-  font-size: 11px;
-  letter-spacing: 3px;
-  text-transform: uppercase;
-  color: rgba(167,139,250,0.7);
-  border: 1px solid rgba(108,99,255,0.25);
-  padding: 5px 18px;
-  border-radius: 20px;
-  animation: breathe-border 4s ease-in-out infinite;
+.hero-kicker {
+  font-size: 12px;
+  color: var(--color-muted);
 }
 
 .hero-title {
-  font-size: clamp(36px, 5vw, 60px);
-  font-weight: 700;
-  color: rgba(255,255,255,0.92);
-  letter-spacing: 4px;
-  line-height: 1.15;
+  max-width: 680px;
+  font-size: clamp(46px, 6vw, 82px);
+  font-weight: 900;
+  color: #fff;
+  letter-spacing: 0;
+  line-height: 1.02;
+  text-wrap: balance;
   margin: 0;
-}
-
-.hero-title-accent {
-  background: linear-gradient(135deg, #6c63ff, #a78bfa, #c4b5fd);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  text-shadow: 0 14px 44px rgba(255, 255, 255, 0.12);
 }
 
 .hero-sub {
-  font-size: 15px;
-  color: rgba(255,255,255,0.35);
-  letter-spacing: 1px;
-  max-width: 480px;
-  line-height: 1.7;
+  max-width: 520px;
   margin: 0;
+  color: var(--color-muted);
+  font-size: 15px;
+  line-height: 1.7;
+  letter-spacing: 0;
 }
 
-/* cards */
 .cards {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
   width: 100%;
-  max-width: 960px;
-  z-index: 1;
+  max-width: 520px;
 }
 
 .feature-card {
   position: relative;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 24px;
   background: rgba(255,255,255,0.03);
-  border: 1px solid rgba(255,255,255,0.07);
-  border-radius: 20px;
-  padding: 28px 26px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.3);
   overflow: hidden;
-  transition: border-color 0.3s, background 0.3s, transform 0.2s;
-  animation: breathe-border 5s ease-in-out infinite;
 }
 
-.feature-card.clickable {
-  cursor: pointer;
-}
-
-.feature-card.clickable:hover {
-  border-color: rgba(108,99,255,0.5);
-  background: rgba(108,99,255,0.06);
-  transform: translateY(-3px);
-}
-
-.feature-card.clickable:hover .card-glow {
-  opacity: 1;
-}
-
-.feature-card.clickable:hover .card-arrow {
-  color: #a78bfa;
-}
-
-.feature-card.clickable:hover .arrow {
-  transform: translateX(4px);
-}
-
-/* inner glow on hover */
-.card-glow {
+.feature-card::before {
+  content: '';
   position: absolute;
   inset: 0;
-  background: radial-gradient(ellipse at top left, rgba(108,99,255,0.1) 0%, transparent 60%);
-  opacity: 0;
-  transition: opacity 0.3s;
   pointer-events: none;
+  background:
+    linear-gradient(135deg, rgba(255,255,255,0.16), transparent 42%),
+    radial-gradient(circle at 82% 12%, rgba(255,255,255,0.14), transparent 30%);
+  opacity: 0.5;
 }
 
-.card-top {
+.feature-card {
+  min-height: 168px;
+  padding: 36px 40px;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
+  justify-content: center;
+  gap: 16px;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.3s, background 0.3s, transform 0.2s, box-shadow 0.2s;
 }
 
-.card-icon {
-  width: 44px; height: 44px;
-  border-radius: 14px;
-  background: rgba(108,99,255,0.12);
-  border: 1px solid rgba(108,99,255,0.2);
-  display: flex; align-items: center; justify-content: center;
-  font-size: 20px;
-  color: #a78bfa;
-}
-
-.card-tag {
-  font-size: 10px;
-  letter-spacing: 1px;
-  padding: 3px 10px;
-  border-radius: 20px;
-  border: 1px solid rgba(255,255,255,0.1);
-  color: rgba(255,255,255,0.3);
-}
-
-.card-tag.active {
-  border-color: rgba(108,99,255,0.35);
-  color: rgba(167,139,250,0.8);
-  background: rgba(108,99,255,0.08);
+.feature-card:hover,
+.feature-card:focus-visible {
+  border-color: rgba(255, 255, 255, 0.24);
+  background: rgba(255,255,255,0.045);
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-soft);
 }
 
 .card-title {
-  font-size: 18px;
-  font-weight: 600;
-  color: rgba(255,255,255,0.88);
-  letter-spacing: 1px;
+  position: relative;
+  z-index: 1;
   margin: 0;
+  color: var(--color-text);
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: 0;
 }
 
 .card-desc {
-  font-size: 13px;
-  color: rgba(255,255,255,0.35);
-  line-height: 1.7;
+  position: relative;
+  z-index: 1;
   margin: 0;
-  flex: 1;
-}
-
-.card-arrow {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: rgba(255,255,255,0.4);
-  transition: color 0.2s;
-  margin-top: 4px;
-}
-
-.arrow {
-  display: inline-block;
-  transition: transform 0.2s ease;
+  color: rgba(226, 232, 240, 0.48);
+  font-size: 14px;
+  line-height: 1.7;
 }
 
 @media (max-width: 768px) {
-  .cards { grid-template-columns: 1fr; }
-  .home { padding: 40px 20px; }
+  .home {
+    padding: 28px 20px;
+  }
+
+  .home-stage {
+    min-height: auto;
+    grid-template-columns: 1fr;
+  }
+
+  .cards {
+    max-width: none;
+  }
 }
 </style>

@@ -2042,4 +2042,121 @@ onMounted(async () => {
 .export-video-wrap { margin-top: 8px; }
 .export-video { width: 100%; border-radius: 8px; }
 .export-empty { padding: 24px 0; }
+
+/* 统一为参数面板风格 */
+.studio {
+  background: transparent;
+}
+
+.topbar,
+.sidebar,
+.panel-toolbar,
+.shot-list,
+.detail-head {
+  border-color: var(--color-border);
+}
+
+.card,
+.voice-lib-item,
+.voice-profile-card,
+.asset-card,
+.prod-card,
+.dub-card,
+.export-card {
+  background: linear-gradient(180deg, rgba(25, 29, 39, 0.5), rgba(6, 8, 13, 0.34));
+  border: 1px solid var(--color-border);
+  backdrop-filter: var(--glass-blur);
+}
+
+.episode-chip,
+.tag,
+.role-pill.active,
+.btn-sm.btn-accent,
+.model-tag,
+.frame-badge,
+.voice-profile-card,
+.shot-location {
+  background: rgba(255,255,255,0.08);
+  border: 1px solid var(--color-border);
+  color: var(--color-muted);
+}
+
+.pipe-item.active,
+.shot-item.active {
+  background: rgba(255,255,255,0.08);
+  border-left-color: rgba(255,255,255,0.24);
+}
+
+.pipe-item.active .pipe-icon,
+.pipe-item.done .pipe-icon,
+.step-num,
+.summary-stat strong,
+.voice-stat strong,
+.shot-num,
+.frame-num,
+.export-stat strong,
+.voice-profile-suitable,
+.asset-initial {
+  color: var(--color-muted);
+}
+
+.summary-action:hover,
+.btn-sm:hover,
+.btn-sm.btn-accent:hover,
+.voice-play-btn:hover,
+.btn-ghost:hover {
+  background: rgba(255,255,255,0.1);
+}
+
+.char-avatar,
+.voice-play-btn,
+.project-card-icon {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid var(--color-border);
+  color: var(--color-muted);
+}
+
+.btn-primary {
+  background: rgba(255,255,255,0.12);
+  border: 1px solid rgba(255,255,255,0.24);
+  color: var(--color-text);
+  box-shadow: 0 12px 32px rgba(0,0,0,0.24);
+}
+.btn-primary:hover {
+  background: rgba(255,255,255,0.18);
+  border-color: rgba(255,255,255,0.34);
+}
+
+.btn-gen-sample {
+  border-color: var(--color-border);
+  color: var(--color-muted);
+}
+.btn-gen-sample:hover:not(:disabled) {
+  background: rgba(255,255,255,0.08);
+  border-color: rgba(255,255,255,0.24);
+  color: var(--color-text);
+}
+
+.voice-progress-fill {
+  background: linear-gradient(90deg, rgba(255,255,255,0.72), rgba(255,255,255,0.28));
+}
+
+.shot-dot.has-img {
+  background: rgba(255,255,255,0.72);
+}
+
+.input:focus,
+.input-select:focus,
+.textarea:focus {
+  border-color: rgba(255,255,255,0.24);
+}
+
+.frame-mode-toggle .btn-sm.active {
+  background: rgba(255,255,255,0.14);
+  color: var(--color-text);
+}
+
+.shot-frame-thumb:hover {
+  border-color: rgba(255,255,255,0.28);
+}
 </style>
