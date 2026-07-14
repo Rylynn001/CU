@@ -11,7 +11,26 @@ export interface ApiModel {
   name: string
   description: string
   type?: 'image' | 'video'
+  provider?: 'gemini' | 'openai'
+  databaseId?: number
 }
+
+export const DEFAULT_IMAGE_MODELS: ApiModel[] = [
+  {
+    id: 'gemini-3.1-flash-image',
+    name: 'Nano Banana 2',
+    description: 'Gemini 图片生成',
+    type: 'image',
+    provider: 'gemini',
+  },
+  {
+    id: 'gpt-image-2',
+    name: 'GPT Image 2',
+    description: 'OpenAI 图片生成',
+    type: 'image',
+    provider: 'openai',
+  },
+]
 
 // 图片生成请求参数
 export interface ApiGenerateParams {
@@ -57,7 +76,22 @@ export async function getApiModels(type?: 'image' | 'video'): Promise<ApiModel[]
   const res = await fetch(url)
   if (!res.ok) throw new Error(`models fetch failed: ${res.status}`)
   const data = await res.json()
-  return data.models || []
+  const models = (data.models || []).map((model: any) => {
+    const modelId = model.model_id || model.name || String(model.id)
+    const preset = DEFAULT_IMAGE_MODELS.find(item => item.id === modelId)
+    return {
+      id: modelId,
+      name: model.display_name || preset?.name || modelId,
+      description: model.description || preset?.description || '',
+      type: model.type || 'image',
+      provider: model.provider || preset?.provider,
+      databaseId: typeof model.id === 'number' ? model.id : undefined,
+    } as ApiModel
+  })
+  if ((type === undefined || type === 'image') && models.filter((model: ApiModel) => model.type === 'image').length === 0) {
+    return type === 'image' ? [...DEFAULT_IMAGE_MODELS] : [...DEFAULT_IMAGE_MODELS, ...models]
+  }
+  return models
 }
 
 // 新增模型配置

@@ -259,6 +259,46 @@ select:focus-visible {
   backdrop-filter: blur(4px);
 }
 
+/* Windows 11 风格底部提醒 */
+.el-message.is-center {
+  top: auto !important;
+  bottom: 28px !important;
+  min-width: 220px;
+  min-height: 46px;
+  padding: 11px 14px !important;
+  gap: 10px;
+  color: rgba(255, 255, 255, 0.9);
+  background: rgba(35, 40, 48, 0.82) !important;
+  border: 1px solid rgba(255, 255, 255, 0.09) !important;
+  border-radius: 9px !important;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.32), inset 0 1px rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(22px) saturate(125%);
+  -webkit-backdrop-filter: blur(22px) saturate(125%);
+  transition: opacity 0.18s ease, transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1), bottom 0.18s ease !important;
+}
+
+.el-message.is-center:has(~ .el-message) { bottom: 84px !important; }
+.el-message.is-center:has(~ .el-message ~ .el-message) { bottom: 140px !important; }
+.el-message.is-center:has(~ .el-message ~ .el-message ~ .el-message) { bottom: 196px !important; }
+
+.el-message .el-message__content {
+  color: rgba(255, 255, 255, 0.86) !important;
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.el-message .el-icon { font-size: 16px; }
+.el-message--success .el-icon { color: #72d6a0 !important; }
+.el-message--warning .el-icon { color: #e8b866 !important; }
+.el-message--error .el-icon { color: #ee7777 !important; }
+.el-message--info .el-icon { color: #82b5e8 !important; }
+
+.el-message-fade-enter-from.is-center,
+.el-message-fade-leave-to.is-center {
+  opacity: 0;
+  transform: translate(-50%, 18px) scale(0.98);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

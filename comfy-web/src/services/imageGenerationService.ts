@@ -8,7 +8,7 @@ export interface InputImage {
 }
 
 export interface ImageGenerateParams {
-  modelId: number
+  modelId: string | number
   prompt: string
   aspect_ratio: string       // 比例，如 "1:1"、"16:9"
   quality: string            // 清晰度，如 "low"/"medium"/"high"

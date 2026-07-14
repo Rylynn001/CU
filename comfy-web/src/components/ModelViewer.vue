@@ -6,8 +6,9 @@ import { TransformControls } from 'three/examples/jsm/controls/TransformControls
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js'
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js'
+import { USDLoader } from 'three/examples/jsm/loaders/USDLoader.js'
 
-const props = defineProps<{ visible: boolean }>()
+const props = withDefaults(defineProps<{ visible: boolean; windowed?: boolean }>(), { windowed: false })
 const emit = defineEmits<{ 'update:visible': [boolean]; 'capture': [File] }>()
 
 // ── DOM refs ──
@@ -89,6 +90,15 @@ const BONE_MAP: Record<string, { label: string; axes: [string, string, string] }
 }
 
 function getBoneDisplay(name: string): { label: string; axes: [string, string, string] } {
+  const cleanLabels: Record<string, string> = {
+    Hips:'骨盆', Spine:'脊柱', Spine1:'腰部', Spine2:'躯干', Neck:'颈部', Head:'头部',
+    LeftShoulder:'左肩', LeftArm:'左上臂', LeftForeArm:'左前臂', LeftHand:'左手腕',
+    RightShoulder:'右肩', RightArm:'右上臂', RightForeArm:'右前臂', RightHand:'右手腕',
+    LeftUpLeg:'左大腿', LeftLeg:'左小腿', LeftFoot:'左脚踝', LeftToeBase:'左脚趾',
+    RightUpLeg:'右大腿', RightLeg:'右小腿', RightFoot:'右脚踝', RightToeBase:'右脚趾',
+  }
+  const cleanKey = Object.keys(cleanLabels).find(key => name === key || name.includes(key))
+  if (cleanKey) return { label: cleanLabels[cleanKey], axes: ['X 轴', 'Y 轴', 'Z 轴'] }
   if (BONE_MAP[name]) return BONE_MAP[name]
   for (const key of Object.keys(BONE_MAP)) {
     if (name.includes(key)) return BONE_MAP[key]
@@ -135,6 +145,16 @@ const transformMode = ref<'translate' | 'rotate'>('translate')
 // 双击放大预览
 const zoomedCamId = ref<number | null>(null)
 const zoomedUrl = ref('')
+const viewCameraId = ref<number | null>(null)
+const showGrid = ref(true)
+const wireframe = ref(false)
+const lightBackground = ref(false)
+const showAdvanced = ref(false)
+const showCaptureMenu = ref(false)
+const mobileSceneOpen = ref(false)
+const mobilePropsOpen = ref(false)
+let sceneGrid: THREE.GridHelper | null = null
+let sceneFloor: THREE.Mesh | null = null
 
 // ── 几何构建（保留方块备用）──
 function buildCube(): THREE.Group {
@@ -171,9 +191,9 @@ function initScene() {
   const dir = new THREE.DirectionalLight(0xffffff, 1.2); dir.position.set(5,8,5); dir.castShadow = true; scene.add(dir)
   scene.add(new THREE.DirectionalLight(0x8888ff, 0.35).clone().translateTo?.(-5,2,-5) ?? (() => { const l = new THREE.DirectionalLight(0x8888ff,.35); l.position.set(-5,2,-5); return l })())
 
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(20,20), new THREE.MeshStandardMaterial({ color: 0x1a1a2e }))
-  floor.rotation.x = -Math.PI/2; floor.receiveShadow = true; scene.add(floor)
-  scene.add(new THREE.GridHelper(20, 40, 0x333355, 0x222244))
+  sceneFloor = new THREE.Mesh(new THREE.PlaneGeometry(20,20), new THREE.MeshStandardMaterial({ color: 0x1a1a22 }))
+  sceneFloor.rotation.x = -Math.PI/2; sceneFloor.receiveShadow = true; scene.add(sceneFloor)
+  sceneGrid = new THREE.GridHelper(20, 40, 0x46505a, 0x252a31); scene.add(sceneGrid)
 
   controls = new OrbitControls(editorCam, canvas); controls.enableDamping = true; controls.dampingFactor = 0.08
   controls.target.set(0, 0.8, 0); controls.update()
@@ -270,7 +290,17 @@ function loop() {
     bone.getWorldPosition(worldPos)
     mesh.position.copy(worldPos)
   }
-  renderer.render(scene, editorCam)
+  const viewCam = cameras.value.find(c => c.id === viewCameraId.value)?.cam || editorCam
+  const previewing = viewCameraId.value !== null
+  const helper = transformCtrl?.getHelper()
+  if (helper) helper.visible = !previewing
+  cameras.value.forEach(camera => { camera.helper.visible = !previewing })
+  for (const mesh of boneGizmoMap.values()) mesh.visible = !previewing
+  if (previewing && mainCanvasRef.value) {
+    const aspect = mainCanvasRef.value.clientWidth / Math.max(1, mainCanvasRef.value.clientHeight)
+    if (Math.abs(viewCam.aspect - aspect) > .001) { viewCam.aspect = aspect; viewCam.updateProjectionMatrix() }
+  }
+  renderer.render(scene, viewCam)
   // 渲染各相机视角分割面板
   const tcHelper = transformCtrl?.getHelper()
   for (const [camId, r] of camViewRenderers) {
@@ -531,7 +561,7 @@ function addPresetModel(key: string) {
 
   if (key === 'male' || key === 'female') {
     const url = key === 'male' ? '/3D/man.glb' : '/3D/woman.glb'
-    const label = `${labels[key]} ${nextModelId}`
+    const label = `${key === 'male' ? '男模' : '女模'} ${nextModelId}`
     const loader1 = new GLTFLoader(); loader1.setMeshoptDecoder(MeshoptDecoder)
     loader1.load(url, gltf => { addUploadedModel(gltf.scene, label) })
     return
@@ -707,6 +737,7 @@ function selectFromTree(type: 'model' | 'cam', id: number) {
     const ce = cameras.value.find(c => c.id === id); if (!ce) return
     attachTo(ce.cam, 'cam', id)
     activeCamId.value = id
+    viewCameraId.value = id
     // 对焦到相机位置附近，避免 CameraHelper 包围盒异常
     if (controls && editorCam) {
       controls.target.copy(ce.cam.position)
@@ -716,6 +747,64 @@ function selectFromTree(type: 'model' | 'cam', id: number) {
       controls.update()
     }
   }
+}
+
+function showEditorView() {
+  viewCameraId.value = null
+  deselectAll()
+}
+
+function selectCameraView(id: number) {
+  activeCamId.value = id
+  viewCameraId.value = id
+  const ce = cameras.value.find(c => c.id === id)
+  if (ce) attachTo(ce.cam, 'cam', id)
+}
+
+function resetView() {
+  if (!editorCam || !controls) return
+  viewCameraId.value = null
+  editorCam.position.set(0, 1.5, 4)
+  controls.target.set(0, .8, 0)
+  controls.update()
+}
+
+function saveEditorToActiveCamera() {
+  if (!editorCam) return
+  const camera = cameras.value.find(item => item.id === activeCamId.value)
+  if (!camera) return
+  camera.cam.position.copy(editorCam.position)
+  camera.cam.quaternion.copy(editorCam.quaternion)
+  camera.px = camera.cam.position.x; camera.py = camera.cam.position.y; camera.pz = camera.cam.position.z
+  camera.rx = THREE.MathUtils.radToDeg(camera.cam.rotation.x)
+  camera.ry = THREE.MathUtils.radToDeg(camera.cam.rotation.y)
+  camera.rz = THREE.MathUtils.radToDeg(camera.cam.rotation.z)
+  camera.helper.update()
+  thumbDirty = true
+  selectCameraView(camera.id)
+}
+
+function toggleGrid() {
+  showGrid.value = !showGrid.value
+  if (sceneGrid) sceneGrid.visible = showGrid.value
+}
+
+function toggleBackground() {
+  lightBackground.value = !lightBackground.value
+  if (scene) scene.background = new THREE.Color(lightBackground.value ? 0xb9bcc2 : 0x14171c)
+  const material = sceneFloor?.material as THREE.MeshStandardMaterial | undefined
+  if (material) material.color.set(lightBackground.value ? 0x9da1a8 : 0x1a1a22)
+  thumbDirty = true
+}
+
+function toggleWireframe() {
+  wireframe.value = !wireframe.value
+  models.value.forEach(model => model.obj.traverse(child => {
+    if (!(child as THREE.Mesh).isMesh) return
+    const materials = Array.isArray((child as THREE.Mesh).material) ? (child as THREE.Mesh).material : [(child as THREE.Mesh).material]
+    materials.forEach(material => { if (material && 'wireframe' in material) (material as THREE.MeshStandardMaterial).wireframe = wireframe.value })
+  }))
+  thumbDirty = true
 }
 
 // ── 相机管理 ──
@@ -731,6 +820,7 @@ function addCamera() {
   scene?.add(helper)
   const entry: CamEntry = { id, label: `相机 ${id}`, cam, helper, thumbUrl: '', px, py, pz, rx: 0, ry: 0, rz: 0, fov: 45 }
   cameras.value.push(entry)
+  entry.label = `机位 ${id}`
   if (cameras.value.length === 1) activeCamId.value = id
   thumbDirty = true
 }
@@ -797,9 +887,11 @@ function onDrop(e: DragEvent) {
 }
 function loadModelFile(file: File) {
   const ext = file.name.split('.').pop()?.toLowerCase()
-  if (!['glb','gltf','obj'].includes(ext ?? '')) return
+  if (!['glb','gltf','obj','usd','usda','usdc','usdz'].includes(ext ?? '')) return
   const url = URL.createObjectURL(file)
-  if (ext === 'obj') {
+  if (['usd','usda','usdc','usdz'].includes(ext ?? '')) {
+    new USDLoader().load(url, object => { addUploadedModel(object, file.name); URL.revokeObjectURL(url) }, undefined, () => URL.revokeObjectURL(url))
+  } else if (ext === 'obj') {
     new OBJLoader().load(url, obj => { obj.traverse(c => { if ((c as THREE.Mesh).isMesh) (c as THREE.Mesh).material = new THREE.MeshStandardMaterial({ color: 0x888888 }) }); addUploadedModel(obj, file.name); URL.revokeObjectURL(url) })
   } else {
     const loader2 = new GLTFLoader(); loader2.setMeshoptDecoder(MeshoptDecoder)
@@ -808,7 +900,7 @@ function loadModelFile(file: File) {
 }
 
 // ── 截图 ──
-async function capture() {
+async function captureCameras(targets: CamEntry[]) {
   if (!scene || !renderer) return
   const canvas = mainCanvasRef.value
   const origW = canvas?.clientWidth ?? 1200
@@ -820,7 +912,8 @@ async function capture() {
   // 隐藏骨骼 gizmo
   for (const mesh of boneGizmoMap.values()) mesh.visible = false
 
-  for (const ce of cameras.value) {
+  if (sceneGrid) sceneGrid.visible = false
+  for (const ce of targets) {
     const origAspect = ce.cam.aspect
     ce.cam.aspect = 1920 / 1080
     ce.cam.updateProjectionMatrix()
@@ -839,8 +932,19 @@ async function capture() {
   if (tcHelper) tcHelper.visible = true
   cameras.value.forEach(c => { c.helper.visible = true })
   for (const mesh of boneGizmoMap.values()) mesh.visible = true
+  if (sceneGrid) sceneGrid.visible = showGrid.value
   renderer.setSize(origW, origH, false)
+  showCaptureMenu.value = false
   emit('update:visible', false)
+}
+
+function captureCurrent() {
+  const current = cameras.value.find(camera => camera.id === activeCamId.value) || cameras.value[0]
+  if (current) captureCameras([current])
+}
+
+function captureAll() {
+  captureCameras([...cameras.value])
 }
 
 watch(() => props.visible, val => { if (val) setTimeout(initScene, 60); else destroyScene() })
@@ -931,13 +1035,27 @@ onBeforeUnmount(destroyScene)
 </script>
 
 <template>
-  <teleport to="body">
+  <teleport to="body" :disabled="windowed">
     <transition name="mv-fade">
-      <div v-if="visible" class="mv-overlay">
+      <div v-if="visible" class="mv-overlay" :class="{ windowed }">
         <div class="mv-root">
+          <header class="mv-topbar">
+            <div class="mv-brand"><strong>3D 取景</strong><span>单帧参考</span></div>
+            <div class="top-tools">
+              <button class="mobile-tool" @click="mobileSceneOpen = !mobileSceneOpen">场景</button>
+              <button title="撤销 Ctrl+Z" @click="onKeyDown(new KeyboardEvent('keydown', { key: 'z', ctrlKey: true }))">撤销</button>
+              <button title="复位编辑视角" @click="resetView">复位</button>
+              <button v-if="viewCameraId === null" title="将自由视角保存到当前机位" @click="saveEditorToActiveCamera">保存机位</button>
+              <button :class="{ active: showGrid }" @click="toggleGrid">网格</button>
+              <button :class="{ active: wireframe }" @click="toggleWireframe">线框</button>
+              <button :class="{ active: lightBackground }" @click="toggleBackground">背景</button>
+              <button class="mobile-tool" @click="mobilePropsOpen = !mobilePropsOpen">属性</button>
+            </div>
+            <button class="top-close" aria-label="关闭 3D 取景器" @click="emit('update:visible', false)">×</button>
+          </header>
 
           <!-- ── 左侧：场景树 ── -->
-          <div class="mv-tree">
+          <div class="mv-tree" :class="{ 'mobile-open': mobileSceneOpen }">
             <div class="tree-header">
               <span class="tree-title">场景</span>
               <button class="close-btn" @click="emit('update:visible', false)">✕</button>
@@ -950,7 +1068,7 @@ onBeforeUnmount(destroyScene)
                 <button class="add-btn" @click="addPresetModel('male')">男模</button>
                 <button class="add-btn" @click="addPresetModel('female')">女模</button>
                 <label class="add-btn">
-                  <input type="file" accept=".glb,.gltf,.obj" @change="onFileInput" hidden />
+                  <input type="file" accept=".glb,.gltf,.obj,.usd,.usda,.usdc,.usdz" @change="onFileInput" hidden />
                   上传
                 </label>
               </div>
@@ -995,7 +1113,7 @@ onBeforeUnmount(destroyScene)
               :style="{ cursor: draggingCursor }" />
 
             <!-- 左列 -->
-            <div class="split-col split-left" :style="{ width: colSplit + '%' }">
+            <div v-if="false" class="split-col split-left" :style="{ width: colSplit + '%' }">
 
               <!-- 1台相机：左列只有相机1 -->
               <template v-if="cameras.length === 1">
@@ -1025,13 +1143,13 @@ onBeforeUnmount(destroyScene)
             </div>
 
             <!-- 竖向分割线 -->
-            <div class="divider divider-v" @mousedown="startDividerDrag($event, 'col')" />
+            <div v-if="false" class="divider divider-v" @mousedown="startDividerDrag($event, 'col')" />
 
             <!-- 右列 -->
-            <div class="split-col split-right" :style="{ width: (100 - colSplit) + '%' }">
+            <div class="split-col split-right" style="width:100%">
 
               <!-- 1~2台相机：右列全是编辑画面 -->
-              <template v-if="cameras.length <= 2">
+              <template v-if="true">
                 <div class="pane pane-editor" style="height:100%">
                   <canvas ref="mainCanvasRef" class="mv-canvas" />
                   <div class="mv-toolbar">
@@ -1070,7 +1188,16 @@ onBeforeUnmount(destroyScene)
           </div>
 
           <!-- ── 右侧：属性面板 ── -->
-          <div class="mv-props">
+          <div class="camera-strip">
+            <button class="editor-shot" :class="{ active: viewCameraId === null }" @click="showEditorView"><span>编辑</span><small>自由视角</small></button>
+            <button v-for="ce in cameras" :key="`strip-${ce.id}`" class="camera-shot" :class="{ active: activeCamId === ce.id && viewCameraId !== null }" @click="selectCameraView(ce.id)">
+              <img v-if="ce.thumbUrl" :src="ce.thumbUrl" alt="" />
+              <span>{{ ce.label }}</span><i v-if="activeCamId === ce.id" />
+            </button>
+            <button v-if="cameras.length < 3" class="add-shot" @click="addCamera">+ 新机位</button>
+          </div>
+
+          <div class="mv-props" :class="{ 'mobile-open': mobilePropsOpen, advanced: showAdvanced }">
             <div class="props-header">属性</div>
 
             <!-- 无选中 -->
@@ -1142,7 +1269,9 @@ onBeforeUnmount(destroyScene)
             </template>
 
             <!-- 截图按钮 -->
-            <button class="capture-btn" :disabled="cameras.length === 0" @click="capture">
+            <button class="advanced-toggle" @click="showAdvanced = !showAdvanced">{{ showAdvanced ? '收起高级调整' : '展开高级调整' }}</button>
+            <button class="capture-all-btn" :disabled="cameras.length < 2" @click="captureAll">导出全部机位</button>
+            <button class="capture-btn" :disabled="cameras.length === 0" @click="captureCurrent">
               截取当前机位视角
             </button>
           </div>
@@ -1166,6 +1295,33 @@ onBeforeUnmount(destroyScene)
 }
 .mv-fade-enter-active, .mv-fade-leave-active { transition: opacity 0.2s; }
 .mv-fade-enter-from, .mv-fade-leave-to { opacity: 0; }
+
+/* Single-frame reference workspace */
+.mv-overlay { background: var(--color-bg); }
+.mv-root { position:relative; padding-top:56px; padding-bottom:104px; box-sizing:border-box; background:rgba(3,5,10,.98); }
+.mv-topbar { position:absolute; inset:0 0 auto; height:56px; padding:0 16px; display:grid; grid-template-columns:220px 1fr 40px; align-items:center; border-bottom:1px solid var(--color-border); background:rgba(8,11,17,.94); z-index:30; }
+.mv-brand { display:flex; align-items:baseline; gap:10px; }.mv-brand strong { color:var(--color-text); font-size:14px; font-weight:600; }.mv-brand span { color:var(--color-faint); font-size:10px; }
+.top-tools { display:flex; justify-content:center; gap:2px; }.top-tools button,.top-close { height:32px; padding:0 11px; border:0; border-radius:6px; background:transparent; color:var(--color-muted); font-size:11px; cursor:pointer; }.top-tools button:hover,.top-tools button.active { color:var(--color-text); background:rgba(255,255,255,.06); }.top-close { padding:0; font-size:20px; }.top-close:hover { color:var(--color-danger); }.mobile-tool { display:none; }
+.mv-tree { height:auto!important; background:rgba(12,15,22,.96)!important; border-color:var(--color-border)!important; }
+.tree-header { background:transparent!important; position:static!important; padding:18px 14px 10px!important; }.close-btn { display:none!important; }.tree-title { color:var(--color-muted)!important; }.tree-item.selected { background:rgba(166,231,226,.07)!important; border-left-color:var(--color-primary)!important; }.active-dot { background:var(--color-primary)!important; }
+.tree-title,.props-header { font-size:0!important; }.tree-title::after { content:'场景'; font-size:12px; }.props-header::after { content:'属性'; font-size:12px; }
+.tree-section-label { font-size:0!important; }.tree-section-label::after { content:'对象'; font-size:10px; }
+.tree-add-row>.add-btn { font-size:0!important; }.tree-add-row>.add-btn::after { content:'+ 机位'; font-size:11px; }.add-model-group .add-btn:nth-child(1),.add-model-group .add-btn:nth-child(2),.add-model-group .add-btn:nth-child(3) { font-size:0!important; }.add-model-group .add-btn:nth-child(1)::after { content:'男模'; font-size:11px; }.add-model-group .add-btn:nth-child(2)::after { content:'女模'; font-size:11px; }.add-model-group .add-btn:nth-child(3)::after { content:'上传'; font-size:11px; }
+.mv-main { min-width:0; background:#14171c!important; }.split-right { min-width:0; }.pane-editor { border:0!important; }.view-mode-label { position:absolute; top:14px; left:14px; padding:5px 8px; border-radius:5px; background:rgba(5,7,11,.68); color:var(--color-muted); font-size:10px; pointer-events:none; }
+.mv-toolbar { border-color:var(--color-border)!important; border-radius:7px!important; background:rgba(8,11,17,.82)!important; backdrop-filter:blur(10px); }.tb-btn.active { color:var(--color-primary)!important; background:rgba(166,231,226,.1)!important; border-color:rgba(166,231,226,.3)!important; }
+.mv-props { height:auto!important; padding-bottom:120px!important; background:rgba(12,15,22,.96)!important; border-color:var(--color-border)!important; }.props-header { background:transparent!important; }.mv-props:not(.advanced) .props-row:not(:has(.fov-slider)),.mv-props:not(.advanced) .bone-row { display:none; }
+.camera-strip { position:absolute; z-index:25; left:200px; right:250px; bottom:0; height:104px; padding:10px 16px; box-sizing:border-box; display:flex; align-items:center; gap:10px; overflow-x:auto; border-top:1px solid var(--color-border); background:rgba(8,11,17,.96); }
+.camera-strip button { position:relative; flex:0 0 112px; height:76px; padding:0; overflow:hidden; border:1px solid var(--color-border); border-radius:7px; background:rgba(255,255,255,.035); color:var(--color-muted); cursor:pointer; }.camera-strip button:hover,.camera-strip button.active { border-color:rgba(166,231,226,.42); color:var(--color-text); }.camera-shot img { width:100%; height:100%; object-fit:cover; display:block; opacity:.72; }.camera-shot span { position:absolute; left:7px; bottom:6px; padding:2px 5px; border-radius:3px; background:rgba(0,0,0,.65); font-size:10px; }.camera-shot i { position:absolute; top:6px; right:6px; width:6px; height:6px; border-radius:50%; background:var(--color-primary); }.editor-shot { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; }.editor-shot span { font-size:12px; }.editor-shot small { color:var(--color-faint); font-size:9px; }.add-shot { border-style:dashed!important; }
+.advanced-toggle,.capture-all-btn { width:100%; min-height:32px; margin-top:8px; border:1px solid var(--color-border); border-radius:6px; background:rgba(255,255,255,.035); color:var(--color-muted); font-size:11px; cursor:pointer; }.capture-all-btn:disabled { opacity:.35; cursor:not-allowed; }.capture-btn { background:rgba(166,231,226,.16)!important; border:1px solid rgba(166,231,226,.4)!important; color:var(--color-primary-strong)!important; box-shadow:none!important; }
+.capture-btn { font-size:0!important; }.capture-btn::after { content:'将当前机位加入参考'; font-size:12px; }
+
+@media (max-width:900px) {
+  .mv-root { padding-bottom:92px; }.mv-topbar { grid-template-columns:auto 1fr 32px; }.mv-brand span { display:none; }.mobile-tool { display:block; }
+  .mv-tree,.mv-props { position:absolute!important; top:56px; bottom:92px; z-index:40; transform:translateX(-105%); transition:transform .18s ease; box-shadow:12px 0 30px rgba(0,0,0,.28); }.mv-tree.mobile-open { transform:none; }.mv-props { right:0; transform:translateX(105%); box-shadow:-12px 0 30px rgba(0,0,0,.28); }.mv-props.mobile-open { transform:none; }
+  .camera-strip { left:0; right:0; height:92px; padding:8px 10px; }.camera-strip button { height:66px; flex-basis:100px; }
+}
+.mv-overlay.windowed { position:absolute; inset:0; z-index:1; }
+.mv-overlay.windowed .mv-root { height:100%; }
 
 .mv-root { display: flex; width: 100%; height: 100vh; }
 
@@ -1419,4 +1575,56 @@ onBeforeUnmount(destroyScene)
 }
 .bone-num::-webkit-outer-spin-button,
 .bone-num::-webkit-inner-spin-button { -webkit-appearance: none; }
+
+/* Floating-window layout: one title bar, one canvas, one camera rail. */
+.mv-overlay.windowed .mv-root {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 0 0 88px;
+  overflow: hidden;
+}
+.mv-overlay.windowed .mv-topbar { display: none; }
+.mv-overlay.windowed .mv-tree,
+.mv-overlay.windowed .mv-main,
+.mv-overlay.windowed .mv-props {
+  height: 100% !important;
+  min-height: 0;
+}
+.mv-overlay.windowed .mv-tree { width: 176px; }
+.mv-overlay.windowed .mv-props {
+  width: 190px;
+  padding: 0 10px 12px !important;
+}
+.mv-overlay.windowed .camera-strip {
+  left: 176px;
+  right: 190px;
+  height: 88px;
+  padding: 8px 12px;
+}
+.mv-overlay.windowed .camera-strip button {
+  flex-basis: 96px;
+  height: 66px;
+}
+.mv-overlay.windowed .mv-toolbar {
+  top: 12px;
+  padding: 3px;
+  gap: 2px;
+  background: rgba(8, 11, 17, .78) !important;
+}
+.mv-overlay.windowed .tb-btn {
+  height: 28px;
+  padding: 0 12px;
+  border: 0;
+  background: transparent;
+}
+.mv-overlay.windowed .mv-hint { bottom: 8px; }
+
+@media (max-width: 900px) {
+  .mv-overlay.windowed .mv-root { padding-bottom: 78px; }
+  .mv-overlay.windowed .mv-tree,
+  .mv-overlay.windowed .mv-props { top: 0; bottom: 78px; }
+  .mv-overlay.windowed .camera-strip { left: 0; right: 0; height: 78px; }
+  .mv-overlay.windowed .camera-strip button { height: 60px; }
+}
 </style>

@@ -30,10 +30,10 @@ def process(task: dict) -> None:
 
         aspect_ratio_to_size = {
             '1:1':  '1024x1024',
-            '16:9': '1792x1024',
-            '9:16': '1024x1792',
-            '4:3':  '1024x768',
-            '3:4':  '768x1024',
+            '16:9': '1536x1024',
+            '9:16': '1024x1536',
+            '4:3':  '1536x1024',
+            '3:4':  '1024x1536',
         }
         size = aspect_ratio_to_size.get(task.get('aspect_ratio', '1:1'), '1024x1024')
         quality = task.get('quality', 'medium')

@@ -1,21 +1,27 @@
 import logging
+import asyncio
+import json
 import pathlib
 from aiohttp import web
 from server import PromptServer
 
 from . import config as cfg
-from .repositories import provider_repo
+from .repositories import provider_repo, production_board_repo
 from .task_routes import task_routes as _  # noqa: F401 触发 task 路由注册
 from .task_routes import drama_routes as _drama_routes  # noqa: F401 触发 drama 路由注册
 from .ai import routes as _agent_routes  # noqa: F401 触发 agent 路由注册
 
+from . import usd_routes as _usd_routes  # noqa: F401
+
 routes = PromptServer.instance.routes
 logger = logging.getLogger('comfy_api_proxy')
+_board_rooms: dict[str, set[web.WebSocketResponse]] = {}
 
 OUTPUT_DIR = cfg.get_output_dir()
 
 # 兼容旧代码：__init__.py 通过 routes.REDIS_AVAILABLE 判断是否启动 worker
 from .services import task_queue as _tq
+from .utils.encryption import encrypt
 _tq.get_client()  # 触发连接，初始化 AVAILABLE
 REDIS_AVAILABLE = _tq.AVAILABLE
 
@@ -36,6 +42,80 @@ async def cors_middleware(request, handler):
 PromptServer.instance.app.middlewares.append(cors_middleware)
 
 
+async def _broadcast_board(board_id: str, payload: dict) -> None:
+    clients = _board_rooms.get(board_id, set()).copy()
+    if not clients:
+        return
+    message = json.dumps(payload, ensure_ascii=False)
+    results = await asyncio.gather(*(client.send_str(message) for client in clients), return_exceptions=True)
+    for client, result in zip(clients, results):
+        if isinstance(result, Exception) or client.closed:
+            _board_rooms.get(board_id, set()).discard(client)
+
+
+@routes.get('/api-proxy/production-boards/{board_id}')
+async def get_production_board(request: web.Request):
+    board = production_board_repo.get_board(request.match_info['board_id'])
+    return web.json_response(board or {'state': None, 'version': 0})
+
+
+@routes.put('/api-proxy/production-boards/{board_id}')
+async def save_production_board(request: web.Request):
+    request._client_max_size = 16 * 1024 * 1024
+    body = await request.json()
+    state = body.get('state')
+    if not isinstance(state, dict):
+        raise web.HTTPBadRequest(reason='state must be an object')
+    board_id = request.match_info['board_id']
+    saved = production_board_repo.save_board(board_id, state)
+    await _broadcast_board(board_id, {'type': 'state', 'state': state, 'source': body.get('client_id'), **saved})
+    return web.json_response(saved)
+
+
+@routes.get('/api-proxy/production-boards/{board_id}/ws')
+async def production_board_ws(request: web.Request):
+    board_id = request.match_info['board_id']
+    socket = web.WebSocketResponse(heartbeat=25)
+    await socket.prepare(request)
+    room = _board_rooms.setdefault(board_id, set())
+    room.add(socket)
+    board = production_board_repo.get_board(board_id)
+    await socket.send_json({'type': 'state', **(board or {'state': None, 'version': 0})})
+    try:
+        async for message in socket:
+            if message.type == web.WSMsgType.ERROR:
+                break
+    finally:
+        room.discard(socket)
+        if not room:
+            _board_rooms.pop(board_id, None)
+    return socket
+
+
+@routes.get('/api-proxy/production-boards/{board_id}/snapshots')
+async def list_production_board_snapshots(request: web.Request):
+    return web.json_response({'snapshots': production_board_repo.list_snapshots(request.match_info['board_id'])})
+
+
+@routes.post('/api-proxy/production-boards/{board_id}/snapshots')
+async def create_production_board_snapshot(request: web.Request):
+    request._client_max_size = 16 * 1024 * 1024
+    body = await request.json()
+    state = body.get('state')
+    if not isinstance(state, dict):
+        raise web.HTTPBadRequest(reason='state must be an object')
+    name = str(body.get('name') or 'Snapshot').strip()[:120] or 'Snapshot'
+    return web.json_response(production_board_repo.create_snapshot(request.match_info['board_id'], name, state))
+
+
+@routes.get('/api-proxy/production-boards/{board_id}/snapshots/{snapshot_id}')
+async def get_production_board_snapshot(request: web.Request):
+    snapshot = production_board_repo.get_snapshot(request.match_info['board_id'], int(request.match_info['snapshot_id']))
+    if not snapshot:
+        raise web.HTTPNotFound()
+    return web.json_response(snapshot)
+
+
 # ── /api-proxy/config ─────────────────────────────────────────────────────
 
 @routes.get('/api-proxy/config')
@@ -49,7 +129,31 @@ async def get_config(request: web.Request):
 @routes.put('/api-proxy/config')
 async def put_config(request: web.Request):
     body = await request.json()
-    cfg.save_env(body.get('api_key'), body.get('base_url'))
+    api_key = body.get('api_key')
+    encrypted_key = None
+    if api_key:
+        encryption_key = cfg.get_encryption_key()
+        if not encryption_key:
+            raise web.HTTPServiceUnavailable(reason='ENCRYPTION_KEY not configured')
+        encrypted_key = encrypt(encryption_key.encode(), api_key)
+    try:
+        provider_record = provider_repo.save_default_provider(body.get('base_url'), encrypted_key)
+    except ValueError as error:
+        raise web.HTTPBadRequest(reason=str(error))
+    default_models = (
+        ('gemini-3.1-flash-image', 'Nano Banana 2', 'Gemini image generation via APIYI', 'gemini'),
+        ('gpt-image-2', 'GPT Image 2', 'OpenAI image generation via APIYI', 'openai'),
+    )
+    for model_id, display_name, description, provider_name in default_models:
+        if not provider_repo.get_model_by_name(model_id):
+            provider_repo.create_model(
+                provider_id=int(provider_record['id']),
+                model_id=model_id,
+                name=display_name,
+                description=description,
+                model_type='image',
+                provider=provider_name,
+            )
     return web.json_response({'ok': True})
 
 
@@ -67,6 +171,41 @@ async def get_models(request: web.Request):
     except Exception as e:
         logger.error(f'[api-proxy] 获取模型列表失败: {e}')
         raise web.HTTPInternalServerError(reason=str(e))
+
+
+@routes.post('/api-proxy/models')
+async def add_model(request: web.Request):
+    body = await request.json()
+    model_name = (body.get('id') or '').strip()
+    display_name = (body.get('name') or model_name).strip()
+    if not model_name:
+        raise web.HTTPBadRequest(reason='model id is required')
+    if body.get('type', 'image') != 'image':
+        raise web.HTTPBadRequest(reason='only image models are enabled')
+    provider = body.get('provider') or ('gemini' if model_name.startswith('gemini-') else 'openai')
+    if provider not in ('gemini', 'openai'):
+        raise web.HTTPBadRequest(reason='unsupported image provider')
+    if provider_repo.get_model_by_name(model_name):
+        raise web.HTTPConflict(reason='model already exists')
+    default_provider = provider_repo.get_default_provider()
+    provider_repo.create_model(
+        provider_id=int(body.get('provider_id') or (default_provider['id'] if default_provider else 0)),
+        model_id=model_name,
+        name=display_name,
+        description=body.get('description') or display_name,
+        model_type='image',
+        provider=provider,
+    )
+    return web.json_response({'ok': True}, status=201)
+
+
+@routes.delete('/api-proxy/models/{model_id}')
+async def delete_model(request: web.Request):
+    try:
+        provider_repo.delete_model(int(request.match_info['model_id']))
+    except ValueError:
+        raise web.HTTPBadRequest(reason='invalid model id')
+    return web.json_response({'ok': True})
 
 
 # ── /api-proxy/providers ──────────────────────────────────────────────────
@@ -134,16 +273,28 @@ async def get_user_assets(request: web.Request):
     tag_str = request.rel_url.query.get('tag')
     tag = int(tag_str) if tag_str is not None else None
     favorite_only = request.rel_url.query.get('favorite') == '1'
+    query = request.rel_url.query.get('q', '').strip() or None
+    project_str = request.rel_url.query.get('project_id')
+    project_id = int(project_str) if project_str and project_str.isdigit() else None
+    category_str = request.rel_url.query.get('category_id')
+    category_id = int(category_str) if category_str and category_str.isdigit() else None
+    date_str = request.rel_url.query.get('date_range')
+    date_range = int(date_str) if date_str in ('7', '30') else None
     try:
         page = int(request.rel_url.query.get('page', 1))
     except ValueError:
         page = 1
     try:
+        page_size = min(100, max(1, int(request.rel_url.query.get('page_size', 30))))
+    except ValueError:
+        page_size = 30
+    try:
         from .repositories import asset_repo
         assets, total = asset_repo.get_user_assets(
-            user_id, asset_type, tag, favorite_only, page=page, page_size=30
+            user_id, asset_type, tag, favorite_only, page=page, page_size=page_size,
+            query=query, project_id=project_id, category_id=category_id, date_range=date_range
         )
-        return web.json_response({'assets': assets, 'total': total, 'page': page, 'page_size': 30})
+        return web.json_response({'assets': assets, 'total': total, 'page': page, 'page_size': page_size})
     except Exception as e:
         logger.error(f'[api-proxy] 获取用户资产失败: {e}')
         raise web.HTTPInternalServerError(reason=str(e))
@@ -495,6 +646,18 @@ async def create_project(request: web.Request):
     except Exception as e:
         logger.error(f'[api-proxy] 创建项目失败: {e}')
         raise web.HTTPInternalServerError(reason=str(e))
+
+
+@routes.get('/api-proxy/projects/{project_id}')
+async def get_project_detail(request: web.Request):
+    from .repositories import asset_repo
+    user_id = request.rel_url.query.get('user_id')
+    if not user_id:
+        raise web.HTTPBadRequest(reason='user_id is required')
+    project = asset_repo.get_project_detail(int(request.match_info['project_id']), int(user_id))
+    if not project:
+        raise web.HTTPNotFound(reason='项目不存在或无权限')
+    return web.json_response({'project': project})
 
 
 @routes.delete('/api-proxy/projects/{project_id}')

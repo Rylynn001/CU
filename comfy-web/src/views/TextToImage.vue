@@ -1,11 +1,11 @@
 <script setup lang="ts">
 defineOptions({ name: 'TextToImage' })
 // Vue 核心：ref 创建响应式变量，onMounted 页面加载后执行，watch 监听变量变化，computed 计算属性
-import { ref, onMounted, onUnmounted, watch, computed, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, watch, computed, defineAsyncComponent, nextTick } from 'vue'
 // 路由
 import { useRouter } from 'vue-router'
 // Element Plus UI 组件：输入框、下拉选择、滑块、数字输入框
-import { ElInput, ElSelect, ElOption, ElSlider, ElInputNumber, ElMessage } from 'element-plus'
+import { ElIcon, ElInput, ElSelect, ElOption, ElSlider, ElInputNumber, ElMessage } from 'element-plus'
 // Element Plus 图标
 import { Refresh, UploadFilled, Close, Setting } from '@element-plus/icons-vue'
 // 资产选择器：从已有素材库中选图
@@ -13,10 +13,11 @@ import AssetSidebar from '../components/AssetSidebar.vue'
 // 历史记录卡片：展示每条生成记录
 import RecordCard from '../components/RecordCard.vue'
 // 图片编辑器：涂抹/裁剪输入图
-import ImageEditor from '../components/ImageEditor.vue'
-import ModelViewer from '../components/ModelViewer.vue'
+import type ImageEditorComponent from '../components/ImageEditor.vue'
+const ImageEditor = defineAsyncComponent(() => import('../components/ImageEditor.vue'))
 import FavoriteHeart from '../components/FavoriteHeart.vue'
 import ProjectManager from '../components/ProjectManager.vue'
+import PromptLibrary from '../components/PromptLibrary.vue'
 // 本地 ComfyUI 接口：获取模型列表、采样器信息、提交任务、上传图片
 import { getModels, getKSamplerInfo, submitPrompt, uploadImage, type PromptParams } from '../api/comfyui'
 // WebSocket 连接：实时接收本地 ComfyUI 的生成进度和结果图片
@@ -25,6 +26,7 @@ import { useComfyWebSocket } from '../composables/useComfyWebSocket'
 import { getApiModels, retryHistory, favoriteAsset, type ApiModel } from '../api/apiService'
 // 历史记录管理：读写本地存储 + 从数据库加载历史
 import { useGenerationHistory } from '../composables/useGenerationHistory'
+import { use3DWindow } from '../composables/use3DWindow'
 // 任务轮询：定时查询 API 任务状态，直到完成或失败
 import { useTaskPolling } from '../composables/useTaskPolling'
 // @提及功能：在提示词输入框中输入 @ 可引用已上传的参考图
@@ -189,6 +191,7 @@ const apiModels = ref<ApiModel[]>([])
 const apiModel = ref('')
 // API 模式下的生成质量：low / medium / high
 const apiQuality = ref('medium')
+const showNegativePrompt = ref(false)
 // 本地 ComfyUI 的 checkpoint 模型列表（文件名字符串）
 const models = ref<string[]>([])
 // 本地 ComfyUI 支持的采样器列表
@@ -196,7 +199,7 @@ const samplers = ref<string[]>([])
 // 本地 ComfyUI 支持的调度器列表
 const schedulers = ref<string[]>([])
 // 当前调用方式：local（本地 ComfyUI）或 api（后端 API）
-const modelSource = ref<'local' | 'api'>('local')
+const modelSource = ref<'local' | 'api'>('api')
 
 // ── 表单参数 ──────────────────────────────────────────────
 // 当前激活的标签页：文生图 或 图生图
@@ -308,7 +311,7 @@ const showEditor = ref(false)
 const editingIndex = ref(-1)
 // 资产选择器的目标索引（-1 表示添加新图，>=0 表示替换某张）
 // 3D 模型视角截图
-const showModelViewer = ref(false)
+const { open3DWindow } = use3DWindow()
 function handleModelCapture(file: File) {
   if (inputImages.value.length >= 4) return
   inputImages.value.push({ file, preview: URL.createObjectURL(file), assetLocation: '' })
@@ -331,7 +334,7 @@ function onEditorConfirm(file: File) {
 
 // ── 历史记录编辑面板 ──────────────────────────────────────
 // 历史记录内联编辑器的 ref（用于获取编辑后的图片数据）
-const inlineEditorRef = ref<InstanceType<typeof ImageEditor> | null>(null)
+const inlineEditorRef = ref<InstanceType<typeof ImageEditorComponent> | null>(null)
 // useRecordEditor 封装了点击历史记录"继续生图"时的编辑面板逻辑：
 // showRecordEditor - 是否显示编辑面板（显示时左侧面板隐藏）
 // editingRecordId - 当前编辑的记录 ID
@@ -649,6 +652,32 @@ function handleProjectManagerClose() {
   currentAssetId.value = undefined
 }
 
+function seedDebugImageMocks() {
+  const user = JSON.parse(localStorage.getItem('user') || 'null')
+  if (!user?.debug) return
+  const createdAt = Date.now()
+  if (records.value.length === 0) records.value.push(
+    {
+      id: 'mock-image-1', createdAt,
+      prompt: '雨夜霓虹街道，电影感构图，潮湿路面反射彩色灯光',
+      inputPreviews: [], modelName: 'Flux Studio', mode: 'api', status: 'done', progress: 100,
+      images: ['https://images.unsplash.com/photo-1519608487953-e999c86e7455?auto=format&fit=crop&w=1200&q=85'],
+    },
+    {
+      id: 'mock-image-2', createdAt: createdAt - 3600000,
+      prompt: '清晨山谷与薄雾，柔和自然光，宽银幕摄影',
+      inputPreviews: [], modelName: 'Flux Studio', mode: 'api', status: 'done', progress: 100,
+      images: ['https://images.unsplash.com/photo-1506905925346-21bda4d32df4?auto=format&fit=crop&w=1200&q=85'],
+    },
+  )
+  const img2imgMock = records.value.find(record => record.id === 'mock-image-2')
+  if (img2imgMock) {
+    img2imgMock.isImg2Img = true
+    img2imgMock.inputPreviews = ['https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=900&q=85']
+  }
+  saveRecords()
+}
+
 // ── 初始化 ────────────────────────────────────────────────
 onMounted(async () => {
   // 建立 WebSocket 连接，用于接收本地 ComfyUI 的实时进度
@@ -674,6 +703,7 @@ onMounted(async () => {
 
   // 从数据库加载历史记录，将后端数据格式转换为前端 GenerationRecord 格式
   const userId = await loadFromDb(mapImgDbRecord, filterImgDbRecord)
+  seedDebugImageMocks()
 
   // 将页面刷新前处于 generating 状态的 API 记录标记为待轮询，并恢复轮询
   const pending = markStaleRecords('local')
@@ -743,7 +773,7 @@ function handleReuseParams(record: any, fromStorage = false) {
     if (models.value.length > 0) {
       const matchedLocal = models.value.find(m => m === record.model_name)
       if (matchedLocal) {
-        modelSource.value = 'local'
+        modelSource.value = 'api'
         form.value.ckpt_name = matchedLocal
       }
     }
@@ -807,6 +837,7 @@ onUnmounted(() => {
   // 移除键盘事件监听
   window.removeEventListener('keydown', handleImageKeydown)
 })
+
 </script>
 
 
@@ -829,7 +860,7 @@ onUnmounted(() => {
           <p v-if="errorMsg" class="error-msg">{{ errorMsg }}</p>
 
           <!-- model source toggle — 最顶部 -->
-          <div class="row-item">
+          <div v-if="false" class="row-item">
             <span class="row-label">调用方式</span>
             <div class="source-toggle">
               <button :class="{ active: modelSource === 'local' }" @click="modelSource = 'local'">本地模型</button>
@@ -887,7 +918,7 @@ onUnmounted(() => {
                 <el-icon><UploadFilled /></el-icon>
                 <span>本地上传</span>
               </label>
-              <button class="asset-btn" @click="showModelViewer = true">
+              <button class="asset-btn" @click="open3DWindow(handleModelCapture)">
                 <span>3D 截图</span>
               </button>
             </div>
@@ -921,8 +952,12 @@ onUnmounted(() => {
             </div>
           </div>
           <!-- 反向提示词：仅本地模式显示 -->
+          <PromptLibrary type="image" :prompt="form.positive_prompt" :negative="form.negative_prompt" @select="item => { form.positive_prompt = item.prompt; form.negative_prompt = item.negative || '' }" />
+          <button v-if="modelSource === 'local'" class="negative-toggle" @click="showNegativePrompt = !showNegativePrompt">
+            {{ showNegativePrompt ? '收起负向提示' : '＋ 负向提示' }}
+          </button>
           <ElInput
-            v-if="modelSource === 'local'"
+            v-if="modelSource === 'local' && showNegativePrompt"
             v-model="form.negative_prompt"
             type="textarea" :rows="2"
             placeholder="反向提示词（不想出现的内容）"
@@ -1109,13 +1144,18 @@ onUnmounted(() => {
 
         <!-- 历史记录（始终保留 DOM 防止滚动重置） -->
         <div class="history-col" v-show="!showRecordEditor">
+            <div class="canvas-toolbar">
+              <div><strong>图片 Session</strong><span>{{ filteredRecords.length }} 条记录</span></div>
+              <input v-model="searchQuery" class="search-input" placeholder="搜索提示词..." />
+            </div>
             <div v-if="filteredRecords.length === 0 && records.length === 0" class="empty-wrap">
-              <div class="empty-orb" />
-              <p class="empty-text">等待生成</p>
+              <p class="empty-kicker">图像创作画布</p>
+              <h2 class="empty-title">从一个想法开始</h2>
+              <p class="empty-text">在左侧描述画面，生成结果会按时间保留在这里</p>
             </div>
             <div v-else class="stream">
               <!-- 搜索框 -->
-              <div class="stream-header">
+              <div class="stream-header legacy-stream-header">
                 <span class="stream-title">历史记录 ({{ filteredRecords.length }})</span>
                 <input v-model="searchQuery" class="search-input" placeholder="搜索提示词..." />
               </div>
@@ -1196,10 +1236,10 @@ onUnmounted(() => {
                 <span v-else-if="records.length > 0" class="no-more-text">已全部加载</span>
               </div>
             </div>
-          </div>
+        </div>
       </main>
       <!-- ── 右侧资产侧边栏 ── -->
-      <AssetSidebar @select="handleAssetSelect" @reuse-params="handleReuseParams" />
+      <AssetSidebar compact @select="handleAssetSelect" @add="handleAssetSelect" @reuse-params="handleReuseParams" />
     </div>
 
     <!-- Image Viewer -->
@@ -1238,7 +1278,6 @@ onUnmounted(() => {
     <!-- 历史记录图片编辑器（已内联到侧边栏，此处无需渲染） -->
 
     <!-- 3D 模型视角截图 -->
-    <ModelViewer v-model:visible="showModelViewer" @capture="handleModelCapture" />
 
     <!-- 项目管理器 -->
     <ProjectManager

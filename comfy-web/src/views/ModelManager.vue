@@ -1,44 +1,37 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { ElInput, ElSelect, ElOption, ElMessage } from 'element-plus'
-import { Plus, Delete, Setting } from '@element-plus/icons-vue'
+import { computed, onMounted, ref } from 'vue'
+import { ElIcon, ElInput, ElMessage } from 'element-plus'
+import { Delete, Plus, Setting } from '@element-plus/icons-vue'
 import {
-  getApiModels, addApiModel, deleteApiModel,
-  getApiConfig, saveApiConfig,
+  addApiModel, deleteApiModel, getApiConfig, getApiModels, saveApiConfig,
   type ApiModel,
 } from '../api/apiService'
 
 const models = ref<ApiModel[]>([])
 const loading = ref(false)
-const configLoading = ref(false)
-
-// config panel
 const showConfig = ref(false)
-const configForm = ref({ api_key: '', base_url: '' })
-const hasKey = ref(false)
-
-// add model form
 const showAdd = ref(false)
-const addForm = ref({ id: '', name: '', description: '', type: 'image' })
+const configLoading = ref(false)
 const addLoading = ref(false)
+const hasKey = ref(false)
+const configForm = ref({ api_key: '', base_url: '' })
+const addForm = ref({ id: '', name: '', description: '', type: 'image' as const })
+
+const imageModels = computed(() => models.value.filter(model => model.type === 'image'))
 
 async function loadModels() {
   loading.value = true
-  try {
-    models.value = await getApiModels()
-  } catch (e: any) {
-    ElMessage.error('加载模型失败：' + e.message)
-  } finally {
-    loading.value = false
-  }
+  try { models.value = await getApiModels('image') }
+  catch (error: any) { ElMessage.error(`加载模型失败：${error.message}`) }
+  finally { loading.value = false }
 }
 
 async function loadConfig() {
   try {
-    const c = await getApiConfig()
-    configForm.value.base_url = c.base_url
-    hasKey.value = c.has_key
-  } catch {}
+    const config = await getApiConfig()
+    configForm.value.base_url = config.base_url
+    hasKey.value = config.has_key
+  } catch { /* 配置状态不影响默认模型展示 */ }
 }
 
 async function handleSaveConfig() {
@@ -48,459 +41,113 @@ async function handleSaveConfig() {
       base_url: configForm.value.base_url || undefined,
       api_key: configForm.value.api_key || undefined,
     })
-    hasKey.value = !!configForm.value.api_key || hasKey.value
+    hasKey.value = Boolean(configForm.value.api_key) || hasKey.value
     configForm.value.api_key = ''
-    ElMessage.success('配置已保存')
     showConfig.value = false
-  } catch (e: any) {
-    ElMessage.error('保存失败：' + e.message)
-  } finally {
-    configLoading.value = false
-  }
+    await loadModels()
+    ElMessage.success('API 配置已保存')
+  } catch (error: any) { ElMessage.error(`保存失败：${error.message}`) }
+  finally { configLoading.value = false }
 }
 
 async function handleAddModel() {
   if (!addForm.value.id || !addForm.value.name) {
-    ElMessage.warning('模型 ID 和名称不能为空')
+    ElMessage.warning('请填写模型 ID 和显示名称')
     return
   }
   addLoading.value = true
   try {
     await addApiModel({ ...addForm.value })
-    ElMessage.success('模型已添加')
     addForm.value = { id: '', name: '', description: '', type: 'image' }
     showAdd.value = false
     await loadModels()
-  } catch (e: any) {
-    ElMessage.error('添加失败：' + e.message)
-  } finally {
-    addLoading.value = false
-  }
+    ElMessage.success('模型已添加')
+  } catch (error: any) { ElMessage.error(`添加失败：${error.message}`) }
+  finally { addLoading.value = false }
 }
 
 async function handleDelete(model: ApiModel) {
-  try {
-    await deleteApiModel(model.id)
-    ElMessage.success(`已删除 ${model.name}`)
-    await loadModels()
-  } catch (e: any) {
-    ElMessage.error('删除失败：' + e.message)
+  if (!model.databaseId) {
+    ElMessage.info('默认模型不可删除')
+    return
   }
+  try {
+    await deleteApiModel(String(model.databaseId))
+    await loadModels()
+    ElMessage.success(`已删除 ${model.name}`)
+  } catch (error: any) { ElMessage.error(`删除失败：${error.message}`) }
 }
 
-onMounted(() => {
-  loadModels()
-  loadConfig()
-})
+onMounted(() => { loadModels(); loadConfig() })
 </script>
 
 <template>
-  <div class="manager-page">
-    <div class="orb orb-1" />
-    <div class="orb orb-2" />
-
-    <div class="manager-wrap">
-      <!-- header -->
-      <div class="page-header">
-        <div class="header-left">
-          <span class="breath-dot" />
-          <h1 class="page-title">模型管理</h1>
-        </div>
-        <div class="header-actions">
-          <button class="icon-action-btn" @click="showConfig = !showConfig" title="API 配置">
-            <el-icon><Setting /></el-icon>
-          </button>
-          <button class="add-btn" @click="showAdd = !showAdd">
-            <el-icon><Plus /></el-icon>
-            添加模型
-          </button>
-        </div>
+  <main class="model-manager">
+    <header class="page-head">
+      <div>
+        <p>开发者工具</p>
+        <h1>模型管理</h1>
+        <span>管理图片生成所使用的 API 模型与服务配置。</span>
       </div>
-
-      <!-- config panel -->
-      <div class="config-panel" :class="{ visible: showConfig }">
-        <div class="config-inner">
-          <div class="config-title">API 配置</div>
-          <div class="config-row">
-            <span class="config-label">Base URL</span>
-            <ElInput v-model="configForm.base_url" placeholder="https://your-relay.com" class="config-input" />
-          </div>
-          <div class="config-row">
-            <span class="config-label">API Key</span>
-            <ElInput
-              v-model="configForm.api_key"
-              type="password"
-              :placeholder="hasKey ? '已配置（留空不修改）' : '输入 API Key'"
-              show-password
-              class="config-input"
-            />
-          </div>
-          <div class="config-footer">
-            <span class="key-status" :class="{ active: hasKey }">
-              {{ hasKey ? '● Key 已配置' : '○ 未配置 Key' }}
-            </span>
-            <button class="save-btn" :disabled="configLoading" @click="handleSaveConfig">
-              {{ configLoading ? '保存中...' : '保存' }}
-            </button>
-          </div>
-        </div>
+      <div class="head-actions">
+        <button class="quiet-btn" @click="showConfig = !showConfig"><el-icon><Setting /></el-icon> API 配置</button>
+        <button class="primary-btn" @click="showAdd = !showAdd"><el-icon><Plus /></el-icon> 添加模型</button>
       </div>
+    </header>
 
-      <!-- add model panel -->
-      <div class="config-panel" :class="{ visible: showAdd }">
-        <div class="config-inner">
-          <div class="config-title">添加模型</div>
-          <div class="config-row">
-            <span class="config-label">模型 ID</span>
-            <ElInput v-model="addForm.id" placeholder="如 gpt-image-1 / flux-pro" class="config-input" />
-          </div>
-          <div class="config-row">
-            <span class="config-label">显示名称</span>
-            <ElInput v-model="addForm.name" placeholder="如 FLUX Pro" class="config-input" />
-          </div>
-          <div class="config-row">
-            <span class="config-label">模型类型</span>
-            <ElSelect v-model="addForm.type" class="config-input">
-              <ElOption label="图片模型" value="image" />
-              <ElOption label="视频模型" value="video" />
-            </ElSelect>
-          </div>
-          <div class="config-row">
-            <span class="config-label">描述</span>
-            <ElInput v-model="addForm.description" placeholder="可选" class="config-input" />
-          </div>
-          <div class="config-footer">
-            <button class="save-btn" :disabled="addLoading" @click="handleAddModel">
-              {{ addLoading ? '添加中...' : '确认添加' }}
-            </button>
-          </div>
-        </div>
-      </div>
+    <section v-if="showConfig" class="editor-panel">
+      <div class="panel-heading"><h2>APIYi 配置</h2><span :class="{ active: hasKey }">{{ hasKey ? 'API Key 已配置' : 'API Key 未配置' }}</span></div>
+      <label><span>Base URL</span><ElInput v-model="configForm.base_url" placeholder="https://api.apiyi.com/v1" /></label>
+      <label><span>API Key</span><ElInput v-model="configForm.api_key" type="password" show-password :placeholder="hasKey ? '留空则不修改' : '输入 API Key'" /></label>
+      <div class="panel-footer"><button class="primary-btn" :disabled="configLoading" @click="handleSaveConfig">{{ configLoading ? '保存中…' : '保存配置' }}</button></div>
+    </section>
 
-      <!-- model list -->
-      <div v-if="loading" class="empty-wrap">
-        <div class="empty-orb" />
-        <p class="empty-text">加载中...</p>
-      </div>
+    <section v-if="showAdd" class="editor-panel">
+      <div class="panel-heading"><h2>添加图片模型</h2></div>
+      <label><span>模型 ID</span><ElInput v-model="addForm.id" placeholder="例如 gpt-image-2" /></label>
+      <label><span>显示名称</span><ElInput v-model="addForm.name" placeholder="例如 GPT Image 2" /></label>
+      <label><span>描述</span><ElInput v-model="addForm.description" placeholder="可选" /></label>
+      <div class="panel-footer"><button class="primary-btn" :disabled="addLoading" @click="handleAddModel">{{ addLoading ? '添加中…' : '确认添加' }}</button></div>
+    </section>
 
-      <div v-else-if="models.length === 0" class="empty-wrap">
-        <div class="empty-orb" />
-        <p class="empty-text">暂无模型，点击右上角添加</p>
-      </div>
-
-      <div v-else class="model-grid">
-        <div v-for="m in models" :key="m.id" class="model-card">
-          <div class="card-glow" />
-          <div class="model-top">
-            <div class="model-icon">{{ m.name.charAt(0).toUpperCase() }}</div>
-            <button class="delete-btn" @click="handleDelete(m)" title="删除">
-              <el-icon><Delete /></el-icon>
-            </button>
+    <section class="model-section">
+      <div class="section-head"><div><h2>图片模型</h2><span>{{ imageModels.length }} 个可用模型</span></div></div>
+      <div v-if="loading" class="empty-state">正在加载模型…</div>
+      <div v-else class="model-list">
+        <article v-for="model in imageModels" :key="model.id" class="model-row">
+          <div class="provider-mark" :class="model.provider">{{ model.provider === 'gemini' ? 'G' : 'O' }}</div>
+          <div class="model-copy">
+            <div class="model-title"><strong>{{ model.name }}</strong><span>{{ model.provider === 'gemini' ? 'Gemini' : 'OpenAI' }}</span></div>
+            <code>{{ model.id }}</code>
+            <p>{{ model.description }}</p>
           </div>
-          <div class="model-name">{{ m.name }}</div>
-          <div class="model-id">{{ m.id }}</div>
-          <div class="model-type-badge">{{ m.type === 'video' ? '视频' : '图片' }}</div>
-          <div v-if="m.description" class="model-desc">{{ m.description }}</div>
-        </div>
+          <div class="model-status"><i /> 可用</div>
+          <button v-if="model.databaseId" class="delete-btn" title="删除模型" @click="handleDelete(model)"><el-icon><Delete /></el-icon></button>
+        </article>
       </div>
-    </div>
-  </div>
+    </section>
+  </main>
 </template>
 
 <style scoped>
-.manager-page {
-  min-height: 100vh;
-  position: relative;
-  overflow: hidden;
-  padding: 40px 48px;
-}
-
-.orb {
-  position: fixed;
-  border-radius: 50%;
-  filter: blur(90px);
-  pointer-events: none;
-  z-index: 0;
-  animation: breathe 7s ease-in-out infinite;
-}
-.orb-1 {
-  width: 500px; height: 500px;
-  background: radial-gradient(circle, rgba(108,99,255,0.12) 0%, transparent 70%);
-  top: -120px; left: -80px;
-}
-.orb-2 {
-  width: 400px; height: 400px;
-  background: radial-gradient(circle, rgba(167,139,250,0.1) 0%, transparent 70%);
-  bottom: -100px; right: -60px;
-  animation-delay: 3.5s;
-}
-
-.manager-wrap {
-  position: relative;
-  z-index: 1;
-  max-width: 960px;
-  margin: 0 auto;
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-}
-
-/* header */
-.page-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.breath-dot {
-  width: 8px; height: 8px;
-  border-radius: 50%;
-  background: #a78bfa;
-  animation: pulse-dot 2.5s ease-in-out infinite;
-}
-
-.page-title {
-  font-size: 22px;
-  font-weight: 600;
-  color: rgba(255,255,255,0.9);
-  letter-spacing: 2px;
-  margin: 0;
-}
-
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.icon-action-btn {
-  width: 36px; height: 36px;
-  border-radius: 10px;
-  background: rgba(255,255,255,0.04);
-  border: 1px solid rgba(255,255,255,0.08);
-  color: rgba(255,255,255,0.5);
-  cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  transition: background 0.2s, color 0.2s;
-}
-.icon-action-btn:hover { background: rgba(108,99,255,0.2); color: #fff; }
-
-.add-btn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 16px;
-  border-radius: 10px;
-  background: linear-gradient(135deg, #6c63ff, #a78bfa);
-  border: none;
-  color: #fff;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: opacity 0.2s, transform 0.15s;
-}
-.add-btn:hover { opacity: 0.88; transform: translateY(-1px); }
-
-/* config / add panel */
-.config-panel {
-  max-height: 0;
-  overflow: hidden;
-  opacity: 0;
-  transition: max-height 0.35s ease, opacity 0.25s ease;
-}
-.config-panel.visible { max-height: 400px; opacity: 1; }
-
-.config-inner {
-  background: rgba(255,255,255,0.03);
-  border: 1px solid rgba(255,255,255,0.07);
-  border-radius: 16px;
-  padding: 20px 24px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  animation: breathe-border 4s ease-in-out infinite;
-}
-
-.config-title {
-  font-size: 12px;
-  color: rgba(255,255,255,0.35);
-  letter-spacing: 2px;
-  text-transform: uppercase;
-}
-
-.config-row {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-.config-label {
-  font-size: 12px;
-  color: rgba(255,255,255,0.4);
-  width: 72px;
-  flex-shrink: 0;
-}
-
-.config-input { flex: 1; }
-
-.config-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: 4px;
-}
-
-.key-status {
-  font-size: 11px;
-  color: rgba(255,255,255,0.25);
-  letter-spacing: 1px;
-}
-.key-status.active { color: rgba(167,139,250,0.7); }
-
-.save-btn {
-  padding: 7px 20px;
-  border-radius: 8px;
-  background: linear-gradient(135deg, #6c63ff, #a78bfa);
-  border: none;
-  color: #fff;
-  font-size: 12px;
-  cursor: pointer;
-  transition: opacity 0.2s;
-}
-.save-btn:disabled { opacity: 0.45; cursor: not-allowed; }
-.save-btn:not(:disabled):hover { opacity: 0.85; }
-
-/* model grid */
-.model-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 16px;
-}
-
-.model-card {
-  position: relative;
-  background: rgba(255,255,255,0.03);
-  border: 1px solid rgba(255,255,255,0.07);
-  border-radius: 16px;
-  padding: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  overflow: hidden;
-  transition: border-color 0.3s, background 0.3s, transform 0.2s;
-  animation: breathe-border 5s ease-in-out infinite;
-}
-.model-card:hover {
-  border-color: rgba(108,99,255,0.4);
-  background: rgba(108,99,255,0.05);
-  transform: translateY(-2px);
-}
-.model-card:hover .card-glow { opacity: 1; }
-
-.card-glow {
-  position: absolute; inset: 0;
-  background: radial-gradient(ellipse at top left, rgba(108,99,255,0.08) 0%, transparent 60%);
-  opacity: 0;
-  transition: opacity 0.3s;
-  pointer-events: none;
-}
-
-.model-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.model-icon {
-  width: 40px; height: 40px;
-  border-radius: 12px;
-  background: rgba(108,99,255,0.15);
-  border: 1px solid rgba(108,99,255,0.2);
-  display: flex; align-items: center; justify-content: center;
-  font-size: 16px;
-  font-weight: 700;
-  color: #a78bfa;
-}
-
-.delete-btn {
-  width: 28px; height: 28px;
-  border-radius: 8px;
-  background: none;
-  border: 1px solid rgba(255,255,255,0.06);
-  color: rgba(255,255,255,0.3);
-  cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 13px;
-  transition: background 0.2s, color 0.2s, border-color 0.2s;
-}
-.delete-btn:hover {
-  background: rgba(248,113,113,0.15);
-  border-color: rgba(248,113,113,0.3);
-  color: #f87171;
-}
-
-.model-name {
-  font-size: 15px;
-  font-weight: 600;
-  color: rgba(255,255,255,0.88);
-}
-
-.model-id {
-  font-size: 11px;
-  color: rgba(255,255,255,0.3);
-  letter-spacing: 0.5px;
-  font-family: monospace;
-}
-
-.model-type-badge {
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: 6px;
-  font-size: 10px;
-  color: rgba(167,139,250,0.9);
-  background: rgba(108,99,255,0.15);
-  border: 1px solid rgba(108,99,255,0.2);
-  letter-spacing: 0.5px;
-  width: fit-content;
-}
-
-.model-desc {
-  font-size: 12px;
-  color: rgba(255,255,255,0.35);
-  line-height: 1.5;
-}
-
-/* empty */
-.empty-wrap {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 14px;
-  padding: 80px 0;
-}
-
-.empty-orb {
-  width: 60px; height: 60px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(108,99,255,0.12) 0%, transparent 70%);
-  border: 1px solid rgba(108,99,255,0.15);
-  animation: breathe 4s ease-in-out infinite;
-}
-
-.empty-text {
-  font-size: 13px;
-  color: rgba(255,255,255,0.25);
-  letter-spacing: 1px;
-}
-
-@media (max-width: 768px) {
-  .manager-page { padding: 24px 20px; }
-  .model-grid { grid-template-columns: 1fr 1fr; }
-}
+.model-manager { min-height: calc(100vh - 22px); padding: 52px 48px 80px; box-sizing:border-box; display:flex; flex-direction:column; align-items:center; color: var(--color-text); background: rgba(2,4,8,.72); }
+.page-head { display:flex; align-items:flex-end; justify-content:space-between; gap:28px; width:min(100%,960px); }
+.page-head p { margin:0 0 10px; color:var(--color-primary); font-size:11px; }
+.page-head h1 { margin:0; font-size:30px; font-weight:600; letter-spacing:-.02em; }
+.page-head span { display:block; margin-top:12px; color:var(--color-muted); font-size:13px; }
+.head-actions { display:flex; gap:10px; flex-shrink:0; }
+button { height:36px; padding:0 14px; border-radius:8px; color:var(--color-text); font-size:12px; cursor:pointer; display:inline-flex; align-items:center; gap:7px; }
+.quiet-btn { border:1px solid var(--color-border); background:rgba(255,255,255,.045); }
+.quiet-btn:hover { background:rgba(255,255,255,.08); }
+.primary-btn { border:1px solid rgba(166,231,226,.34); background:rgba(166,231,226,.12); color:var(--color-primary-strong); }
+.primary-btn:hover { background:rgba(166,231,226,.18); }.primary-btn:disabled { opacity:.45; cursor:not-allowed; }
+.editor-panel { width:min(100%,720px); margin-top:34px; padding:22px 0; border-top:1px solid var(--color-border); border-bottom:1px solid var(--color-border); display:grid; gap:16px; }
+.panel-heading { display:flex; justify-content:space-between; align-items:center; }.panel-heading h2 { margin:0; font-size:16px; font-weight:500; }.panel-heading span { color:var(--color-faint); font-size:11px; }.panel-heading span.active { color:var(--color-success); }
+.editor-panel label { display:grid; grid-template-columns:100px 1fr; align-items:center; gap:18px; }.editor-panel label>span { color:var(--color-muted); font-size:12px; }.panel-footer { display:flex; justify-content:flex-end; }
+.model-section { width:min(100%,960px); margin-top:52px; }.section-head { padding-bottom:16px; border-bottom:1px solid var(--color-border); }.section-head h2 { display:inline; margin:0; font-size:18px; font-weight:500; }.section-head span { margin-left:12px; color:var(--color-faint); font-size:11px; }
+.model-list { display:flex; flex-direction:column; }.model-row { min-height:104px; display:grid; grid-template-columns:42px minmax(0,1fr) auto 32px; align-items:center; gap:18px; padding:18px 4px; border-bottom:1px solid rgba(255,255,255,.08); }
+.provider-mark { width:38px; height:38px; border-radius:8px; display:grid; place-items:center; background:rgba(255,255,255,.06); color:var(--color-text); font-size:14px; font-weight:600; }.provider-mark.gemini { color:#b9b9ff; background:rgba(130,120,255,.12); }.provider-mark.openai { color:var(--color-primary); background:rgba(166,231,226,.1); }
+.model-copy { min-width:0; }.model-title { display:flex; align-items:center; gap:10px; }.model-title strong { font-size:14px; font-weight:500; }.model-title span { padding:2px 6px; border:1px solid var(--color-border); border-radius:4px; color:var(--color-muted); font-size:10px; }.model-copy code { display:block; margin-top:7px; color:var(--color-muted); font-size:11px; }.model-copy p { margin:6px 0 0; color:var(--color-faint); font-size:11px; }
+.model-status { color:var(--color-muted); font-size:11px; white-space:nowrap; }.model-status i { display:inline-block; width:6px; height:6px; margin-right:6px; border-radius:50%; background:var(--color-success); }.delete-btn { width:30px; padding:0; justify-content:center; border:0; background:transparent; color:var(--color-faint); }.delete-btn:hover { color:var(--color-danger); background:rgba(251,113,133,.08); }.empty-state { padding:70px 0; color:var(--color-faint); font-size:12px; text-align:center; }
+@media (max-width:760px) { .model-manager{padding:32px 22px 60px}.page-head{align-items:flex-start;flex-direction:column}.head-actions{width:100%}.head-actions button{flex:1;justify-content:center}.editor-panel label{grid-template-columns:1fr;gap:7px}.model-row{grid-template-columns:38px minmax(0,1fr) auto}.model-status{display:none} }
 </style>

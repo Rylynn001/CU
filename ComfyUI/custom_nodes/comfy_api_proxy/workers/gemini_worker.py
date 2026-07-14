@@ -1,148 +1,119 @@
-"""Gemini 图片生成 worker"""
-import uuid
+"""Gemini image generation worker using APIYI's native Gemini endpoint."""
 import base64
 import logging
-import shutil
-import tempfile
-import os
+import uuid
+
+import requests
+
 from .. import config as cfg
 from ..repositories import asset_repo, history_repo
 from ..services import task_queue
 
 logger = logging.getLogger('comfy_api_proxy')
-
 OUTPUT_DIR = cfg.get_output_dir()
+
+
+def _api_root(base_url: str) -> str:
+    root = base_url.rstrip('/')
+    return root[:-3] if root.endswith('/v1') else root
+
+
+def _save_history(task: dict, status: str, output_asset_ids: list[int], message: str | None = None):
+    history_id = task.get('history_id')
+    if history_id:
+        history_repo.update_history(
+            history_id=history_id,
+            output_asset_ids=output_asset_ids,
+            status=status,
+            message=message,
+        )
+        return history_id
+    return history_repo.save_history(
+        task_id=task['task_id'],
+        prompt=task.get('prompt', ''),
+        user_id=int(task['user_id']) if task.get('user_id') else 0,
+        model_id=int(task['model_id']) if task.get('model_id') else None,
+        input_asset_ids=task.get('input_asset_ids', []),
+        output_asset_ids=output_asset_ids,
+        status=status,
+        type_='img2img' if task.get('input_asset_ids') else 'txt2img',
+        mode='api',
+        message=message,
+    )
 
 
 def process(task: dict) -> None:
     task_id = task['task_id']
     try:
         task_queue.set_status(task_id, 'processing')
-        logger.info(f'[{task_id}] 正在处理 Gemini 任务')
+        logger.info('[%s] processing APIYI Gemini image task', task_id)
 
-        from google import genai
-        from google.genai import types as genai_types
+        quality_to_size = {'low': '1K', 'medium': '2K', 'high': '4K'}
+        parts = [
+            {'inlineData': {'mimeType': 'image/png', 'data': image}}
+            for image in task.get('image_b64_list', [])
+        ]
+        parts.append({'text': task['prompt']})
 
-        client = genai.Client(
-            vertexai=True,
-            api_key=task['api_key'],
-            http_options={'base_url': task['base_url']}
+        url = f"{_api_root(task['base_url'])}/v1beta/models/{task['model']}:generateContent"
+        response = requests.post(
+            url,
+            headers={
+                'Authorization': f"Bearer {task['api_key']}",
+                'Content-Type': 'application/json',
+            },
+            json={
+                'contents': [{'parts': parts}],
+                'generationConfig': {
+                    'responseModalities': ['IMAGE'],
+                    'imageConfig': {
+                        'aspectRatio': task.get('aspect_ratio', '1:1'),
+                        'imageSize': quality_to_size.get(task.get('quality', 'medium'), '2K'),
+                    },
+                },
+            },
+            timeout=360,
         )
-
-        image_b64_list = task.get('image_b64_list', [])
-        prompt = task['prompt']
-        aspect_ratio = task.get('aspect_ratio', '1:1')
-
-        quality_to_resolution = {
-            'low': '1K',
-            'medium': '2K',
-            'high': '4K',
-        }
-        resolution = quality_to_resolution.get(task.get('quality', 'medium'), '2K')
-
-        if image_b64_list:
-            contents = []
-            for i, b64 in enumerate(image_b64_list):
-                contents.append(genai_types.Part.from_text(text=f'图{i+1}：'))
-                contents.append(genai_types.Part.from_bytes(
-                    data=base64.b64decode(b64), mime_type='image/png'
-                ))
-            contents.append(genai_types.Part.from_text(text=prompt))
-        else:
-            contents = prompt
-
-        response = client.models.generate_content(
-            model=task['model'],
-            contents=contents,
-            config=genai_types.GenerateContentConfig(
-                image_config=genai_types.ImageConfig(
-                    aspect_ratio=aspect_ratio,
-                    image_size=resolution,
-                ),
-            ),
-        )
+        response.raise_for_status()
 
         images = []
         save_paths = []
-        if hasattr(response, 'parts'):
-            for part in response.parts:
-                if hasattr(part, 'as_image'):
-                    image = part.as_image()
-                    if image:
-                        filename = f'Gemini-{uuid.uuid4().hex}.png'
-                        save_path = OUTPUT_DIR / filename
-                        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
-                            tmp_path = tmp.name
-                        try:
-                            image.save(tmp_path)
-                            shutil.move(tmp_path, str(save_path))
-                        except Exception:
-                            if os.path.exists(tmp_path):
-                                os.unlink(tmp_path)
-                            raise
-                        images.append({'url': f'/api/api-proxy/output/{filename}', 'type': 'image', 'asset_id': None})
-                        save_paths.append(save_path)
+        for candidate in response.json().get('candidates', []):
+            for part in candidate.get('content', {}).get('parts', []):
+                inline = part.get('inlineData') or part.get('inline_data')
+                if not inline or not inline.get('data'):
+                    continue
+                filename = f'Gemini-{uuid.uuid4().hex}.png'
+                save_path = OUTPUT_DIR / filename
+                save_path.write_bytes(base64.b64decode(inline['data']))
+                images.append({
+                    'url': f'/api/api-proxy/output/{filename}',
+                    'type': 'image',
+                    'asset_id': None,
+                })
+                save_paths.append(save_path)
 
-        # 只取最后一张（避免返回输入图）
-        result_images = images[-1:] if images else []
-        result_paths = save_paths[-1:] if save_paths else []
-
+        result_images = images[-1:]
+        result_paths = save_paths[-1:]
         if not result_images:
-            raise Exception('No image generated')
+            raise RuntimeError('No image generated')
 
         output_asset_ids = []
         user_id = task.get('user_id')
-        if user_id and result_paths:
-            try:
-                aid = asset_repo.save_output_asset(str(result_paths[0]), int(user_id), 'picture')
-                output_asset_ids.append(aid)
-                result_images[0]['asset_id'] = aid
-            except Exception as e:
-                logger.error(f'[{task_id}] 数据库写入失败: {e}')
+        if user_id:
+            asset_id = asset_repo.save_output_asset(str(result_paths[0]), int(user_id), 'picture')
+            output_asset_ids.append(asset_id)
+            result_images[0]['asset_id'] = asset_id
 
-        type_ = 'img2img' if task.get('input_asset_ids') else 'txt2img'
-        history_id = task.get('history_id')
-        if history_id:
-            history_repo.update_history(
-                history_id=history_id,
-                output_asset_ids=output_asset_ids,
-                status='done',
-            )
-        else:
-            history_id = history_repo.save_history(
-                task_id=task_id,
-                prompt=task.get('prompt', ''),
-                user_id=int(user_id) if user_id else 0,
-                model_id=int(task['model_id']) if task.get('model_id') else None,
-                input_asset_ids=task.get('input_asset_ids', []),
-                output_asset_ids=output_asset_ids,
-                status='done',
-                type_=type_,
-                mode='api',
-            )
-
+        history_id = _save_history(task, 'done', output_asset_ids)
         task_queue.set_status(task_id, 'completed')
         task_queue.set_result(task_id, {'result': result_images, 'history_id': history_id})
-        logger.info(f'[{task_id}] 已完成，共 {len(result_images)} 张图片')
-
-    except Exception as e:
-        logger.error(f'[{task_id}] 任务失败: {e}')
-        type_ = 'img2img' if task.get('input_asset_ids') else 'txt2img'
-        history_id = task.get('history_id')
-        if history_id:
-            history_repo.update_history(history_id=history_id, output_asset_ids=[], status='error', message=str(e))
-        else:
-            history_repo.save_history(
-                task_id=task_id,
-                prompt=task.get('prompt', ''),
-                user_id=int(task['user_id']) if task.get('user_id') else 0,
-                model_id=int(task['model_id']) if task.get('model_id') else None,
-                input_asset_ids=task.get('input_asset_ids', []),
-                output_asset_ids=[],
-                status='error',
-                type_=type_,
-                mode='api',
-                message=str(e),
-            )
+        logger.info('[%s] Gemini image task completed', task_id)
+    except Exception as error:
+        logger.exception('[%s] Gemini image task failed', task_id)
+        history_id = _save_history(task, 'error', [], str(error))
         task_queue.set_status(task_id, 'failed')
-        task_queue.set_result(task_id, {'error': {'error_message': str(e)}, 'history_id': history_id})
+        task_queue.set_result(task_id, {
+            'error': {'error_message': str(error)},
+            'history_id': history_id,
+        })

@@ -1,26 +1,44 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { Brush, MagicStick } from '@element-plus/icons-vue'
-import SideNav from './components/SideNav.vue'
-import PrismBackground from './components/PrismBackground.vue'
-import LightRaysBackground from './components/LightRaysBackground.vue'
-import DotFieldBackground from './components/DotFieldBackground.vue'
+import TopNav from './components/TopNav.vue'
+import ThreeDWindowManager from './components/ThreeDWindowManager.vue'
+
+const PrismBackground = defineAsyncComponent(() => import('./components/PrismBackground.vue'))
+const LightRaysBackground = defineAsyncComponent(() => import('./components/LightRaysBackground.vue'))
+const DotFieldBackground = defineAsyncComponent(() => import('./components/DotFieldBackground.vue'))
 
 const route = useRoute()
-const keepPrismBackground = computed(() => route.path === '/login' || route.path === '/')
+const isLoginPage = computed(() => route.path === '/login')
+const keepPrismBackground = computed(() => route.path === '/' || route.path.startsWith('/projects'))
+const isGenerationPage = computed(() => route.path === '/image' || route.path === '/video' || route.path === '/create')
 const businessTheme = ref(localStorage.getItem('business-theme') === 'dot' ? 'dot' : 'light')
 const isDotTheme = computed(() => businessTheme.value === 'dot')
+const showLoginReveal = ref(false)
+const revealingHome = ref(false)
+let revealTimer: ReturnType<typeof setTimeout> | undefined
 
-function toggleBusinessTheme() {
-  businessTheme.value = isDotTheme.value ? 'light' : 'dot'
-  localStorage.setItem('business-theme', businessTheme.value)
-}
+watch(() => route.path, async (path) => {
+  if (path !== '/' || sessionStorage.getItem('login-reveal-home') !== '1') return
+  sessionStorage.removeItem('login-reveal-home')
+  showLoginReveal.value = true
+  revealingHome.value = false
+  await nextTick()
+  requestAnimationFrame(() => requestAnimationFrame(() => { revealingHome.value = true }))
+  revealTimer = setTimeout(() => {
+    showLoginReveal.value = false
+    revealingHome.value = false
+  }, 850)
+})
+
+onBeforeUnmount(() => clearTimeout(revealTimer))
+
 </script>
 
 <template>
   <PrismBackground
     v-if="keepPrismBackground"
+    class="workbench-background"
     animation-type="rotate"
     :time-scale="0.4"
     :height="3.4"
@@ -33,7 +51,7 @@ function toggleBusinessTheme() {
   />
   <template v-else>
     <DotFieldBackground
-      v-if="isDotTheme"
+      v-if="isDotTheme && !isGenerationPage"
       :dot-radius="1.5"
       :dot-spacing="25"
       :bulge-strength="20"
@@ -60,68 +78,58 @@ function toggleBusinessTheme() {
       :noise-amount="0"
       :distortion="0.03"
     />
-    <button
-      type="button"
-      class="theme-toggle"
-      :aria-label="isDotTheme ? '切换到光束主题' : '切换到点阵主题'"
-      :title="isDotTheme ? '切换到光束主题' : '切换到点阵主题'"
-      @click="toggleBusinessTheme"
-    >
-      <el-icon aria-hidden="true">
-        <component :is="isDotTheme ? MagicStick : Brush" />
-      </el-icon>
-    </button>
   </template>
-  <SideNav />
-  <div class="main-content" :class="{ 'theme-dot': isDotTheme && !keepPrismBackground }">
+
+  <TopNav v-if="!isLoginPage" />
+  <div class="main-content" :class="{ 'theme-dot': isDotTheme && !keepPrismBackground, 'login-content': isLoginPage }">
     <RouterView v-slot="{ Component, route }">
       <KeepAlive :include="['TextToImage', 'TextToVideo']">
         <component :is="Component" :key="route.name" />
       </KeepAlive>
     </RouterView>
   </div>
+  <div v-if="showLoginReveal" class="login-reveal" :class="{ revealing: revealingHome }" aria-hidden="true" />
+  <ThreeDWindowManager v-if="!isLoginPage" />
 </template>
 
 <style>
 .main-content {
-  margin-left: 64px;
+  position: relative;
+  z-index: 1;
+  margin-left: 0;
+  padding-top: 22px;
   min-height: 100vh;
-  transition: margin-left 0.25s ease;
 }
 
-.theme-toggle {
+.main-content.theme-dot .studio { background: transparent; }
+.main-content.login-content { padding-top: 0; }
+.main-content > .page,
+.main-content > .workbench,
+.main-content > .developer-panel,
+.main-content > .studio { min-height: calc(100vh - 22px); }
+
+@media (max-width: 760px) {
+  .main-content { padding-top: 56px; }
+  .main-content > .page,
+  .main-content > .workbench,
+  .main-content > .developer-panel,
+  .main-content > .studio { min-height: calc(100vh - 56px); }
+}
+
+.workbench-background {
+  filter: blur(24px) brightness(0.5) saturate(0.72);
+  transform: scale(1.08);
+  transform-origin: center;
+}
+
+.login-reveal {
   position: fixed;
-  top: 18px;
-  right: 18px;
-  z-index: 120;
-  width: 42px;
-  height: 42px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: rgba(5, 7, 12, 0.58);
-  color: var(--color-text);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  backdrop-filter: var(--glass-blur);
-  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.24);
-  transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+  inset: 0;
+  z-index: 2000;
+  background: #000;
+  opacity: 1;
+  pointer-events: none;
+  transition: opacity 0.8s ease;
 }
-
-.theme-toggle:hover,
-.theme-toggle:focus-visible {
-  color: var(--color-primary);
-  border-color: var(--color-border-strong);
-  background: rgba(5, 7, 12, 0.74);
-  transform: translateY(-1px);
-}
-
-.theme-toggle .el-icon {
-  font-size: 18px;
-}
-
-.main-content.theme-dot .studio {
-  background: transparent;
-}
+.login-reveal.revealing { opacity: 0; }
 </style>

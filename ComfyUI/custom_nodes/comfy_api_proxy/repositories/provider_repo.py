@@ -24,6 +24,28 @@ def get_default_provider() -> Optional[dict]:
         return cursor.fetchone()
 
 
+def save_default_provider(base_url: str | None, encrypted_key: str | None) -> dict:
+    provider = get_default_provider()
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        if provider:
+            cursor.execute(
+                'UPDATE api_providers SET url = COALESCE(%s, url), `key` = COALESCE(%s, `key`) WHERE id = %s',
+                (base_url, encrypted_key, provider['id'])
+            )
+            provider_id = provider['id']
+        else:
+            if not base_url or not encrypted_key:
+                raise ValueError('base_url and api_key are required for initial configuration')
+            cursor.execute(
+                'INSERT INTO api_providers (url, `key`) VALUES (%s, %s)',
+                (base_url, encrypted_key)
+            )
+            provider_id = cursor.lastrowid
+        conn.commit()
+    return get_provider_by_id(provider_id)
+
+
 def create_provider(name: str, base_url: str, api_key: str, is_default: bool = False,
                     is_active: bool = True, description: str = '') -> dict:
     with get_db_connection() as conn:
@@ -78,11 +100,19 @@ def get_model_by_model_id(model_id: str, provider_id: int) -> Optional[dict]:
 
 
 def create_model(provider_id: int, model_id: str, name: str, description: str = None,
-                 model_type: str = 'image', is_active: bool = True, sort_order: int = 0) -> None:
+                 model_type: str = 'image', is_active: bool = True, sort_order: int = 0,
+                 provider: str | None = None) -> None:
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "INSERT INTO api_models (rfid, name, description, type) VALUES (%s, %s, %s, %s)",
-            (provider_id, model_id, description, model_type)
+            "INSERT INTO api_models (rfid, name, description, type, provider) VALUES (%s, %s, %s, %s, %s)",
+            (provider_id, model_id, description or name, model_type, provider)
         )
+        conn.commit()
+
+
+def delete_model(model_id: int) -> None:
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM api_models WHERE id = %s", (model_id,))
         conn.commit()

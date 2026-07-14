@@ -7,6 +7,8 @@ import VideoPlayer from './VideoPlayer.vue'
 import ProjectManager from './ProjectManager.vue'
 import ConfirmDialog from './ConfirmDialog.vue'
 
+const props = withDefaults(defineProps<{ compact?: boolean }>(), { compact: false })
+
 interface Asset {
   id: number
   location: string
@@ -44,6 +46,7 @@ interface HistoryRecord {
 
 const emit = defineEmits<{
   select: [asset: Asset]
+  add: [assets: Asset[]]
   reuseParams: [record: HistoryRecord]
 }>()
 
@@ -72,6 +75,9 @@ function handleProjectManagerClose() {
 
 // ── 我的资产 ──────────────────────────────────────────────────────────────
 const assets = ref<Asset[]>([])
+const assetSearch = ref('')
+const showAssetSearch = ref(false)
+const compactCollapsed = ref(false)
 const loading = ref(false)
 const loadingMore = ref(false)
 const activeFilter = ref<'all' | 'picture' | 'video'>('all')
@@ -87,6 +93,10 @@ const currentPage = ref(1)
 const total = ref(0)
 const PAGE_SIZE = 20
 const hasMore = computed(() => assets.value.length < total.value)
+const displayedAssets = computed(() => {
+  const query = assetSearch.value.trim().toLowerCase()
+  return query ? assets.value.filter(asset => asset.location.toLowerCase().includes(query)) : assets.value
+})
 
 async function loadAssets(assetType?: 'picture' | 'video') {
   const user = getUser()
@@ -560,6 +570,7 @@ function reuseRecordParams() {
 }
 
 onMounted(() => {
+  if (props.compact && window.matchMedia('(max-width: 1000px) and (min-width: 761px)').matches) compactCollapsed.value = true
   loadAssets()
   window.addEventListener('click', closeContextMenu)
   window.addEventListener('keydown', handleKeydown)
@@ -571,9 +582,25 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="asset-sidebar">
+  <div class="asset-sidebar" :class="{ compact, 'is-collapsed': compact && compactCollapsed }">
+    <button v-if="compact && compactCollapsed" class="compact-expand" aria-label="展开素材栏" @click="compactCollapsed = false">‹</button>
+    <div v-if="compact" class="compact-heading">
+      <div><strong>最近素材</strong><span>{{ total }} 项</span></div>
+      <div class="compact-heading-actions">
+        <button class="compact-icon-btn" aria-label="搜索素材" @click="showAssetSearch = !showAssetSearch">⌕</button>
+        <button class="compact-icon-btn collapse-control" aria-label="收起素材栏" @click="compactCollapsed = true">›</button>
+        <RouterLink to="/" class="workbench-link">工作台 ↗</RouterLink>
+      </div>
+    </div>
+    <input v-if="compact && showAssetSearch" v-model="assetSearch" class="compact-search" placeholder="搜索素材" />
+    <div v-if="compact" class="compact-nav">
+      <button :class="{ active: activeView === 'assets' && activeFilter === 'all' }" @click="activeView = 'assets'; setFilter('all')">最近</button>
+      <button :class="{ active: activeView === 'assets' && activeFilter === 'picture' }" @click="activeView = 'assets'; setFilter('picture')">图片</button>
+      <button :class="{ active: activeView === 'assets' && activeFilter === 'video' }" @click="activeView = 'assets'; setFilter('video')">视频</button>
+      <button :class="{ active: activeView === 'project' }" @click="switchToProjects">项目</button>
+    </div>
     <!-- ── 顶部 tab ── -->
-    <div class="sidebar-tabs">
+    <div v-if="!compact" class="sidebar-tabs">
       <button class="stab" :class="{ active: activeView === 'assets' }" @click="switchToAssets">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
         我的资产
@@ -587,7 +614,7 @@ onUnmounted(() => {
     <!-- ══════ 我的资产视图 ══════ -->
     <div v-if="activeView === 'assets'" class="view-wrap">
       <!-- 筛选栏 -->
-      <div class="filter-row">
+      <div v-if="!compact" class="filter-row">
         <div class="chip-group">
           <button class="chip" :class="{ active: activeFilter === 'all' }" @click="setFilter('all')">全部</button>
           <button class="chip" :class="{ active: activeFilter === 'picture' }" @click="setFilter('picture')">图片</button>
@@ -617,12 +644,13 @@ onUnmounted(() => {
       <!-- 空态 -->
       <div v-else-if="assets.length === 0" class="center-state">
         <p class="empty-hint">暂无资产</p>
+        <RouterLink v-if="compact" to="/" class="empty-workbench-link">打开工作台</RouterLink>
       </div>
 
       <!-- 网格 -->
       <div v-else class="thumb-grid">
         <div
-          v-for="asset in assets"
+          v-for="asset in displayedAssets"
           :key="asset.id"
           class="thumb-item"
           @click="handleAssetClick(asset)"
@@ -632,6 +660,7 @@ onUnmounted(() => {
           <video v-if="isVideo(asset)" :src="getThumb(asset)" class="thumb-media" preload="metadata" />
           <img v-else :src="getThumb(asset)" class="thumb-media" loading="lazy" />
           <div v-if="isVideo(asset)" class="thumb-play">▶</div>
+          <button v-if="compact" class="thumb-add" title="加入创作" @click.stop="emit('add', [asset])">＋</button>
           <div class="thumb-action-buttons">
             <button class="thumb-action-btn" @click.stop="openAddToProjectDialog(asset)" title="添加到项目">
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -744,6 +773,7 @@ onUnmounted(() => {
             <video v-if="isVideo(asset)" :src="getThumb(asset)" class="thumb-media" preload="metadata" />
             <img v-else :src="getThumb(asset)" class="thumb-media" loading="lazy" />
             <div v-if="isVideo(asset)" class="thumb-play">▶</div>
+            <button v-if="compact" class="thumb-add" title="加入创作" @click.stop="emit('add', [asset])">＋</button>
             <div class="thumb-action-buttons">
               <button class="thumb-action-btn" @click.stop="openAddToProjectDialog(asset)" title="添加到项目">
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1932,4 +1962,43 @@ onUnmounted(() => {
   border-color: rgba(255,255,255,0.32);
   box-shadow: 0 8px 24px rgba(0,0,0,0.28);
 }
+
+/* 生成页紧凑素材模式 */
+.asset-sidebar.compact {
+  min-width: 230px;
+  border: none;
+  border-radius: 0;
+  background: rgba(7, 10, 16, 0.62);
+  box-shadow: none;
+  backdrop-filter: none;
+}
+.compact-heading { height: 52px; padding: 0 14px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid rgba(255,255,255,.055); flex-shrink:0; }
+.compact-heading > div:first-child { display:flex; align-items:baseline; gap:7px; }
+.compact-heading strong { color:rgba(255,255,255,.78); font-size:13px; font-weight:500; }
+.compact-heading span { color:rgba(255,255,255,.25); font-size:10px; }
+.compact-heading-actions { display:flex; align-items:center; gap:5px; }
+.compact-icon-btn { width:26px; height:26px; padding:0; border:0; border-radius:6px; color:rgba(255,255,255,.38); background:transparent; cursor:pointer; }
+.compact-icon-btn:hover { color:#fff; background:rgba(255,255,255,.06); }
+.workbench-link { color:rgba(255,255,255,.4); font-size:10px; text-decoration:none; white-space:nowrap; }
+.workbench-link:hover { color:rgba(255,255,255,.8); }
+.compact-search { height:30px; margin:10px 12px 0; padding:0 10px; border:1px solid rgba(255,255,255,.08); border-radius:7px; outline:none; color:rgba(255,255,255,.8); background:rgba(255,255,255,.035); font-size:11px; }
+.compact-search:focus { border-color:rgba(166,231,226,.3); }
+.compact-nav { height:39px; padding:0 12px; display:flex; align-items:end; gap:15px; border-bottom:1px solid rgba(255,255,255,.055); flex-shrink:0; }
+.compact-nav button { position:relative; height:38px; padding:0; border:0; color:rgba(255,255,255,.3); background:transparent; font-size:11px; cursor:pointer; }
+.compact-nav button:hover,.compact-nav button.active { color:rgba(255,255,255,.82); }
+.compact-nav button.active::after { content:''; position:absolute; left:0; right:0; bottom:-1px; height:2px; background:rgba(166,231,226,.68); }
+.compact .view-wrap { padding-top:10px; }
+.compact .thumb-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px; padding:0 12px 12px; }
+.compact .thumb-item { border:0; border-radius:8px; background:rgba(255,255,255,.035); box-shadow:none; }
+.compact .thumb-item:hover { transform:none; box-shadow:0 0 0 1px rgba(255,255,255,.12); }
+.thumb-add { position:absolute; left:50%; top:50%; width:28px; height:28px; padding:0; border:0; border-radius:50%; color:#101218; background:rgba(255,255,255,.9); opacity:0; transform:translate(-50%,-45%); cursor:pointer; font-size:17px; transition:opacity .15s ease, transform .15s ease; }
+.compact .thumb-item:hover .thumb-add { opacity:1; transform:translate(-50%,-50%); }
+.compact .center-state { color:rgba(255,255,255,.28); }
+.compact .empty-hint::after { content:'\A上传或整理图片与视频素材'; white-space:pre; display:block; margin-top:7px; font-size:10px; color:rgba(255,255,255,.2); }
+.empty-workbench-link { margin-top:12px; padding:6px 10px; border-radius:6px; color:rgba(255,255,255,.55); background:rgba(255,255,255,.055); text-decoration:none; font-size:10px; }
+.empty-workbench-link:hover { color:#fff; background:rgba(255,255,255,.09); }
+.asset-sidebar.compact.is-collapsed > :not(.compact-expand) { display:none; }
+.asset-sidebar.compact.is-collapsed { min-width:48px; align-items:center; background:rgba(7,10,16,.5); }
+.compact-expand { width:28px; height:40px; margin-top:10px; border:0; border-radius:7px; color:rgba(255,255,255,.38); background:rgba(255,255,255,.04); cursor:pointer; font-size:18px; }
+.compact-expand:hover { color:#fff; background:rgba(255,255,255,.08); }
 </style>

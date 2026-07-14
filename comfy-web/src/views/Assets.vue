@@ -9,6 +9,7 @@ import { favoriteAsset } from '../api/apiService'
 interface Asset {
   id: number
   location: string
+  name?: string
   asset_type?: string
   tag?: number
 }
@@ -25,13 +26,42 @@ interface Project {
   categories: Category[]
 }
 
+const MOCK_ASSETS: Asset[] = [
+  { id: 9001, name: '星夜概念图', location: 'https://images.unsplash.com/photo-1519608487953-e999c86e7455?auto=format&fit=crop&w=1200&q=85', asset_type: 'picture', tag: 1 },
+  { id: 9002, name: '夏日公路', location: 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1200&q=85', asset_type: 'picture', tag: 2 },
+  { id: 9003, name: '荒野远景', location: 'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?auto=format&fit=crop&w=1200&q=85', asset_type: 'picture', tag: 3 },
+  { id: 9004, name: '人物造型', location: 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=1200&q=85', asset_type: 'picture', tag: 4 },
+  { id: 9005, name: '创意空间', location: 'https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=1200&q=85', asset_type: 'picture', tag: 1 },
+  { id: 9006, name: '山野晨光', location: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?auto=format&fit=crop&w=1200&q=85', asset_type: 'picture', tag: 2 },
+  { id: 9007, name: '舞台氛围', location: 'https://images.unsplash.com/photo-1531058020387-3be344556be6?auto=format&fit=crop&w=1200&q=85', asset_type: 'picture', tag: 3 },
+  { id: 9008, name: '现场灯光', location: 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=1200&q=85', asset_type: 'picture', tag: 4 },
+]
+
+const MOCK_PROJECTS: Project[] = [
+  { id: 9101, name: '品牌视觉提案', categories: [
+    { id: 9201, name: '情绪参考', assets: [9001, 9003, 9006] },
+    { id: 9202, name: '主视觉候选', assets: [9004, 9007] },
+  ] },
+  { id: 9102, name: '夏日短片', categories: [
+    { id: 9203, name: '场景概念', assets: [9002, 9005, 9008] },
+    { id: 9204, name: '已确认素材', assets: [9002, 9008] },
+  ] },
+]
+
 // ── 资产展示 ──────────────────────────────────────────────────────────────
 const assets = ref<Asset[]>([])
 const loading = ref(false)
 const loadingMore = ref(false)
 const activeFilter = ref<'all' | 'picture' | 'video'>('all')
 // 收藏颜色筛选：0=不筛选，1=红，2=黄，3=绿，4=蓝
-const favoriteTag = ref<0 | 1 | 2 | 3 | 4>(1)
+const favoriteTag = ref<0 | 1 | 2 | 3 | 4>(0)
+
+function getMockAssets(assetType?: 'picture' | 'video') {
+  return MOCK_ASSETS.filter(asset => {
+    if (assetType && asset.asset_type !== assetType) return false
+    return favoriteTag.value === 0 || asset.tag === favoriteTag.value
+  })
+}
 const FAVORITE_COLORS: { tag: 1 | 2 | 3 | 4; color: string; label: string }[] = [
   { tag: 1, color: '#f43f5e', label: '红' },
   { tag: 2, color: '#eab308', label: '黄' },
@@ -174,11 +204,15 @@ async function loadAssets(assetType?: 'picture' | 'video') {
     const res = await fetch(url)
     if (!res.ok) throw new Error('加载失败')
     const data = await res.json()
-    assets.value = data.assets || []
-    total.value = data.total ?? 0
+    assets.value = data.assets?.length ? data.assets : getMockAssets(assetType)
+    total.value = data.assets?.length ? (data.total ?? assets.value.length) : assets.value.length
   } catch (e: any) {
     ElMessage.error(e.message || '加载资产失败')
   } finally {
+    if (assets.value.length === 0) {
+      assets.value = getMockAssets(assetType)
+      total.value = assets.value.length
+    }
     loading.value = false
   }
 }
@@ -215,10 +249,11 @@ async function loadProjects() {
     const res = await fetch(`/api/api-proxy/projects?user_id=${user.id}`)
     if (!res.ok) throw new Error('加载失败')
     const data = await res.json()
-    projects.value = data.projects || []
+    projects.value = data.projects?.length ? data.projects : structuredClone(MOCK_PROJECTS)
   } catch (e: any) {
     ElMessage.error(e.message || '加载项目失败')
   } finally {
+    if (projects.value.length === 0) projects.value = structuredClone(MOCK_PROJECTS)
     projectsLoading.value = false
   }
 }
@@ -245,9 +280,11 @@ async function loadCategoryAssetDetails(ids: number[]) {
     })
     if (!res.ok) throw new Error()
     const data = await res.json()
-    categoryAssets.value = data.assets || []
+    categoryAssets.value = data.assets?.length
+      ? data.assets
+      : MOCK_ASSETS.filter(asset => ids.includes(asset.id))
   } catch {
-    categoryAssets.value = []
+    categoryAssets.value = MOCK_ASSETS.filter(asset => ids.includes(asset.id))
   } finally {
     categoryAssetsLoading.value = false
   }
@@ -475,6 +512,7 @@ function setFavoriteTag(tag: 0 | 1 | 2 | 3 | 4) {
 }
 
 function getMediaUrl(location: string) {
+  if (/^https?:\/\//.test(location)) return location
   return `/api/api-proxy/output/${location.split(/[/\\]/).pop()}`
 }
 
@@ -518,9 +556,6 @@ onUnmounted(() => {
 
 <template>
   <div class="page">
-    <div class="orb orb-1" />
-    <div class="orb orb-2" />
-
     <div class="layout">
       <!-- ── 左侧导航 ── -->
       <aside class="sidebar">
@@ -733,7 +768,7 @@ onUnmounted(() => {
                     @click="previewImage(asset, categoryAssets)"
                   />
                   <div class="gallery-info">
-                    <span class="gallery-name">{{ asset.location.split(/[/\\]/).pop() }}</span>
+                    <span class="gallery-name">{{ asset.name || asset.location.split(/[/\\]/).pop() }}</span>
                     <span v-if="isVideo(asset)" class="gallery-type">视频</span>
                   </div>
                   <button class="download-btn" @click.stop="downloadAsset(asset)" title="下载">
@@ -827,26 +862,6 @@ onUnmounted(() => {
   min-height: 100vh;
   position: relative;
   overflow: hidden;
-}
-
-.orb {
-  position: fixed;
-  border-radius: 50%;
-  filter: blur(90px);
-  pointer-events: none;
-  z-index: 0;
-  animation: breathe 6s ease-in-out infinite;
-}
-.orb-1 {
-  width: 500px; height: 500px;
-  background: radial-gradient(circle, rgba(108,99,255,0.16) 0%, transparent 70%);
-  top: -140px; left: 40px;
-}
-.orb-2 {
-  width: 400px; height: 400px;
-  background: radial-gradient(circle, rgba(167,139,250,0.12) 0%, transparent 70%);
-  bottom: -100px; right: 60px;
-  animation-delay: 3s;
 }
 
 /* ── 布局 ── */

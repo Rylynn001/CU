@@ -6,6 +6,7 @@ import { ref } from 'vue'
 interface Asset {
   id: number
   location: string
+  name?: string
   asset_type?: string
   tag?: number
 }
@@ -36,6 +37,7 @@ function handleProjectManagerClose() {
 }
 
 function getMediaUrl(location: string) {
+  if (/^https?:\/\//.test(location)) return location
   return `/api/api-proxy/output/${location.split(/[/\\]/).pop()}`
 }
 
@@ -76,7 +78,7 @@ function isVideo(asset: Asset): boolean {
         @click="emit('preview', asset)"
       />
       <div class="gallery-info">
-        <span class="gallery-name">{{ asset.location.split(/[/\\]/).pop() }}</span>
+        <span class="gallery-name">{{ asset.name || asset.location.split(/[/\\]/).pop() }}</span>
         <span v-if="isVideo(asset)" class="gallery-type">视频</span>
       </div>
       <button class="download-btn" @click.stop="emit('download', asset)" title="下载">

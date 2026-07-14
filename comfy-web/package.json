@@ -13,6 +13,7 @@
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.2",
     "@types/three": "^0.184.1",
+    "@vue-flow/core": "^1.48.2",
     "element-plus": "^2.13.7",
     "fabric": "^6.9.1",
     "postprocessing": "^6.39.2",

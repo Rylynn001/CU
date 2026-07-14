@@ -1,9 +1,9 @@
 ﻿<script setup lang="ts">
 defineOptions({ name: 'TextToVideo' })
 // Vue 鏍稿績
-import { ref, onMounted, onUnmounted, computed, nextTick, watch } from 'vue'
+import { ref, onMounted, onUnmounted, computed, defineAsyncComponent, nextTick, watch } from 'vue'
 // Element Plus UI 缁勪欢
-import { ElInput, ElSelect, ElOption } from 'element-plus'
+import { ElIcon, ElInput, ElSelect, ElOption } from 'element-plus'
 import { UploadFilled } from '@element-plus/icons-vue'
 // 璧勪骇閫夋嫨鍣ㄥ脊绐?
 import AssetSidebar from '../components/AssetSidebar.vue'
@@ -12,14 +12,16 @@ import VideoPlayer from '../components/VideoPlayer.vue'
 // 鍘嗗彶璁板綍鍗＄墖
 import RecordCard from '../components/RecordCard.vue'
 // 鍥剧墖缂栬緫鍣紙鍥剧敓瑙嗛鏃跺彲浠ユ秱鎶瑰弬鑰冨浘锛?
-import ImageEditor from '../components/ImageEditor.vue'
-import ModelViewer from '../components/ModelViewer.vue'
+import type ImageEditorComponent from '../components/ImageEditor.vue'
+const ImageEditor = defineAsyncComponent(() => import('../components/ImageEditor.vue'))
 import FavoriteHeart from '../components/FavoriteHeart.vue'
 import ProjectManager from '../components/ProjectManager.vue'
+import PromptLibrary from '../components/PromptLibrary.vue'
 // 鍚庣 API 鎺ュ彛
 import { getApiModels, retryHistory, favoriteAsset, type ApiModel } from '../api/apiService'
 // 鍘嗗彶璁板綍绠＄悊
 import { useGenerationHistory } from '../composables/useGenerationHistory'
+import { use3DWindow } from '../composables/use3DWindow'
 // 浠诲姟杞
 import { useTaskPolling } from '../composables/useTaskPolling'
 // @鎻愬強鍔熻兘
@@ -146,7 +148,7 @@ function removeAudio() {
 }
 
 // 3D 妯″瀷瑙嗚鎴浘
-const showModelViewer = ref(false)
+const { open3DWindow } = use3DWindow()
 function handleModelCapture(file: File) {
   inputFiles.value.push(file)
   inputPreviews.value.push({ url: URL.createObjectURL(file), type: 'image' })
@@ -282,7 +284,7 @@ function onEditorConfirmUnified(file: File) {
 }
 
 // 鈹€鈹€ 鍘嗗彶璁板綍缂栬緫闈㈡澘 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
-const inlineEditorRef = ref<InstanceType<typeof ImageEditor> | null>(null)
+const inlineEditorRef = ref<InstanceType<typeof ImageEditorComponent> | null>(null)
 const {
   showRecordEditor, recordEditorPrompt,
   recordEditorEditedPreview, recordEditorEditingSrc, showRecordImageEditor,
@@ -543,6 +545,35 @@ function handleProjectManagerClose() {
   currentAssetId.value = undefined
 }
 
+function seedDebugVideoMocks() {
+  const user = JSON.parse(localStorage.getItem('user') || 'null')
+  if (!user?.debug) return
+  const createdAt = Date.now()
+  if (records.value.length === 0) records.value.push(
+    {
+      id: 'mock-video-1', createdAt,
+      prompt: '航拍镜头缓慢掠过雪山，云层在山谷间流动',
+      modelName: 'Video Studio', ratio: '16:9', resolution: '720p', duration: 8,
+      status: 'done', videoUrl: 'https://storage.googleapis.com/coverr-main/mp4/Mt_Baker.mp4', mode: 'txt2video',
+    },
+    {
+      id: 'mock-video-2', createdAt: createdAt - 5400000,
+      prompt: '森林中的人物向前奔跑，手持摄影感，阳光穿过树叶',
+      modelName: 'Video Studio', ratio: '16:9', resolution: '720p', duration: 8,
+      status: 'done', videoUrl: 'https://storage.googleapis.com/coverr-main/mp4/Footboys.mp4', mode: 'txt2video',
+    },
+  )
+  const img2videoMock = records.value.find(record => record.id === 'mock-video-2')
+  if (img2videoMock) {
+    img2videoMock.mode = 'img2video'
+    img2videoMock.inputAssetUrls = [{
+      url: 'https://images.unsplash.com/photo-1531058020387-3be344556be6?auto=format&fit=crop&w=900&q=85',
+      type: 'picture',
+    }]
+  }
+  saveRecords()
+}
+
 // 鈹€鈹€ 鍒濆鍖?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 onMounted(async () => {
   try {
@@ -553,6 +584,7 @@ onMounted(async () => {
 
   // 浠庢暟鎹簱鍔犺浇鍘嗗彶璁板綍
   const userId = await loadFromDb(mapVideoDbRecord, filterVideoDbRecord)
+  seedDebugVideoMocks()
 
   // 鎭㈠椤甸潰鍒锋柊鍓嶆湭瀹屾垚鐨勪换鍔¤疆璇?
   const pending = markStaleRecords()
@@ -648,6 +680,7 @@ onUnmounted(() => {
   // 绉婚櫎閿洏浜嬩欢鐩戝惉
   window.removeEventListener('keydown', handleImageKeydown)
 })
+
 </script>
 
 
@@ -669,7 +702,7 @@ onUnmounted(() => {
           <p v-if="errorMsg" class="error-msg">{{ errorMsg }}</p>
 
           <!-- model source toggle -->
-          <div class="row-item">
+          <div v-if="false" class="row-item">
             <span class="row-label">调用方式</span>
             <div class="source-toggle">
               <button :class="{ active: modelSource === 'local' }" @click="modelSource = 'local'">本地模型</button>
@@ -780,7 +813,7 @@ onUnmounted(() => {
                 <el-icon><UploadFilled /></el-icon>
                 <span>本地上传</span>
               </label>
-              <button class="asset-btn" @click="showModelViewer = true">
+              <button class="asset-btn" @click="open3DWindow(handleModelCapture)">
                 <span>3D 截图</span>
               </button>
               <button v-if="inputPreviews.length > 0 || selectedAssetPreviews.length > 0" class="clear-all-btn-small" @click="clearAllInputs">
@@ -840,6 +873,7 @@ onUnmounted(() => {
           </div>
 
           <!-- generate -->
+          <PromptLibrary type="video" :prompt="prompt" @select="item => { prompt = item.prompt }" />
           <button class="generate-btn" :class="{ loading: generating, submitted: justSubmitted }" :disabled="generating" @click="handleGenerate">
             <span class="btn-glow" />
             <span class="btn-label">{{ justSubmitted ? '已提交' : generating ? '生成中...' : '开始生成' }}</span>
@@ -883,13 +917,18 @@ onUnmounted(() => {
 
         <!-- 姝ｅ父妯″紡锛氬巻鍙茶褰曪紙濮嬬粓淇濈暀 DOM 闃叉婊氬姩閲嶇疆锛?-->
         <div class="history-col" v-show="!showRecordEditor">
+            <div class="canvas-toolbar">
+              <div><strong>视频 Session</strong><span>{{ filteredRecords.length }} 条记录</span></div>
+              <input v-model="searchQuery" class="search-input" placeholder="搜索提示词..." />
+            </div>
             <div v-if="filteredRecords.length === 0 && records.length === 0" class="empty-wrap">
-              <div class="empty-orb" />
-              <p class="empty-text">等待生成</p>
+              <p class="empty-kicker">视频创作画布</p>
+              <h2 class="empty-title">让画面动起来</h2>
+              <p class="empty-text">设置镜头比例和时长，生成结果会保留在这里</p>
             </div>
             <div v-else class="stream">
               <!-- 鎼滅储妗?-->
-              <div class="stream-header">
+              <div class="stream-header legacy-stream-header">
                 <span class="stream-title">历史记录 ({{ filteredRecords.length }})</span>
                 <input v-model="searchQuery" class="search-input" placeholder="搜索提示词..." />
               </div>
@@ -959,10 +998,10 @@ onUnmounted(() => {
                 <span v-else-if="records.length > 0" class="no-more-text">已全部加载</span>
               </div>
             </div>
-          </div>
+        </div>
       </main>
       <!-- 鈹€鈹€ 鍙充晶璧勪骇渚ц竟鏍?鈹€鈹€ -->
-      <AssetSidebar @select="handleAssetSelect" @reuse-params="handleReuseParams" />
+      <AssetSidebar compact @select="handleAssetSelect" @add="handleAssetSelect" @reuse-params="handleReuseParams" />
     </div>
 
     <!-- Image Viewer -->
@@ -1008,7 +1047,6 @@ onUnmounted(() => {
     />
 
     <!-- 3D 妯″瀷瑙嗚鎴浘 -->
-    <ModelViewer v-model:visible="showModelViewer" @capture="handleModelCapture" />
 
     <!-- 椤圭洰绠＄悊鍣?-->
     <ProjectManager
