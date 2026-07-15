@@ -26,7 +26,7 @@ const features = [
     <main class="home-stage">
       <section class="hero" aria-labelledby="home-title">
         <div class="hero-kicker">AI 创作中枢</div>
-        <h1 id="home-title" class="hero-title">灵枢AI</h1>
+        <h1 id="home-title" class="hero-title">若晴节点式创作平台</h1>
         <p class="hero-sub">从提示词、参考素材到历史记录，用清晰的工作台承载连续创作流程。</p>
       </section>
 
@@ -60,9 +60,9 @@ const features = [
   z-index: 1;
   min-height: calc(100vh - 96px);
   display: grid;
-  grid-template-columns: minmax(360px, 0.95fr) minmax(520px, 1.05fr);
+  grid-template-columns: minmax(500px, 1.1fr) minmax(520px, 0.9fr);
   align-items: center;
-  gap: clamp(42px, 7vw, 110px);
+  gap: clamp(42px, 5vw, 80px);
 }
 
 .hero {
@@ -79,12 +79,12 @@ const features = [
 
 .hero-title {
   max-width: 680px;
-  font-size: clamp(46px, 6vw, 82px);
+  font-size: 50px;
   font-weight: 900;
   color: #fff;
   letter-spacing: 0;
   line-height: 1.02;
-  text-wrap: balance;
+  white-space: nowrap;
   margin: 0;
   text-shadow: 0 14px 44px rgba(255, 255, 255, 0.12);
 }
@@ -168,6 +168,27 @@ const features = [
   line-height: 1.7;
 }
 
+@media (max-width: 1200px) {
+  .home-stage {
+    grid-template-columns: minmax(0, 1fr) minmax(420px, 1fr);
+    gap: 36px;
+  }
+
+  .hero-title {
+    font-size: 38px;
+  }
+}
+
+@media (max-width: 900px) {
+  .home-stage {
+    grid-template-columns: 1fr;
+  }
+
+  .cards {
+    max-width: none;
+  }
+}
+
 @media (max-width: 768px) {
   .home {
     padding: 28px 20px;
@@ -178,8 +199,22 @@ const features = [
     grid-template-columns: 1fr;
   }
 
+  .hero-title {
+    font-size: 29px;
+  }
+
   .cards {
     max-width: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .home {
+    padding-inline: 16px;
+  }
+
+  .hero-title {
+    font-size: 25px;
   }
 }
 </style>

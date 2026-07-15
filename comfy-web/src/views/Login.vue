@@ -66,7 +66,7 @@ function handleKeydown(e: KeyboardEvent) {
 
     <div class="login-card">
       <div class="card-header">
-        <h2 class="title">灵枢AI</h2>
+        <h2 class="title">若晴节点式创作平台</h2>
         <p class="subtitle">AI Creative Studio</p>
       </div>
 

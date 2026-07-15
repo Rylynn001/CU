@@ -25,7 +25,8 @@ export interface ImageGenerateResult {
 
 /**
  * 将输入图片上传到后端资产库，返回资产 id 列表。
- * 支持三种来源：本地 File 对象、资产库路径（重新获取后上传）、预览 URL（blob）。
+ * 支持两种来源：本地 File 对象、预览 URL（preview 在各场景下都已是正确可访问的地址，
+ * 无需再根据 assetLocation 重新拼接，避免拼出错误的 /api/view?type=output 请求）。
  */
 async function uploadInputImages(images: InputImage[], userId: number): Promise<number[]> {
   const ids: number[] = []
@@ -34,17 +35,10 @@ async function uploadInputImages(images: InputImage[], userId: number): Promise<
       // 直接上传本地文件
       const uploaded = await uploadInputImage(img.file, userId)
       ids.push(uploaded.id)
-    } else if (img.assetLocation) {
-      // 从资产库路径重新获取文件后上传
-      const filename = img.assetLocation.replace(/\\/g, '/').split('/').pop()!
-      const res = await fetch(`/api/view?filename=${encodeURIComponent(filename)}&type=output`)
-      const blob = await res.blob()
-      const file = new File([blob], img.assetLocation, { type: blob.type })
-      const uploaded = await uploadInputImage(file, userId)
-      ids.push(uploaded.id)
     } else if (img.preview) {
-      // 从预览 URL（blob URL）获取文件后上传
+      // 从预览 URL 获取文件后上传
       const res = await fetch(img.preview)
+      if (!res.ok) throw new Error(`获取参考图失败: ${res.status}`)
       const blob = await res.blob()
       const file = new File([blob], 'input.png', { type: blob.type || 'image/png' })
       const uploaded = await uploadInputImage(file, userId)
