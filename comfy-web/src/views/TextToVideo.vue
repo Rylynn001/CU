@@ -9,8 +9,8 @@ import { UploadFilled } from '@element-plus/icons-vue'
 import AssetSidebar from '../components/AssetSidebar.vue'
 // 视频播放器弹窗
 import VideoPlayer from '../components/VideoPlayer.vue'
-// 鍘嗗彶璁板綍鍗＄墖
-import RecordCard from '../components/RecordCard.vue'
+// 鍘嗗彶璁板綍闈㈡澘
+import HistoryPanel from '../components/HistoryPanel.vue'
 // 鍥剧墖缂栬緫鍣紙鍥剧敓瑙嗛鏃跺彲浠ユ秱鎶瑰弬鑰冨浘锛?
 import ImageEditor from '../components/ImageEditor.vue'
 import ModelViewer from '../components/ModelViewer.vue'
@@ -882,84 +882,52 @@ onUnmounted(() => {
         </template>
 
         <!-- 姝ｅ父妯″紡锛氬巻鍙茶褰曪紙濮嬬粓淇濈暀 DOM 闃叉婊氬姩閲嶇疆锛?-->
-        <div class="history-col" v-show="!showRecordEditor">
-            <div v-if="filteredRecords.length === 0 && records.length === 0" class="empty-wrap">
-              <div class="empty-orb" />
-              <p class="empty-text">等待生成</p>
-            </div>
-            <div v-else class="stream">
-              <!-- 鎼滅储妗?-->
-              <div class="stream-header">
-                <span class="stream-title">历史记录 ({{ filteredRecords.length }})</span>
-                <input v-model="searchQuery" class="search-input" placeholder="搜索提示词..." />
-              </div>
-
-              <div v-for="rec in filteredRecords" :key="rec.id" class="record-row" :data-record-id="rec.id" :class="{ 'record-located': locatedRecordId === rec.id }">
-                <!-- 宸︿晶杈撳叆鍥?-->
-                <div class="record-input-col">
-                  <template v-if="rec.inputAssetUrls && rec.inputAssetUrls.length">
-                    <button class="input-toggle-btn" @click="toggleInputExpand(rec.id)">
-                      参考素材
-                      <span class="input-toggle-arrow" :class="{ open: expandedInputs.has(rec.id) }">›</span>
-                    </button>
-                    <template v-if="expandedInputs.has(rec.id)">
-                      <template v-for="(a, i) in rec.inputAssetUrls" :key="i">
-                        <video v-if="a.type === 'video'" :src="a.url" class="input-panel-thumb" controls />
-                        <img v-else :src="a.url" class="input-panel-thumb" @click="previewImage(a.url)" />
-                      </template>
-                    </template>
-                  </template>
-                </div>
-                <!-- 鍙充晶鍗＄墖 -->
-                <RecordCard class="record-card-flex" :record="rec" @delete="deleteRecord" @retry="(r) => retryRecord(r as any)" @edit="handleRecordEdit">
-                  <template #prompt>
-                    <p class="card-prompt">{{ rec.prompt }}</p>
-                  </template>
-                  <template #result>
-                    <div v-if="rec.videoUrl" class="card-video">
-                      <div class="video-thumb" @click="openVideo(rec.videoUrl, rec.outputAssetId)">
-                        <video :src="rec.videoUrl" class="video-player" preload="metadata" />
-                        <div class="video-play-icon">▶</div>
-                        <button class="download-btn" @click.stop="downloadVideo(rec.videoUrl)" title="下载">
-                          <span>⬇</span>
-                        </button>
-                        <button v-if="rec.outputAssetId" class="add-to-project-btn" @click.stop="openAddToProjectDialog(rec.outputAssetId)" title="添加到项目">
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-                          </svg>
-                        </button>
-                        <span v-if="rec.outputAssetId" class="fav-slot" @click.stop>
-                          <FavoriteHeart
-                            :tag="favoritedVideos[rec.id] || 0"
-                            :size="14"
-                            @change="(t) => setVideoFavorite(rec, t)"
-                          />
-                        </span>
-                      </div>
-                    </div>
-                  </template>
-                </RecordCard>
-              </div>
-              <!-- 鍒嗛〉鎺т欢 -->
-              <div class="history-pagination">
-                <div class="page-size-group">
-                  <span class="page-size-label">每页</span>
-                  <button
-                    v-for="n in [30, 50, 100]" :key="n"
-                    class="page-size-btn" :class="{ active: dbPageSize === n }"
-                    @click="dbPageSize = (n as 30|50|100); loadFromDb(mapVideoDbRecord, filterVideoDbRecord)"
-                  >{{ n }}</button>
-                </div>
-                <button
-                  v-if="hasMoreInDb"
-                  class="load-more-btn"
-                  :disabled="loadingMore"
-                  @click="loadMoreHistory"
-                >{{ loadingMore ? '加载中...' : '加载更多' }}</button>
-                <span v-else-if="records.length > 0" class="no-more-text">已全部加载</span>
+        <HistoryPanel
+          v-show="!showRecordEditor"
+          :records="filteredRecords"
+          :total-count="records.length"
+          reference-label="参考素材"
+          v-model:search-query="searchQuery"
+          :expanded-inputs="expandedInputs"
+          v-model:db-page-size="dbPageSize"
+          :has-more-in-db="hasMoreInDb"
+          :loading-more="loadingMore"
+          :located-record-id="locatedRecordId"
+          @toggle-input-expand="toggleInputExpand"
+          @preview-image="(url) => previewImage(url)"
+          @delete="deleteRecord"
+          @retry="(r) => retryRecord(r as any)"
+          @edit="handleRecordEdit"
+          @page-size-change="() => loadFromDb(mapVideoDbRecord, filterVideoDbRecord)"
+          @load-more="loadMoreHistory"
+        >
+          <template #prompt="{ record: rec }">
+            <p class="card-prompt">{{ rec.prompt }}</p>
+          </template>
+          <template #result="{ record: rec }">
+            <div v-if="rec.videoUrl" class="card-video">
+              <div class="video-thumb" @click="openVideo(rec.videoUrl, rec.outputAssetId)">
+                <video :src="rec.videoUrl" class="video-player" preload="metadata" />
+                <div class="video-play-icon">▶</div>
+                <button class="download-btn" @click.stop="downloadVideo(rec.videoUrl)" title="下载">
+                  <span>⬇</span>
+                </button>
+                <button v-if="rec.outputAssetId" class="add-to-project-btn" @click.stop="openAddToProjectDialog(rec.outputAssetId)" title="添加到项目">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                  </svg>
+                </button>
+                <span v-if="rec.outputAssetId" class="fav-slot" @click.stop>
+                  <FavoriteHeart
+                    :tag="favoritedVideos[rec.id] || 0"
+                    :size="14"
+                    @change="(t) => setVideoFavorite(rec, t)"
+                  />
+                </span>
               </div>
             </div>
-          </div>
+          </template>
+        </HistoryPanel>
       </main>
       <!-- 鈹€鈹€ 鍙充晶璧勪骇渚ц竟鏍?鈹€鈹€ -->
       <AssetSidebar @select="handleAssetSelect" @reuse-params="handleReuseParams" />

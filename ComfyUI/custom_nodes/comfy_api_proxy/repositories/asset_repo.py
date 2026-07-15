@@ -168,12 +168,19 @@ def get_user_projects(user_id: int) -> list[dict]:
         ]
 
 
-def create_project(name: str, user_id: int) -> int:
+def create_project(name: str, user_id: int) -> dict:
     with get_db_connection() as conn:
+        objs = ['人物','场景','道具']
         cursor = conn.cursor()
         cursor.execute('INSERT INTO projects (name, user_id) VALUES (%s, %s)', (name, user_id))
+        lastrowid = cursor.lastrowid
+        categories = []
+        for obj in objs:
+            sql = "insert into project_category (project_id, name) VALUES (%s, %s)"
+            cursor.execute(sql, (lastrowid, obj))
+            categories.append({'id': cursor.lastrowid, 'name': obj, 'assets': []})
         conn.commit()
-        return cursor.lastrowid
+        return {'id': lastrowid, 'categories': categories}
 
 
 def delete_project(project_id: int, user_id: int) -> bool:

@@ -10,8 +10,8 @@ import { ElInput, ElSelect, ElOption, ElSlider, ElInputNumber, ElMessage } from 
 import { Refresh, UploadFilled, Close, Setting } from '@element-plus/icons-vue'
 // 资产选择器：从已有素材库中选图
 import AssetSidebar from '../components/AssetSidebar.vue'
-// 历史记录卡片：展示每条生成记录
-import RecordCard from '../components/RecordCard.vue'
+// 历史记录面板：搜索框 + 记录行 + 分页（图片/视频页共用）
+import HistoryPanel from '../components/HistoryPanel.vue'
 // 图片编辑器：涂抹/裁剪输入图
 import ImageEditor from '../components/ImageEditor.vue'
 import ModelViewer from '../components/ModelViewer.vue'
@@ -1108,95 +1108,60 @@ onUnmounted(() => {
         </template>
 
         <!-- 历史记录（始终保留 DOM 防止滚动重置） -->
-        <div class="history-col" v-show="!showRecordEditor">
-            <div v-if="filteredRecords.length === 0 && records.length === 0" class="empty-wrap">
-              <div class="empty-orb" />
-              <p class="empty-text">等待生成</p>
+        <HistoryPanel
+          v-show="!showRecordEditor"
+          :records="filteredRecords"
+          :total-count="records.length"
+          reference-label="参考图"
+          v-model:search-query="searchQuery"
+          :expanded-inputs="expandedInputs"
+          v-model:db-page-size="dbPageSize"
+          :has-more-in-db="hasMoreInDb"
+          :loading-more="loadingMore"
+          :editing-record-id="editingRecordId"
+          :show-record-editor="showRecordEditor"
+          :located-record-id="locatedRecordId"
+          @toggle-input-expand="toggleInputExpand"
+          @preview-image="(url) => previewImage(url)"
+          @delete="deleteRecord"
+          @retry="(r) => retryRecord(r as any)"
+          @edit="handleRecordEdit"
+          @page-size-change="() => loadFromDb(mapImgDbRecord, filterImgDbRecord)"
+          @load-more="loadMoreHistory"
+        >
+          <template #prompt="{ record: rec }">
+            <p class="card-prompt">{{ rec.prompt }}</p>
+          </template>
+          <template #progress="{ record: rec }">
+            <div v-if="rec.mode === 'local' && rec.progress > 0" class="progress-wrap">
+              <div class="progress-bar" :style="{ width: rec.progress + '%' }" />
+              <span class="progress-text">{{ rec.progress }}%</span>
             </div>
-            <div v-else class="stream">
-              <!-- 搜索框 -->
-              <div class="stream-header">
-                <span class="stream-title">历史记录 ({{ filteredRecords.length }})</span>
-                <input v-model="searchQuery" class="search-input" placeholder="搜索提示词..." />
-              </div>
-
-              <div v-for="rec in filteredRecords" :key="rec.id" class="record-row" :data-record-id="rec.id" :class="{ 'editing': showRecordEditor && editingRecordId === rec.id, 'record-located': locatedRecordId === rec.id }">
-                <!-- 左侧输入图 -->
-                <div class="record-input-col">
-                  <template v-if="(rec.inputAssetUrls && rec.inputAssetUrls.length) || (rec.inputPreviews && rec.inputPreviews.length)">
-                    <button class="input-toggle-btn" @click="toggleInputExpand(rec.id)">
-                      参考图
-                      <span class="input-toggle-arrow" :class="{ open: expandedInputs.has(rec.id) }">›</span>
-                    </button>
-                    <template v-if="expandedInputs.has(rec.id)">
-                      <template v-if="rec.inputAssetUrls && rec.inputAssetUrls.length">
-                        <template v-for="(a, i) in rec.inputAssetUrls" :key="'a' + i">
-                          <video v-if="a.type === 'video'" :src="a.url" class="input-panel-thumb" controls />
-                          <img v-else :src="a.url" class="input-panel-thumb" @click="previewImage(a.url)" />
-                        </template>
-                      </template>
-                      <template v-else-if="rec.inputPreviews && rec.inputPreviews.length">
-                        <img v-for="(p, i) in rec.inputPreviews" :key="i" :src="p" class="input-panel-thumb" @click="previewImage(p)" />
-                      </template>
-                    </template>
-                  </template>
-                </div>
-                <!-- 右侧卡片 -->
-                <RecordCard class="record-card-flex" :record="rec" @delete="deleteRecord" @retry="(r) => retryRecord(r as any)" @edit="handleRecordEdit">
-                  <template #prompt>
-                    <p class="card-prompt">{{ rec.prompt }}</p>
-                  </template>
-                  <template #progress>
-                    <div v-if="rec.mode === 'local' && rec.progress > 0" class="progress-wrap">
-                      <div class="progress-bar" :style="{ width: rec.progress + '%' }" />
-                      <span class="progress-text">{{ rec.progress }}%</span>
-                    </div>
-                    <span v-else class="loading-text">生成中...</span>
-                  </template>
-                  <template #result>
-                    <div class="card-images">
-                      <div v-for="(src, i) in rec.images" :key="i" class="card-image-wrap">
-                        <img :src="src" class="card-image" @click="previewImage(src, rec.images)" />
-                        <button class="download-btn" @click="downloadImage(src)" title="下载">
-                          <span>⬇</span>
-                        </button>
-                        <button v-if="rec.outputAssetIds?.[i]" class="add-to-project-btn" @click.stop="openAddToProjectDialog(rec.outputAssetIds[i])" title="添加到项目">
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-                          </svg>
-                        </button>
-                        <span v-if="rec.outputAssetIds?.[i]" class="fav-slot" @click.stop>
-                          <FavoriteHeart
-                            :tag="(rec as any)._favoritedImages?.[i] || 0"
-                            :size="14"
-                            @change="(t) => setImageFavorite(rec as any, i, t)"
-                          />
-                        </span>
-                      </div>
-                    </div>
-                  </template>
-                </RecordCard>
-              </div>
-              <!-- 分页控件 -->
-              <div class="history-pagination">
-                <div class="page-size-group">
-                  <span class="page-size-label">每页</span>
-                  <button
-                    v-for="n in [30, 50, 100]" :key="n"
-                    class="page-size-btn" :class="{ active: dbPageSize === n }"
-                    @click="dbPageSize = (n as 30|50|100); loadFromDb(mapImgDbRecord, filterImgDbRecord)"
-                  >{{ n }}</button>
-                </div>
-                <button
-                  v-if="hasMoreInDb"
-                  class="load-more-btn"
-                  :disabled="loadingMore"
-                  @click="loadMoreHistory"
-                >{{ loadingMore ? '加载中...' : '加载更多' }}</button>
-                <span v-else-if="records.length > 0" class="no-more-text">已全部加载</span>
+            <span v-else class="loading-text">生成中...</span>
+          </template>
+          <template #result="{ record: rec }">
+            <div class="card-images">
+              <div v-for="(src, i) in rec.images" :key="i" class="card-image-wrap">
+                <img :src="src" class="card-image" @click="previewImage(src, rec.images)" />
+                <button class="download-btn" @click="downloadImage(src)" title="下载">
+                  <span>⬇</span>
+                </button>
+                <button v-if="rec.outputAssetIds?.[i]" class="add-to-project-btn" @click.stop="openAddToProjectDialog(rec.outputAssetIds[i])" title="添加到项目">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                  </svg>
+                </button>
+                <span v-if="rec.outputAssetIds?.[i]" class="fav-slot" @click.stop>
+                  <FavoriteHeart
+                    :tag="(rec as any)._favoritedImages?.[i] || 0"
+                    :size="14"
+                    @change="(t) => setImageFavorite(rec as any, i, t)"
+                  />
+                </span>
               </div>
             </div>
-          </div>
+          </template>
+        </HistoryPanel>
       </main>
       <!-- ── 右侧资产侧边栏 ── -->
       <AssetSidebar @select="handleAssetSelect" @reuse-params="handleReuseParams" />

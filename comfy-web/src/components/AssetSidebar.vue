@@ -223,7 +223,7 @@ async function confirmCreateProject() {
     })
     if (!res.ok) throw new Error()
     const data = await res.json()
-    projects.value.push({ id: data.id, name: data.name, categories: [] })
+    projects.value.push({ id: data.id, name: data.name, categories: data.categories || [] })
     showCreateProject.value = false
     newProjectName.value = ''
   } catch {
