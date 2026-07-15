@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { Brush, MagicStick } from '@element-plus/icons-vue'
 import SideNav from './components/SideNav.vue'
 import PrismBackground from './components/PrismBackground.vue'
 import LightRaysBackground from './components/LightRaysBackground.vue'
@@ -9,11 +8,19 @@ import DotFieldBackground from './components/DotFieldBackground.vue'
 
 const route = useRoute()
 const keepPrismBackground = computed(() => route.path === '/login' || route.path === '/')
-const businessTheme = ref(localStorage.getItem('business-theme') === 'dot' ? 'dot' : 'light')
+type BusinessTheme = 'light' | 'dot' | 'black'
+
+const savedTheme = localStorage.getItem('business-theme')
+const businessTheme = ref<BusinessTheme>(
+  savedTheme === 'dot' || savedTheme === 'black' ? savedTheme : 'light',
+)
 const isDotTheme = computed(() => businessTheme.value === 'dot')
+const isBlackTheme = computed(() => businessTheme.value === 'black')
 
 function toggleBusinessTheme() {
-  businessTheme.value = isDotTheme.value ? 'light' : 'dot'
+  const themes: BusinessTheme[] = ['light', 'dot', 'black']
+  const currentIndex = themes.indexOf(businessTheme.value)
+  businessTheme.value = themes[(currentIndex + 1) % themes.length]
   localStorage.setItem('business-theme', businessTheme.value)
 }
 </script>
@@ -48,7 +55,7 @@ function toggleBusinessTheme() {
       glow-color="#000000"
     />
     <LightRaysBackground
-      v-else
+      v-else-if="!isBlackTheme"
       rays-origin="top-center"
       rays-color="#ffffff"
       :rays-speed="0.8"
@@ -60,20 +67,20 @@ function toggleBusinessTheme() {
       :noise-amount="0"
       :distortion="0.03"
     />
-    <button
-      type="button"
-      class="theme-toggle"
-      :aria-label="isDotTheme ? '切换到光束主题' : '切换到点阵主题'"
-      :title="isDotTheme ? '切换到光束主题' : '切换到点阵主题'"
-      @click="toggleBusinessTheme"
-    >
-      <el-icon aria-hidden="true">
-        <component :is="isDotTheme ? MagicStick : Brush" />
-      </el-icon>
-    </button>
+    <div v-else class="black-background" aria-hidden="true" />
   </template>
-  <SideNav />
-  <div class="main-content" :class="{ 'theme-dot': isDotTheme && !keepPrismBackground }">
+  <SideNav
+    :business-theme="businessTheme"
+    :show-theme-toggle="!keepPrismBackground"
+    @toggle-theme="toggleBusinessTheme"
+  />
+  <div
+    class="main-content"
+    :class="{
+      'theme-dot': isDotTheme && !keepPrismBackground,
+      'theme-black': isBlackTheme && !keepPrismBackground,
+    }"
+  >
     <RouterView v-slot="{ Component, route }">
       <KeepAlive :include="['TextToImage', 'TextToVideo']">
         <component :is="Component" :key="route.name" />
@@ -89,39 +96,23 @@ function toggleBusinessTheme() {
   transition: margin-left 0.25s ease;
 }
 
-.theme-toggle {
+.black-background {
   position: fixed;
-  top: 18px;
-  right: 18px;
-  z-index: 120;
-  width: 42px;
-  height: 42px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: rgba(5, 7, 12, 0.58);
-  color: var(--color-text);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  backdrop-filter: var(--glass-blur);
-  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.24);
-  transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
-}
-
-.theme-toggle:hover,
-.theme-toggle:focus-visible {
-  color: var(--color-primary);
-  border-color: var(--color-border-strong);
-  background: rgba(5, 7, 12, 0.74);
-  transform: translateY(-1px);
-}
-
-.theme-toggle .el-icon {
-  font-size: 18px;
+  inset: 0;
+  z-index: 0;
+  background: #000000;
 }
 
 .main-content.theme-dot .studio {
   background: transparent;
+}
+
+.main-content.theme-black .studio,
+.main-content.theme-black .page {
+  background: #000000;
+}
+
+.main-content.theme-black .orb {
+  display: none;
 }
 </style>

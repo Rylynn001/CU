@@ -506,13 +506,22 @@ async function setFavorite(asset: Asset, tag: 0 | 1 | 2 | 3 | 4) {
   }
 }
 
+function handleWindowScroll() {
+  if (loadingMore.value || !hasMore.value) return
+  if (window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 200) {
+    loadMore()
+  }
+}
+
 onMounted(() => {
   loadAssets()
   window.addEventListener('keydown', handleKeydown)
+  window.addEventListener('scroll', handleWindowScroll, { passive: true })
 })
 
 onUnmounted(() => {
   window.removeEventListener('keydown', handleKeydown)
+  window.removeEventListener('scroll', handleWindowScroll)
 })
 </script>
 
@@ -621,10 +630,8 @@ onUnmounted(() => {
             @set-favorite="setFavorite"
           />
 
-          <div v-if="assets.length > 0" class="load-more-bar">
-            <button v-if="hasMore" class="load-more-btn" :disabled="loadingMore" @click="loadMore">
-              {{ loadingMore ? '加载中...' : '加载更多' }}
-            </button>
+          <div v-if="assets.length > 0 && (loadingMore || !hasMore)" class="load-more-bar">
+            <span v-if="loadingMore" class="no-more-text">加载中...</span>
             <span v-else class="no-more-text">已全部加载（{{ assets.length }} / {{ total }}）</span>
           </div>
         </template>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // 历史记录面板：搜索框 + 记录行（参考图/参考素材展开）+ RecordCard + 分页
 // 图片页和视频页共用，结果区域（图片网格 / 视频播放器）通过 #result 插槽由父组件决定
+import { ref, onMounted, onUnmounted } from 'vue'
 import RecordCard from './RecordCard.vue'
 
 interface BaseRecord {
@@ -25,9 +26,11 @@ const props = withDefaults(defineProps<{
   loadingMore: boolean
   editingRecordId?: string
   showRecordEditor?: boolean
+  showEditButton?: boolean
   locatedRecordId?: string | null
 }>(), {
   referenceLabel: '参考图',
+  showEditButton: true,
 })
 
 const emit = defineEmits<{
@@ -45,10 +48,27 @@ const emit = defineEmits<{
 function hasReference(rec: BaseRecord) {
   return !!(rec.inputAssetUrls?.length || rec.inputPreviews?.length)
 }
+
+const historyColRef = ref<HTMLElement | null>(null)
+
+function onScroll() {
+  const el = historyColRef.value
+  if (!el || props.loadingMore || !props.hasMoreInDb) return
+  if (el.scrollTop + el.clientHeight >= el.scrollHeight - 150) {
+    emit('load-more')
+  }
+}
+
+onMounted(() => {
+  historyColRef.value?.addEventListener('scroll', onScroll, { passive: true })
+})
+onUnmounted(() => {
+  historyColRef.value?.removeEventListener('scroll', onScroll)
+})
 </script>
 
 <template>
-  <div class="history-col">
+  <div class="history-col" ref="historyColRef">
     <div v-if="records.length === 0 && totalCount === 0" class="empty-wrap">
       <div class="empty-orb" />
       <p class="empty-text">等待生成</p>
@@ -92,6 +112,7 @@ function hasReference(rec: BaseRecord) {
         <!-- 右侧卡片 -->
         <RecordCard
           class="record-card-flex" :record="rec as any"
+          :show-edit-button="showEditButton"
           @delete="emit('delete', $event)"
           @retry="emit('retry', $event)"
           @edit="emit('edit', $event)"
@@ -102,23 +123,9 @@ function hasReference(rec: BaseRecord) {
         </RecordCard>
       </div>
 
-      <!-- 分页控件 -->
       <div class="history-pagination">
-        <div class="page-size-group">
-          <span class="page-size-label">每页</span>
-          <button
-            v-for="n in [30, 50, 100]" :key="n"
-            class="page-size-btn" :class="{ active: dbPageSize === n }"
-            @click="emit('update:dbPageSize', n as 30 | 50 | 100); emit('page-size-change', n as 30 | 50 | 100)"
-          >{{ n }}</button>
-        </div>
-        <button
-          v-if="hasMoreInDb"
-          class="load-more-btn"
-          :disabled="loadingMore"
-          @click="emit('load-more')"
-        >{{ loadingMore ? '加载中...' : '加载更多' }}</button>
-        <span v-else-if="totalCount > 0" class="no-more-text">已全部加载</span>
+        <span v-if="loadingMore" class="no-more-text">加载中...</span>
+        <span v-else-if="!hasMoreInDb && totalCount > 0" class="no-more-text">已全部加载</span>
       </div>
     </div>
   </div>
@@ -126,4 +133,31 @@ function hasReference(rec: BaseRecord) {
 
 <style scoped>
 @import '../styles/generation-page.css';
+
+.history-pagination {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  padding: 18px 0 8px;
+}
+
+.no-more-text {
+  display: flex;
+  align-items: center;
+  width: min(240px, 72%);
+  gap: 12px;
+  color: rgba(255, 255, 255, 0.32);
+  font-size: 12px;
+  line-height: 1;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.no-more-text::before,
+.no-more-text::after {
+  content: '';
+  height: 1px;
+  flex: 1;
+  background: rgba(255, 255, 255, 0.08);
+}
 </style>

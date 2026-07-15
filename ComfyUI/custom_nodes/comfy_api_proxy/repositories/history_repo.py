@@ -48,59 +48,35 @@ def get_user_history(
     page: int = 1,
     page_size: int = 30,
 ) -> tuple[list[dict], int]:
-    """获取用户历史记录（分页），返回 (records, total)。一次 JOIN 查出所有关联资产"""
+    """获取用户历史记录（分页），返回 (records, total)。子查询先分页再 JOIN 资产"""
     offset = (page - 1) * page_size
+    where = "user_id = %s AND del_flag = 0"
+    params: list = [user_id]
+    if type_filter:
+        where += " AND type LIKE %s"
+        params.append(f'%{type_filter}')
+
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        # 先查总数
-        if type_filter:
-            cursor.execute(
-                "SELECT COUNT(*) AS cnt FROM history WHERE user_id = %s AND del_flag = 0 AND type LIKE %s",
-                (user_id, f'%{type_filter}')
-            )
-        else:
-            cursor.execute(
-                "SELECT COUNT(*) AS cnt FROM history WHERE user_id = %s AND del_flag = 0",
-                (user_id,)
-            )
+
+        cursor.execute(f"SELECT COUNT(*) AS cnt FROM history WHERE {where}", params)
         total = cursor.fetchone()['cnt']
 
-        # 一次 JOIN 查出所有数据（history + 模型名 + 输出资产 + 输入资产）
-        if type_filter:
-            cursor.execute(
-                """SELECT h.id, h.task_id, h.prompt, h.mode, h.status, h.type, h.message,
-                          m.description AS model_name,
-                          out_a.id AS out_asset_id, out_a.location AS out_location, out_a.asset_type AS out_type,
-                          in_a.id AS in_asset_id, in_a.location AS in_location
-                   FROM history h
-                   LEFT JOIN api_models m ON h.model_id = m.id
-                   LEFT JOIN history_assets_rel out_r ON h.id = out_r.history_id
-                   LEFT JOIN assets out_a ON out_r.asset_id = out_a.id
-                   LEFT JOIN history_input_assets_rel in_r ON h.id = in_r.history_id
-                   LEFT JOIN input_assets in_a ON in_r.asset_id = in_a.id
-                   WHERE h.user_id = %s AND h.del_flag = 0 AND h.type LIKE %s
-                   ORDER BY h.id DESC, out_a.id, in_a.id
-                   LIMIT %s OFFSET %s""",
-                (user_id, f'%{type_filter}', page_size * 50, offset * 50)
-                # LIMIT 放大倍数，避免 JOIN 展开后截断（后续 Python 聚合再截取真实 page_size）
-            )
-        else:
-            cursor.execute(
-                """SELECT h.id, h.task_id, h.prompt, h.mode, h.status, h.type, h.message,
-                          m.description AS model_name,
-                          out_a.id AS out_asset_id, out_a.location AS out_location, out_a.asset_type AS out_type,
-                          in_a.id AS in_asset_id, in_a.location AS in_location
-                   FROM history h
-                   LEFT JOIN api_models m ON h.model_id = m.id
-                   LEFT JOIN history_assets_rel out_r ON h.id = out_r.history_id
-                   LEFT JOIN assets out_a ON out_r.asset_id = out_a.id
-                   LEFT JOIN history_input_assets_rel in_r ON h.id = in_r.history_id
-                   LEFT JOIN input_assets in_a ON in_r.asset_id = in_a.id
-                   WHERE h.user_id = %s AND h.del_flag = 0
-                   ORDER BY h.id DESC, out_a.id, in_a.id
-                   LIMIT %s OFFSET %s""",
-                (user_id, page_size * 50, offset * 50)
-            )
+        cursor.execute(
+            f"""SELECT h.id, h.task_id, h.prompt, h.mode, h.status, h.type, h.message,
+                       m.description AS model_name,
+                       out_a.id AS out_asset_id, out_a.location AS out_location, out_a.asset_type AS out_type,
+                       in_a.id AS in_asset_id, in_a.location AS in_location
+                FROM (SELECT id FROM history WHERE {where} ORDER BY id DESC LIMIT %s OFFSET %s) AS paged
+                JOIN history h ON h.id = paged.id
+                LEFT JOIN api_models m ON h.model_id = m.id
+                LEFT JOIN history_assets_rel out_r ON h.id = out_r.history_id
+                LEFT JOIN assets out_a ON out_r.asset_id = out_a.id
+                LEFT JOIN history_input_assets_rel in_r ON h.id = in_r.history_id
+                LEFT JOIN input_assets in_a ON in_r.asset_id = in_a.id
+                ORDER BY h.id DESC, out_a.id, in_a.id""",
+            [*params, page_size, offset],
+        )
         rows = cursor.fetchall()
 
     # Python 侧聚合：多行合并成一条 history 记录
@@ -153,8 +129,6 @@ def get_user_history(
     for item in history_map.values():
         item['input_asset_ids'] = list(item['input_asset_ids'])
         records.append(item)
-    records = records[:page_size]  # JOIN 展开导致多余行，这里截取回正确数量
-
     return records, total
 
 

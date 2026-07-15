@@ -656,7 +656,7 @@ onUnmounted(() => {
     <div class="orb orb-1" />
     <div class="orb orb-2" />
 
-    <div class="layout">
+    <div class="layout" :class="{ 'record-editing': showRecordEditor }">
       <!-- 鈹€鈹€ LEFT PANEL 鈹€鈹€ -->
       <aside class="left-panel" v-show="!showRecordEditor">
         <!-- tab bar -->
@@ -892,6 +892,7 @@ onUnmounted(() => {
           v-model:db-page-size="dbPageSize"
           :has-more-in-db="hasMoreInDb"
           :loading-more="loadingMore"
+          :show-edit-button="false"
           :located-record-id="locatedRecordId"
           @toggle-input-expand="toggleInputExpand"
           @preview-image="(url) => previewImage(url)"
@@ -930,7 +931,7 @@ onUnmounted(() => {
         </HistoryPanel>
       </main>
       <!-- 鈹€鈹€ 鍙充晶璧勪骇渚ц竟鏍?鈹€鈹€ -->
-      <AssetSidebar @select="handleAssetSelect" @reuse-params="handleReuseParams" />
+      <AssetSidebar v-show="!showRecordEditor" @select="handleAssetSelect" @reuse-params="handleReuseParams" />
     </div>
 
     <!-- Image Viewer -->

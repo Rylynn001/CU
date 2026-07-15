@@ -1,10 +1,26 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
-import { Film, FolderOpened, House, Picture, SwitchButton, VideoCamera } from '@element-plus/icons-vue'
+import { Brush, Film, FolderOpened, House, MagicStick, Moon, Picture, SwitchButton, VideoCamera } from '@element-plus/icons-vue'
+
+const props = defineProps<{
+  businessTheme: 'light' | 'dot' | 'black'
+  showThemeToggle: boolean
+}>()
+
+const emit = defineEmits<{
+  toggleTheme: []
+}>()
 
 const router = useRouter()
 const route = useRoute()
+
+const themeMeta = computed(() => ({
+  light: { icon: Brush, label: '光束主题' },
+  dot: { icon: MagicStick, label: '点阵主题' },
+  black: { icon: Moon, label: '纯黑主题' },
+}[props.businessTheme]))
 
 const navItems = [
   { path: '/', icon: House, label: '首页' },
@@ -58,6 +74,17 @@ async function handleLogout() {
     </ul>
 
     <div class="nav-footer">
+      <button
+        v-if="showThemeToggle"
+        type="button"
+        class="nav-item theme-item"
+        :aria-label="themeMeta.label"
+        :title="themeMeta.label"
+        @click="emit('toggleTheme')"
+      >
+        <el-icon class="nav-icon" aria-hidden="true"><component :is="themeMeta.icon" /></el-icon>
+        <span class="nav-label">{{ themeMeta.label }}</span>
+      </button>
       <button type="button" class="nav-item logout-item" aria-label="退出登录" @click="handleLogout">
         <el-icon class="nav-icon" aria-hidden="true"><SwitchButton /></el-icon>
         <span class="nav-label">退出登录</span>
@@ -73,21 +100,23 @@ async function handleLogout() {
   top: 0;
   height: 100vh;
   width: 64px;
-  background: rgba(5, 7, 12, 0.58);
-  border-right: 1px solid var(--color-border);
+  background: transparent;
+  border-right: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   padding: 18px 8px;
   z-index: 100;
   overflow: hidden;
-  transition: width 0.25s ease, background 0.25s ease, box-shadow 0.25s ease;
-  backdrop-filter: var(--glass-blur);
-  box-shadow: 12px 0 48px rgba(0, 0, 0, 0.22);
+  transition:
+    width 0.48s cubic-bezier(0.22, 1, 0.36, 1),
+    background 0.4s ease;
+  backdrop-filter: none;
+  box-shadow: none;
 }
 
 .side-nav:hover,
-.side-nav:focus-within {
+.side-nav:has(:focus-visible) {
   width: 190px;
   align-items: flex-start;
   background: rgba(5, 7, 12, 0.74);
@@ -105,7 +134,7 @@ async function handleLogout() {
 }
 
 .side-nav:hover .nav-logo,
-.side-nav:focus-within .nav-logo {
+.side-nav:has(:focus-visible) .nav-logo {
   padding-left: 12px;
   justify-content: flex-start;
 }
@@ -133,9 +162,17 @@ async function handleLogout() {
 
 .nav-footer {
   width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   padding-top: 12px;
   border-top: 1px solid var(--color-border);
   margin-top: auto;
+}
+
+.theme-item:hover,
+.theme-item:focus-visible {
+  color: var(--color-primary);
 }
 
 .nav-item {
@@ -210,13 +247,14 @@ async function handleLogout() {
   letter-spacing: 0;
   opacity: 0;
   transform: translateX(-6px);
-  transition: opacity 0.2s ease, transform 0.2s ease;
+  transition: opacity 0.22s ease, transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
   pointer-events: none;
 }
 
 .side-nav:hover .nav-label,
-.side-nav:focus-within .nav-label {
+.side-nav:has(:focus-visible) .nav-label {
   opacity: 1;
   transform: translateX(0);
+  transition-delay: 0.1s;
 }
 </style>

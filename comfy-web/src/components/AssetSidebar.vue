@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { ElMessage, ElDialog, ElInput } from 'element-plus'
 import { favoriteAsset, fetchHistoryByAsset } from '../api/apiService'
 import FavoriteHeart from './FavoriteHeart.vue'
@@ -85,7 +85,7 @@ const FAVORITE_COLORS: { tag: 1 | 2 | 3 | 4; color: string; label: string }[] = 
 ]
 const currentPage = ref(1)
 const total = ref(0)
-const PAGE_SIZE = 20
+const PAGE_SIZE = 30
 const hasMore = computed(() => assets.value.length < total.value)
 
 async function loadAssets(assetType?: 'picture' | 'video') {
@@ -106,6 +106,27 @@ async function loadAssets(assetType?: 'picture' | 'video') {
     ElMessage.error('加载资产失败')
   } finally {
     loading.value = false
+  }
+  await fillIfNotScrollable()
+}
+
+const thumbGridRef = ref<HTMLElement | null>(null)
+
+// 内容没撑满容器时无法触发 scroll 事件，需主动补齐到出现滚动条或数据加载完
+async function fillIfNotScrollable() {
+  await nextTick()
+  const el = thumbGridRef.value
+  if (!el || loadingMore.value || !hasMore.value) return
+  if (el.scrollHeight <= el.clientHeight) {
+    await loadMore()
+  }
+}
+
+function handleThumbGridScroll() {
+  const el = thumbGridRef.value
+  if (!el || loadingMore.value || !hasMore.value) return
+  if (el.scrollTop + el.clientHeight >= el.scrollHeight - 150) {
+    loadMore()
   }
 }
 
@@ -130,6 +151,7 @@ async function loadMore() {
   } finally {
     loadingMore.value = false
   }
+  await fillIfNotScrollable()
 }
 
 function setFilter(f: 'all' | 'picture' | 'video') {
@@ -620,7 +642,7 @@ onUnmounted(() => {
       </div>
 
       <!-- 网格 -->
-      <div v-else class="thumb-grid">
+      <div v-else ref="thumbGridRef" class="thumb-grid" @scroll="handleThumbGridScroll">
         <div
           v-for="asset in assets"
           :key="asset.id"
@@ -645,11 +667,10 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- 加载更多 -->
-      <div v-if="assets.length > 0 && hasMore" class="load-more">
-        <button class="load-more-btn" :disabled="loadingMore" @click="loadMore">
-          {{ loadingMore ? '加载中...' : '加载更多' }}
-        </button>
+      <!-- 加载状态 -->
+      <div v-if="assets.length > 0 && (loadingMore || !hasMore)" class="load-more">
+        <span v-if="loadingMore" class="no-more-text">加载中...</span>
+        <span v-else class="no-more-text">已全部加载（{{ assets.length }} / {{ total }}）</span>
       </div>
     </div>
 
@@ -1213,22 +1234,10 @@ onUnmounted(() => {
   display: flex;
   justify-content: center;
 }
-.load-more-btn {
-  padding: 6px 20px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--color-border);
-  background: rgba(255,255,255,0.055);
-  color: var(--color-muted);
+.no-more-text {
   font-size: 12px;
-  cursor: pointer;
-  transition: background 0.2s, border-color 0.2s, color 0.2s;
+  color: rgba(255,255,255,0.25);
 }
-.load-more-btn:hover:not(:disabled) {
-  background: rgba(255,255,255,0.1);
-  border-color: rgba(255,255,255,0.24);
-  color: var(--color-text);
-}
-.load-more-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 /* ── 项目列表 ── */
 .proj-header {

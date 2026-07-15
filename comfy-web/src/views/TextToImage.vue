@@ -815,7 +815,7 @@ onUnmounted(() => {
     <div class="orb orb-1" />
     <div class="orb orb-2" />
 
-    <div class="layout">
+    <div class="layout" :class="{ 'record-editing': showRecordEditor }">
       <!-- ── LEFT PANEL（编辑模式时隐藏） ── -->
       <aside class="left-panel" v-show="!showRecordEditor">
 
@@ -1164,7 +1164,7 @@ onUnmounted(() => {
         </HistoryPanel>
       </main>
       <!-- ── 右侧资产侧边栏 ── -->
-      <AssetSidebar @select="handleAssetSelect" @reuse-params="handleReuseParams" />
+      <AssetSidebar v-show="!showRecordEditor" @select="handleAssetSelect" @reuse-params="handleReuseParams" />
     </div>
 
     <!-- Image Viewer -->

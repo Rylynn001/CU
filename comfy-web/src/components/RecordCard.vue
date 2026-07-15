@@ -12,7 +12,12 @@ interface Record {
   errorMsg?: string
 }
 
-const props = defineProps<{ record: Record }>()
+const props = withDefaults(defineProps<{
+  record: Record
+  showEditButton?: boolean
+}>(), {
+  showEditButton: true,
+})
 const emit = defineEmits<{
   (e: 'delete', id: string): void
   (e: 'retry', record: Record): void
@@ -58,7 +63,7 @@ function formatTime(ts: number): string {
           </div>
           <div class="card-header-actions">
             <button
-              v-if="record.status === 'done'"
+              v-if="record.status === 'done' && showEditButton"
               class="card-edit-btn"
               @click="emit('edit', record.id)"
               title="编辑并继续生图"

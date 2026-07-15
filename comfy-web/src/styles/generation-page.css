@@ -306,6 +306,10 @@
   box-shadow: var(--shadow-soft);
 }
 
+.layout.record-editing .right-panel {
+  flex: 1;
+}
+
 .history-col {
   flex: 1;
   min-width: 0;

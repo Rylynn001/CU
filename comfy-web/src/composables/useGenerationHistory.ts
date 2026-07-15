@@ -96,6 +96,7 @@ export function useGenerationHistory<T extends BaseGenerationRecord>(
     const { records: dbRecords, total } = await historyDb.load(userId, historyType, nextPage, dbPageSize.value)
     dbTotal.value = total
     dbPage.value = nextPage
+    if (!dbRecords.length) return  // 后端返回空页时停止，防止死循环
     const filtered = filter ? dbRecords.filter(filter) : dbRecords
     const fromDb = filtered.map(mapDbRecord)
     ;(records.value as T[]).push(...(fromDb as any[]))
