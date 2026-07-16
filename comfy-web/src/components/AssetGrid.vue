@@ -125,16 +125,16 @@ function isVideo(asset: Asset): boolean {
 .ring {
   position: absolute;
   border-radius: 50%;
-  border: 1.5px solid rgba(108,99,255,0.5);
+  border: 1.5px solid rgba(166,231,226,0.42);
   animation: breathe 3s ease-in-out infinite;
 }
 .r1 { width: 100%; height: 100%; animation-delay: 0s; }
-.r2 { width: 72%; height: 72%; animation-delay: 0.5s; border-color: rgba(167,139,250,0.5); }
-.r3 { width: 44%; height: 44%; animation-delay: 1s; border-color: rgba(196,181,253,0.6); }
+.r2 { width: 72%; height: 72%; animation-delay: 0.5s; border-color: rgba(255,255,255,0.2); }
+.r3 { width: 44%; height: 44%; animation-delay: 1s; border-color: rgba(255,255,255,0.28); }
 .center-dot {
   width: 10px; height: 10px;
   border-radius: 50%;
-  background: #a78bfa;
+  background: rgba(255,255,255,0.72);
   animation: pulse-dot 2s ease-in-out infinite;
 }
 .empty {
@@ -147,8 +147,8 @@ function isVideo(asset: Asset): boolean {
 .empty-orb {
   width: 60px; height: 60px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(108,99,255,0.15) 0%, transparent 70%);
-  border: 1px solid rgba(108,99,255,0.15);
+  background: radial-gradient(circle, rgba(166,231,226,0.12) 0%, transparent 70%);
+  border: 1px solid rgba(255,255,255,0.13);
   animation: breathe 4s ease-in-out infinite;
 }
 .empty-text {
@@ -171,7 +171,7 @@ function isVideo(asset: Asset): boolean {
 }
 .gallery-item:hover {
   transform: translateY(-4px);
-  border-color: rgba(108,99,255,0.3);
+  border-color: rgba(255,255,255,0.24);
 }
 .gallery-media {
   width: 100%;
@@ -219,8 +219,8 @@ function isVideo(asset: Asset): boolean {
 }
 .gallery-type {
   font-size: 11px;
-  color: rgba(167,139,250,0.6);
-  background: rgba(167,139,250,0.1);
+  color: var(--color-muted);
+  background: rgba(255,255,255,0.08);
   padding: 2px 7px;
   border-radius: 10px;
 }
@@ -241,7 +241,7 @@ function isVideo(asset: Asset): boolean {
   backdrop-filter: blur(4px);
 }
 .gallery-item:hover .download-btn { opacity: 1; }
-.download-btn:hover { background: rgba(108,99,255,0.9); transform: scale(1.1); }
+.download-btn:hover { background: rgba(255,255,255,0.18); transform: scale(1.1); }
 
 .action-buttons {
   position: absolute;
@@ -273,8 +273,8 @@ function isVideo(asset: Asset): boolean {
 }
 
 .action-btn:hover {
-  background: rgba(108,99,255,0.9);
-  border-color: rgba(108,99,255,0.8);
+  background: rgba(255,255,255,0.18);
+  border-color: rgba(255,255,255,0.28);
   transform: scale(1.1);
 }
 

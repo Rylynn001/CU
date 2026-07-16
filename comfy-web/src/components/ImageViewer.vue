@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, onUnmounted } from 'vue'
 
 const props = defineProps<{
   visible: boolean
   src: string
   showNav?: boolean
+  indexText?: string
 }>()
 
 const emit = defineEmits<{
@@ -14,19 +15,61 @@ const emit = defineEmits<{
 }>()
 
 const scale = ref(1)
+const offsetX = ref(0)
+const offsetY = ref(0)
+const isDragging = ref(false)
+const dragStartX = ref(0)
+const dragStartY = ref(0)
 const MIN_SCALE = 0.5
 const MAX_SCALE = 5
 
 watch(() => props.visible, (visible) => {
   if (visible) {
-    scale.value = 1
+    resetView()
   }
 })
+
+watch(() => props.src, () => {
+  resetView()
+})
+
+function resetView() {
+  scale.value = 1
+  offsetX.value = 0
+  offsetY.value = 0
+  stopDrag()
+}
 
 function handleWheel(e: WheelEvent) {
   e.preventDefault()
   const delta = e.deltaY > 0 ? -0.1 : 0.1
   scale.value = Math.max(MIN_SCALE, Math.min(MAX_SCALE, scale.value + delta))
+  if (scale.value <= 1) {
+    offsetX.value = 0
+    offsetY.value = 0
+  }
+}
+
+function startDrag(e: PointerEvent) {
+  if (scale.value <= 1) return
+  isDragging.value = true
+  dragStartX.value = e.clientX - offsetX.value
+  dragStartY.value = e.clientY - offsetY.value
+  window.addEventListener('pointermove', drag)
+  window.addEventListener('pointerup', stopDrag)
+}
+
+function drag(e: PointerEvent) {
+  if (!isDragging.value) return
+  offsetX.value = e.clientX - dragStartX.value
+  offsetY.value = e.clientY - dragStartY.value
+}
+
+function stopDrag() {
+  if (!isDragging.value) return
+  isDragging.value = false
+  window.removeEventListener('pointermove', drag)
+  window.removeEventListener('pointerup', stopDrag)
 }
 
 function close() {
@@ -40,14 +83,24 @@ function prev() {
 function next() {
   emit('next')
 }
+
+onUnmounted(() => {
+  stopDrag()
+})
 </script>
 
 <template>
   <Teleport to="body">
     <Transition name="img-viewer">
       <div v-if="visible" class="custom-image-viewer" @click="close" @wheel="handleWheel">
-        <div class="viewer-content" @click.stop>
-          <img :src="src" class="viewer-image" :style="{ transform: `scale(${scale})` }" />
+        <div class="viewer-content" :class="{ draggable: scale > 1, dragging: isDragging }" @click.stop>
+          <img
+            :src="src"
+            class="viewer-image"
+            :style="{ transform: `translate(${offsetX}px, ${offsetY}px) scale(${scale})` }"
+            draggable="false"
+            @pointerdown.prevent="startDrag"
+          />
           <button class="viewer-close" @click="close" title="关闭 (ESC)">✕</button>
           <button v-if="showNav" class="viewer-nav viewer-prev" @click="prev" title="上一张 (←)">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
@@ -60,6 +113,7 @@ function next() {
             </svg>
           </button>
           <div class="viewer-scale-info">{{ Math.round(scale * 100) }}%</div>
+          <div v-if="indexText" class="viewer-index-info">{{ indexText }}</div>
         </div>
       </div>
     </Transition>
@@ -87,6 +141,13 @@ function next() {
   display: flex;
   align-items: center;
   justify-content: center;
+  user-select: none;
+}
+.viewer-content.draggable {
+  cursor: grab;
+}
+.viewer-content.dragging {
+  cursor: grabbing;
 }
 .viewer-image {
   max-width: 90vw;
@@ -97,6 +158,7 @@ function next() {
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
   transition: transform 0.1s ease-out;
   transform-origin: center center;
+  touch-action: none;
 }
 .viewer-close {
   position: absolute;
@@ -152,6 +214,18 @@ function next() {
   bottom: -35px;
   left: 50%;
   transform: translateX(-50%);
+  padding: 4px 12px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 12px;
+  pointer-events: none;
+}
+.viewer-index-info {
+  position: absolute;
+  bottom: -35px;
+  right: 0;
   padding: 4px 12px;
   border-radius: 12px;
   background: rgba(0, 0, 0, 0.6);

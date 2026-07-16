@@ -213,6 +213,7 @@ function formatTime(ts: number): string {
 .card-delete-btn {
   width: 24px;
   height: 24px;
+  padding: 0 0 2px;
   border-radius: 50%;
   background: none;
   border: 1px solid var(--color-border);

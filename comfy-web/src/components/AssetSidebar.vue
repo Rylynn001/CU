@@ -4,6 +4,7 @@ import { ElMessage, ElDialog, ElInput } from 'element-plus'
 import { favoriteAsset, fetchHistoryByAsset } from '../api/apiService'
 import FavoriteHeart from './FavoriteHeart.vue'
 import VideoPlayer from './VideoPlayer.vue'
+import ImageViewer from './ImageViewer.vue'
 import ProjectManager from './ProjectManager.vue'
 import ConfirmDialog from './ConfirmDialog.vue'
 
@@ -438,9 +439,6 @@ const showVideoPlayer = ref(false)
 const activeVideoUrl = ref('')
 const activeVideoId = ref<number | undefined>(undefined)
 const currentAssetIndex = ref(0)
-const imageScale = ref(1)
-const MIN_SCALE = 0.5
-const MAX_SCALE = 5
 
 // 获取当前视图的资产列表
 const currentAssetList = computed(() => {
@@ -457,16 +455,8 @@ function handleAssetClick(asset: Asset) {
     showVideoPlayer.value = true
   } else {
     previewUrl.value = getMediaUrl(asset.location)
-    imageScale.value = 1
     showImageViewer.value = true
   }
-}
-
-// 图片滚轮缩放
-function handleImageWheel(e: WheelEvent) {
-  e.preventDefault()
-  const delta = e.deltaY > 0 ? -0.1 : 0.1
-  imageScale.value = Math.max(MIN_SCALE, Math.min(MAX_SCALE, imageScale.value + delta))
 }
 
 // 切换到上一个资产
@@ -483,7 +473,6 @@ function goToPrev() {
   } else {
     showVideoPlayer.value = false
     previewUrl.value = getMediaUrl(asset.location)
-    imageScale.value = 1
     showImageViewer.value = true
   }
 }
@@ -502,7 +491,6 @@ function goToNext() {
   } else {
     showVideoPlayer.value = false
     previewUrl.value = getMediaUrl(asset.location)
-    imageScale.value = 1
     showImageViewer.value = true
   }
 }
@@ -800,27 +788,15 @@ onUnmounted(() => {
     </el-dialog>
 
     <!-- 图片查看器 -->
-    <Teleport to="body">
-      <Transition name="img-viewer">
-        <div v-if="showImageViewer" class="custom-image-viewer" @click="showImageViewer = false" @wheel="handleImageWheel">
-          <div class="viewer-content" @click.stop>
-            <img :src="previewUrl" class="viewer-image" :style="{ transform: `scale(${imageScale})` }" />
-            <button class="viewer-close" @click="showImageViewer = false">✕</button>
-            <button v-if="currentAssetList.length > 1" class="viewer-nav viewer-prev" @click="goToPrev" title="上一张 (←)">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                <polyline points="15 18 9 12 15 6"/>
-              </svg>
-            </button>
-            <button v-if="currentAssetList.length > 1" class="viewer-nav viewer-next" @click="goToNext" title="下一张 (→)">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                <polyline points="9 18 15 12 9 6"/>
-              </svg>
-            </button>
-            <div class="viewer-scale-info">{{ Math.round(imageScale * 100) }}%</div>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
+    <ImageViewer
+      :visible="showImageViewer"
+      :src="previewUrl"
+      :show-nav="currentAssetList.length > 1"
+      :index-text="currentAssetList.length > 1 ? `${currentAssetIndex + 1} / ${currentAssetList.length}` : ''"
+      @close="showImageViewer = false"
+      @prev="goToPrev"
+      @next="goToNext"
+    />
 
     <!-- 视频播放器 -->
     <VideoPlayer :visible="showVideoPlayer" :src="activeVideoUrl" :asset-id="activeVideoId" @close="showVideoPlayer = false" @prev="goToPrev" @next="goToNext" :show-nav="currentAssetList.length > 1" />
@@ -1462,119 +1438,6 @@ onUnmounted(() => {
 .dlg-btn.confirm:disabled { opacity: 0.5; cursor: not-allowed; }
 
 @keyframes spin { to { transform: rotate(360deg); } }
-
-/* ── 自定义图片查看器 ── */
-.custom-image-viewer {
-  position: fixed;
-  inset: 0;
-  z-index: 2500;
-  background: rgba(0, 0, 0, 0.85);
-  backdrop-filter: blur(8px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-}
-.viewer-content {
-  position: relative;
-  max-width: 90vw;
-  max-height: 90vh;
-  cursor: default;
-  overflow: hidden;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.viewer-image {
-  max-width: 90vw;
-  max-height: 90vh;
-  object-fit: contain;
-  display: block;
-  border-radius: 12px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-  transition: transform 0.1s ease-out;
-  transform-origin: center center;
-}
-.viewer-close {
-  position: absolute;
-  top: -40px;
-  right: 0;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  background: rgba(0, 0, 0, 0.4);
-  color: rgba(255, 255, 255, 0.9);
-  font-size: 18px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s;
-}
-.viewer-close:hover {
-  background: rgba(255, 255, 255, 0.15);
-  border-color: rgba(255, 255, 255, 0.4);
-  transform: scale(1.1);
-}
-.viewer-nav {
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  background: rgba(0, 0, 0, 0.5);
-  color: rgba(255, 255, 255, 0.9);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s;
-}
-.viewer-nav:hover {
-  background: rgba(255, 255, 255, 0.15);
-  border-color: rgba(255, 255, 255, 0.4);
-  transform: translateY(-50%) scale(1.1);
-}
-.viewer-prev {
-  left: -60px;
-}
-.viewer-next {
-  right: -60px;
-}
-.viewer-scale-info {
-  position: absolute;
-  bottom: -35px;
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 4px 12px;
-  border-radius: 12px;
-  background: rgba(0, 0, 0, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  color: rgba(255, 255, 255, 0.8);
-  font-size: 12px;
-  pointer-events: none;
-}
-
-.img-viewer-enter-active,
-.img-viewer-leave-active {
-  transition: opacity 0.25s ease;
-}
-.img-viewer-enter-active .viewer-content,
-.img-viewer-leave-active .viewer-content {
-  transition: transform 0.25s ease, opacity 0.25s ease;
-}
-.img-viewer-enter-from,
-.img-viewer-leave-to {
-  opacity: 0;
-}
-.img-viewer-enter-from .viewer-content,
-.img-viewer-leave-to .viewer-content {
-  transform: scale(0.9);
-  opacity: 0;
-}
 
 /* ── 右键菜单 ── */
 .context-menu {

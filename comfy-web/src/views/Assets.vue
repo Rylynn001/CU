@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElDialog, ElInput } from 'element-plus'
 import VideoPlayer from '../components/VideoPlayer.vue'
+import ImageViewer from '../components/ImageViewer.vue'
 import AssetGrid from '../components/AssetGrid.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import { favoriteAsset } from '../api/apiService'
@@ -65,9 +66,6 @@ const showImageViewer = ref(false)
 const previewUrl = ref('')
 const currentAssetIndex = ref(0)
 const currentAssetList = ref<Asset[]>([])
-const imageScale = ref(1)
-const MIN_SCALE = 0.5
-const MAX_SCALE = 5
 
 function previewImage(asset: Asset, list: Asset[]) {
   if (isVideo(asset)) return
@@ -75,7 +73,6 @@ function previewImage(asset: Asset, list: Asset[]) {
   const idx = list.findIndex(a => a.id === asset.id)
   currentAssetIndex.value = idx >= 0 ? idx : 0
   previewUrl.value = getMediaUrl(asset.location)
-  imageScale.value = 1
   showImageViewer.value = true
 }
 
@@ -84,12 +81,6 @@ function closeImageViewer() {
 }
 
 // 图片滚轮缩放
-function handleImageWheel(e: WheelEvent) {
-  e.preventDefault()
-  const delta = e.deltaY > 0 ? -0.1 : 0.1
-  imageScale.value = Math.max(MIN_SCALE, Math.min(MAX_SCALE, imageScale.value + delta))
-}
-
 // 切换到上一个资产（图片或视频）
 function goToPrev() {
   if (currentAssetList.value.length === 0) return
@@ -103,7 +94,6 @@ function goToPrev() {
   } else {
     showVideoPlayer.value = false
     previewUrl.value = getMediaUrl(asset.location)
-    imageScale.value = 1
     showImageViewer.value = true
   }
 }
@@ -121,7 +111,6 @@ function goToNext() {
   } else {
     showVideoPlayer.value = false
     previewUrl.value = getMediaUrl(asset.location)
-    imageScale.value = 1
     showImageViewer.value = true
   }
 }
@@ -777,28 +766,15 @@ onUnmounted(() => {
       </template>
     </el-dialog>
 
-    <!-- Image Viewer -->
-    <Teleport to="body">
-      <Transition name="img-viewer">
-        <div v-if="showImageViewer" class="custom-image-viewer" @click="closeImageViewer" @wheel="handleImageWheel">
-          <div class="viewer-content" @click.stop>
-            <img :src="previewUrl" class="viewer-image" :style="{ transform: `scale(${imageScale})` }" />
-            <button class="viewer-close" @click="closeImageViewer" title="关闭 (ESC)">✕</button>
-            <button v-if="currentAssetList.length > 1" class="viewer-nav viewer-prev" @click="goToPrev" title="上一张 (←)">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                <polyline points="15 18 9 12 15 6"/>
-              </svg>
-            </button>
-            <button v-if="currentAssetList.length > 1" class="viewer-nav viewer-next" @click="goToNext" title="下一张 (→)">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                <polyline points="9 18 15 12 9 6"/>
-              </svg>
-            </button>
-            <div class="viewer-scale-info">{{ Math.round(imageScale * 100) }}%</div>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
+    <ImageViewer
+      :visible="showImageViewer"
+      :src="previewUrl"
+      :show-nav="currentAssetList.length > 1"
+      :index-text="currentAssetList.length > 1 ? `${currentAssetIndex + 1} / ${currentAssetList.length}` : ''"
+      @close="closeImageViewer"
+      @prev="goToPrev"
+      @next="goToNext"
+    />
 
     <!-- Video Player -->
     <VideoPlayer
@@ -846,12 +822,12 @@ onUnmounted(() => {
 }
 .orb-1 {
   width: 500px; height: 500px;
-  background: radial-gradient(circle, rgba(108,99,255,0.16) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(166,231,226,0.12) 0%, transparent 70%);
   top: -140px; left: 40px;
 }
 .orb-2 {
   width: 400px; height: 400px;
-  background: radial-gradient(circle, rgba(167,139,250,0.12) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(255,255,255,0.08) 0%, transparent 70%);
   bottom: -100px; right: 60px;
   animation-delay: 3s;
 }
@@ -901,8 +877,8 @@ onUnmounted(() => {
   color: rgba(255,255,255,0.8);
 }
 .nav-item.active {
-  background: rgba(108,99,255,0.18);
-  color: rgba(255,255,255,0.95);
+  background: rgba(255,255,255,0.1);
+  color: var(--color-text);
 }
 
 .sidebar-projects {
@@ -934,8 +910,8 @@ onUnmounted(() => {
   transition: all 0.2s;
 }
 .icon-btn:hover {
-  background: rgba(108,99,255,0.2);
-  border-color: rgba(108,99,255,0.5);
+  background: rgba(255,255,255,0.1);
+  border-color: rgba(255,255,255,0.24);
   color: rgba(255,255,255,0.9);
 }
 
@@ -947,7 +923,7 @@ onUnmounted(() => {
 .mini-ring {
   width: 20px; height: 20px;
   border-radius: 50%;
-  border: 1.5px solid rgba(108,99,255,0.5);
+  border: 1.5px solid rgba(166,231,226,0.42);
   border-top-color: transparent;
   animation: spin 0.8s linear infinite;
 }
@@ -981,8 +957,8 @@ onUnmounted(() => {
   color: rgba(255,255,255,0.85);
 }
 .project-item.active {
-  background: rgba(108,99,255,0.15);
-  color: rgba(255,255,255,0.95);
+  background: rgba(255,255,255,0.1);
+  color: var(--color-text);
 }
 .project-name {
   overflow: hidden;
@@ -1056,12 +1032,12 @@ onUnmounted(() => {
   transition: all 0.2s;
 }
 .filter-btn:hover {
-  border-color: rgba(108,99,255,0.4);
+  border-color: rgba(255,255,255,0.24);
   color: rgba(255,255,255,0.8);
 }
 .filter-btn.active {
-  background: rgba(108,99,255,0.25);
-  border-color: rgba(108,99,255,0.7);
+  background: rgba(255,255,255,0.1);
+  border-color: rgba(255,255,255,0.24);
   color: rgba(255,255,255,0.95);
 }
 
@@ -1087,16 +1063,16 @@ onUnmounted(() => {
 .refresh-btn {
   padding: 7px 18px;
   border-radius: 8px;
-  border: 1px solid rgba(108,99,255,0.3);
-  background: rgba(108,99,255,0.1);
+  border: 1px solid rgba(255,255,255,0.13);
+  background: rgba(255,255,255,0.08);
   color: rgba(255,255,255,0.8);
   font-size: 13px;
   cursor: pointer;
   transition: all 0.2s;
 }
 .refresh-btn:hover:not(:disabled) {
-  background: rgba(108,99,255,0.2);
-  border-color: rgba(108,99,255,0.5);
+  background: rgba(255,255,255,0.12);
+  border-color: rgba(255,255,255,0.24);
 }
 .refresh-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
@@ -1108,11 +1084,11 @@ onUnmounted(() => {
   font-size: 14px;
 }
 .bc-link {
-  color: rgba(108,99,255,0.9);
+  color: var(--color-muted);
   cursor: pointer;
   transition: color 0.2s;
 }
-.bc-link:hover { color: #a78bfa; }
+.bc-link:hover { color: var(--color-text); }
 .bc-sep { color: rgba(255,255,255,0.2); }
 .bc-current { color: rgba(255,255,255,0.85); font-weight: 500; }
 
@@ -1135,17 +1111,17 @@ onUnmounted(() => {
   transition: all 0.25s;
 }
 .project-card:hover {
-  border-color: rgba(108,99,255,0.35);
-  background: rgba(108,99,255,0.07);
+  border-color: rgba(255,255,255,0.24);
+  background: rgba(255,255,255,0.06);
   transform: translateY(-3px);
 }
 
 .project-card-icon {
   width: 48px; height: 48px;
   border-radius: 12px;
-  background: rgba(108,99,255,0.12);
+  background: rgba(255,255,255,0.06);
   display: flex; align-items: center; justify-content: center;
-  color: rgba(167,139,250,0.8);
+  color: var(--color-muted);
   flex-shrink: 0;
 }
 
@@ -1193,12 +1169,12 @@ onUnmounted(() => {
   position: relative;
 }
 .cat-tab:hover {
-  border-color: rgba(167,139,250,0.4);
+  border-color: rgba(255,255,255,0.24);
   color: rgba(255,255,255,0.8);
 }
 .cat-tab.active {
-  background: rgba(167,139,250,0.18);
-  border-color: rgba(167,139,250,0.6);
+  background: rgba(255,255,255,0.1);
+  border-color: rgba(255,255,255,0.24);
   color: rgba(255,255,255,0.95);
 }
 
@@ -1210,8 +1186,8 @@ onUnmounted(() => {
   color: rgba(255,255,255,0.4);
 }
 .cat-tab.active .cat-count {
-  background: rgba(167,139,250,0.25);
-  color: rgba(167,139,250,0.9);
+  background: rgba(255,255,255,0.08);
+  color: var(--color-muted);
 }
 
 .cat-del-tab {
@@ -1251,16 +1227,16 @@ onUnmounted(() => {
 .ring {
   position: absolute;
   border-radius: 50%;
-  border: 1.5px solid rgba(108,99,255,0.5);
+  border: 1.5px solid rgba(166,231,226,0.42);
   animation: breathe 3s ease-in-out infinite;
 }
 .r1 { width: 100%; height: 100%; animation-delay: 0s; }
-.r2 { width: 72%; height: 72%; animation-delay: 0.5s; border-color: rgba(167,139,250,0.5); }
-.r3 { width: 44%; height: 44%; animation-delay: 1s; border-color: rgba(196,181,253,0.6); }
+.r2 { width: 72%; height: 72%; animation-delay: 0.5s; border-color: rgba(255,255,255,0.2); }
+.r3 { width: 44%; height: 44%; animation-delay: 1s; border-color: rgba(255,255,255,0.28); }
 .center-dot {
   width: 10px; height: 10px;
   border-radius: 50%;
-  background: #a78bfa;
+  background: rgba(255,255,255,0.72);
   animation: pulse-dot 2s ease-in-out infinite;
 }
 
@@ -1274,8 +1250,8 @@ onUnmounted(() => {
 .empty-orb {
   width: 60px; height: 60px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(108,99,255,0.15) 0%, transparent 70%);
-  border: 1px solid rgba(108,99,255,0.15);
+  background: radial-gradient(circle, rgba(166,231,226,0.12) 0%, transparent 70%);
+  border: 1px solid rgba(255,255,255,0.13);
   animation: breathe 4s ease-in-out infinite;
 }
 .empty-text {
@@ -1293,14 +1269,14 @@ onUnmounted(() => {
 .load-more-btn {
   padding: 8px 28px;
   border-radius: 8px;
-  border: 1px solid rgba(108,99,255,0.4);
-  background: rgba(108,99,255,0.12);
+  border: 1px solid rgba(255,255,255,0.13);
+  background: rgba(255,255,255,0.08);
   color: rgba(255,255,255,0.7);
   font-size: 13px;
   cursor: pointer;
   transition: all 0.2s;
 }
-.load-more-btn:hover:not(:disabled) { background: rgba(108,99,255,0.25); color: #fff; }
+.load-more-btn:hover:not(:disabled) { background: rgba(255,255,255,0.12); color: #fff; }
 .load-more-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .no-more-text {
   font-size: 12px;
@@ -1325,11 +1301,11 @@ onUnmounted(() => {
 }
 .dialog-btn.cancel:hover { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.8); }
 .dialog-btn.confirm {
-  background: rgba(108,99,255,0.3);
-  border-color: rgba(108,99,255,0.6);
+  background: rgba(255,255,255,0.1);
+  border-color: rgba(255,255,255,0.24);
   color: rgba(255,255,255,0.95);
 }
-.dialog-btn.confirm:hover:not(:disabled) { background: rgba(108,99,255,0.45); }
+.dialog-btn.confirm:hover:not(:disabled) { background: rgba(255,255,255,0.14); }
 .dialog-btn.confirm:disabled { opacity: 0.5; cursor: not-allowed; }
 
 @keyframes breathe {
@@ -1360,7 +1336,7 @@ onUnmounted(() => {
 }
 .gallery-item:hover {
   transform: translateY(-4px);
-  border-color: rgba(108,99,255,0.3);
+  border-color: rgba(255,255,255,0.24);
 }
 .gallery-media {
   width: 100%;
@@ -1408,8 +1384,8 @@ onUnmounted(() => {
 }
 .gallery-type {
   font-size: 11px;
-  color: rgba(167,139,250,0.6);
-  background: rgba(167,139,250,0.1);
+  color: var(--color-muted);
+  background: rgba(255,255,255,0.08);
   padding: 2px 7px;
   border-radius: 10px;
 }
@@ -1430,7 +1406,7 @@ onUnmounted(() => {
   backdrop-filter: blur(4px);
 }
 .gallery-item:hover .download-btn { opacity: 1; }
-.download-btn:hover { background: rgba(108,99,255,0.9); transform: scale(1.1); }
+.download-btn:hover { background: rgba(255,255,255,0.18); transform: scale(1.1); }
 
 .remove-asset-btn {
   position: absolute;
@@ -1459,123 +1435,10 @@ onUnmounted(() => {
   transform: scale(1.15);
 }
 
-/* ── 自定义图片查看器 ── */
-.custom-image-viewer {
-  position: fixed;
-  inset: 0;
-  z-index: 2500;
-  background: rgba(0, 0, 0, 0.85);
-  backdrop-filter: blur(8px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-}
-.viewer-content {
-  position: relative;
-  max-width: 90vw;
-  max-height: 90vh;
-  cursor: default;
-  overflow: hidden;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.viewer-image {
-  max-width: 90vw;
-  max-height: 90vh;
-  object-fit: contain;
-  display: block;
-  border-radius: 12px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-  transition: transform 0.1s ease-out;
-  transform-origin: center center;
-}
-.viewer-close {
-  position: absolute;
-  top: -40px;
-  right: 0;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  background: rgba(0, 0, 0, 0.4);
-  color: rgba(255, 255, 255, 0.9);
-  font-size: 18px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s;
-}
-.viewer-close:hover {
-  background: rgba(255, 255, 255, 0.15);
-  border-color: rgba(255, 255, 255, 0.4);
-  transform: scale(1.1);
-}
-.viewer-nav {
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  background: rgba(0, 0, 0, 0.5);
-  color: rgba(255, 255, 255, 0.9);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s;
-}
-.viewer-nav:hover {
-  background: rgba(255, 255, 255, 0.15);
-  border-color: rgba(255, 255, 255, 0.4);
-  transform: translateY(-50%) scale(1.1);
-}
-.viewer-prev {
-  left: -60px;
-}
-.viewer-next {
-  right: -60px;
-}
-.viewer-scale-info {
-  position: absolute;
-  bottom: -35px;
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 4px 12px;
-  border-radius: 12px;
-  background: rgba(0, 0, 0, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  color: rgba(255, 255, 255, 0.8);
-  font-size: 12px;
-  pointer-events: none;
-}
-
-.img-viewer-enter-active,
-.img-viewer-leave-active {
-  transition: opacity 0.25s ease;
-}
-.img-viewer-enter-active .viewer-content,
-.img-viewer-leave-active .viewer-content {
-  transition: transform 0.25s ease, opacity 0.25s ease;
-}
-.img-viewer-enter-from,
-.img-viewer-leave-to {
-  opacity: 0;
-}
-.img-viewer-enter-from .viewer-content,
-.img-viewer-leave-to .viewer-content {
-  transform: scale(0.9);
-  opacity: 0;
-}
-
 /* ── 内联编辑输入框 ── */
 .inline-input {
-  background: rgba(108,99,255,0.15);
-  border: 1px solid rgba(108,99,255,0.5);
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.22);
   border-radius: 6px;
   color: rgba(255,255,255,0.9);
   font-size: 13px;
