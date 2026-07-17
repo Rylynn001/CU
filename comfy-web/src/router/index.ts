@@ -7,6 +7,7 @@ const router = createRouter({
     { path: '/', name: 'Home', component: () => import('../views/Home.vue') },
     { path: '/image', name: 'TextToImage', component: () => import('../views/TextToImage.vue') },
     { path: '/video', name: 'TextToVideo', component: () => import('../views/TextToVideo.vue') },
+    { path: '/node-panel', name: 'NodePanel', component: () => import('../views/NodePanel.vue') },
     { path: '/models', name: 'ModelManager', component: () => import('../views/ModelManager.vue') },
     { path: '/assets', name: 'Assets', component: () => import('../views/Assets.vue') },
     { path: '/drama', name: 'DramaList', component: () => import('../views/DramaList.vue') },

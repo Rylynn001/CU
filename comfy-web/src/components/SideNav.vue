@@ -26,6 +26,7 @@ const navItems = [
   { path: '/', icon: House, label: '首页' },
   { path: '/image', icon: Picture, label: '图片生成' },
   { path: '/video', icon: VideoCamera, label: '视频生成' },
+  { path: '/node-panel', icon: MagicStick, label: '节点面板' },
   { path: '/drama', icon: Film, label: '导演台' },
   { path: '/assets', icon: FolderOpened, label: '我的资产' },
 ]
