@@ -169,6 +169,33 @@ const {
   replaceFile, replaceAssetWithFile,
 } = useInputMedia((msg) => { errorMsg.value = msg })
 
+// 从侧边栏拖拽资产到输入素材区域
+function handleAssetDrop(e: DragEvent) {
+  const data = e.dataTransfer?.getData('application/json')
+  if (!data) return
+  try {
+    const asset = JSON.parse(data)
+    handleAssetSelect([asset])
+  } catch {
+    // 忽略非资产数据
+  }
+}
+
+// ── 拖拽视觉反馈 ──────────────────────────────────────────────
+// isDragging：全局是否有拖拽进行中（页面变暗）
+// isPanelDragOver：拖拽是否悬停在参数面板上（面板高亮）
+const isDragging = ref(false)
+const isPanelDragOver = ref(false)
+function handleGlobalDragStart() { isDragging.value = true }
+function handleGlobalDragEnd() { isDragging.value = false; isPanelDragOver.value = false }
+// dragenter/dragleave 会在子元素间切换时反复冒泡触发，仅在真正离开面板边界（relatedTarget 不在面板内）时才取消高亮
+function handlePanelDragLeave(e: DragEvent) {
+  const related = e.relatedTarget as Node | null
+  if (!related || !(e.currentTarget as HTMLElement).contains(related)) {
+    isPanelDragOver.value = false
+  }
+}
+
 // 鈹€鈹€ @mention 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 const promptInputRef = ref<InstanceType<typeof ElInput> | null>(null)
 const { atMentionActive, atMentionIndex, onPromptKeyup, onPromptKeydown, insertMention } =
@@ -570,6 +597,9 @@ onMounted(async () => {
 
   // 娉ㄥ唽閿洏浜嬩欢鐩戝惉
   window.addEventListener('keydown', handleImageKeydown)
+  // 全局拖拽监听：拖拽任意资产时页面变暗
+  window.addEventListener('dragstart', handleGlobalDragStart)
+  window.addEventListener('dragend', handleGlobalDragEnd)
 })
 
 // 澶嶇敤鐢熸垚璁板綍鐨勫弬鏁?
@@ -636,12 +666,14 @@ function handleReuseParams(record: any, fromStorage = false) {
 onUnmounted(() => {
   // 绉婚櫎閿洏浜嬩欢鐩戝惉
   window.removeEventListener('keydown', handleImageKeydown)
+  window.removeEventListener('dragstart', handleGlobalDragStart)
+  window.removeEventListener('dragend', handleGlobalDragEnd)
 })
 </script>
 
 
 <template>
-  <div class="page">
+  <div class="page" :class="{ dragging: isDragging }">
     <div class="orb orb-1" />
     <div class="orb orb-2" />
 
@@ -654,7 +686,11 @@ onUnmounted(() => {
           <button class="tab-btn" :class="{ active: activeTab === 'img2video' }" @click="activeTab = 'img2video'">图生视频</button>
         </div>
 
-        <div class="panel-body">
+        <div class="panel-body" :class="{ 'panel-drag-over': isPanelDragOver }"
+             @dragover.prevent
+             @dragenter.prevent="isPanelDragOver = true"
+             @dragleave.prevent="handlePanelDragLeave"
+             @drop.prevent="isPanelDragOver = false; handleAssetDrop($event)">
           <p v-if="errorMsg" class="error-msg">{{ errorMsg }}</p>
 
           <!-- model source toggle -->
@@ -733,7 +769,7 @@ onUnmounted(() => {
           <div class="divider" />
 
           <!-- img2video upload -->
-          <template v-if="activeTab === 'img2video'">
+          <div v-if="activeTab === 'img2video'">
             <div class="section-label">输入素材（图片最多 4 张，视频最多 1 个，总计最多 2 个）</div>
 
             <!-- 宸蹭笂浼犳枃浠堕瑙?-->
@@ -793,7 +829,7 @@ onUnmounted(() => {
                 </div>
               </template>
             </div>
-          </template>
+          </div>
 
           <!-- prompt -->
           <div class="section-label">

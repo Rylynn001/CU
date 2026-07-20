@@ -273,6 +273,33 @@ function handleAssetSelect(assets: Array<{ id: number; location: string; asset_t
   }
 }
 
+// 从侧边栏拖拽资产到参数面板
+function handleAssetDrop(e: DragEvent) {
+  const data = e.dataTransfer?.getData('application/json')
+  if (!data) return
+  try {
+    const asset = JSON.parse(data)
+    handleAssetSelect([asset])
+  } catch {
+    // 忽略非资产数据
+  }
+}
+
+// ── 拖拽视觉反馈 ──────────────────────────────────────────────
+// isDragging：全局是否有拖拽进行中（页面变暗）
+// isPanelDragOver：拖拽是否悬停在参数面板上（面板高亮）
+const isDragging = ref(false)
+const isPanelDragOver = ref(false)
+function handleGlobalDragStart() { isDragging.value = true }
+function handleGlobalDragEnd() { isDragging.value = false; isPanelDragOver.value = false }
+// dragenter/dragleave 会在子元素间切换时反复冒泡触发，仅在真正离开面板边界（relatedTarget 不在面板内）时才取消高亮
+function handlePanelDragLeave(e: DragEvent) {
+  const related = e.relatedTarget as Node | null
+  if (!related || !(e.currentTarget as HTMLElement).contains(related)) {
+    isPanelDragOver.value = false
+  }
+}
+
 // ── @mention ──────────────────────────────────────────────
 // 提示词输入框的 ref，用于 @mention 功能定位光标
 const promptInputRef = ref<InstanceType<typeof ElInput> | null>(null)
@@ -695,6 +722,9 @@ onMounted(async () => {
 
   // 注册键盘事件监听
   window.addEventListener('keydown', handleImageKeydown)
+  // 全局拖拽监听：拖拽任意资产时页面变暗
+  window.addEventListener('dragstart', handleGlobalDragStart)
+  window.addEventListener('dragend', handleGlobalDragEnd)
 })
 
 // 复用生成记录的参数
@@ -794,12 +824,14 @@ function handleReuseParams(record: any, fromStorage = false) {
 onUnmounted(() => {
   // 移除键盘事件监听
   window.removeEventListener('keydown', handleImageKeydown)
+  window.removeEventListener('dragstart', handleGlobalDragStart)
+  window.removeEventListener('dragend', handleGlobalDragEnd)
 })
 </script>
 
 
 <template>
-  <div class="page">
+  <div class="page" :class="{ dragging: isDragging }">
     <div class="orb orb-1" />
     <div class="orb orb-2" />
 
@@ -813,7 +845,11 @@ onUnmounted(() => {
           <button class="tab-btn" :class="{ active: activeTab === 'img2img' }" @click="activeTab = 'img2img'">图生图</button>
         </div>
 
-        <div class="panel-body">
+        <div class="panel-body" :class="{ 'panel-drag-over': isPanelDragOver }"
+             @dragover.prevent
+             @dragenter.prevent="isPanelDragOver = true"
+             @dragleave.prevent="handlePanelDragLeave"
+             @drop.prevent="isPanelDragOver = false; handleAssetDrop($event)">
           <p v-if="errorMsg" class="error-msg">{{ errorMsg }}</p>
 
           <!-- model source toggle — 最顶部 -->
@@ -847,7 +883,7 @@ onUnmounted(() => {
           <div class="divider" />
 
           <!-- img2img upload -->
-          <template v-if="activeTab === 'img2img'">
+          <div v-if="activeTab === 'img2img'">
             <div class="section-label">参考图片
               <span v-if="modelSource === 'local' && inputImages.length > 1" class="local-tip">本地模式仅使用图1</span>
             </div>
@@ -879,7 +915,7 @@ onUnmounted(() => {
                 <span>3D 截图</span>
               </button>
             </div>
-          </template>
+          </div>
 
           <!-- prompt -->
           <div class="section-label">{{ activeTab === 'txt2img' ? '描述你想生成的内容' : '描述生成方向' }}</div>

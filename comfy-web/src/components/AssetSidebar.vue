@@ -530,6 +530,12 @@ function addToMaterial() {
   if (asset) emit('select', [asset])
 }
 
+// ── 拖拽发起：将资产数据写入 dataTransfer，供拖放目标读取 ──────────────────
+function handleDragStart(e: DragEvent, asset: Asset) {
+  e.dataTransfer?.setData('application/json', JSON.stringify(asset))
+  if (e.dataTransfer) e.dataTransfer.effectAllowed = 'copy'
+}
+
 // ── 查看生成记录弹窗 ──────────────────────────────────────────────────────
 const showRecordDetail = ref(false)
 const recordDetail = ref<HistoryRecord | null>(null)
@@ -635,12 +641,14 @@ onUnmounted(() => {
           v-for="asset in assets"
           :key="asset.id"
           class="thumb-item"
+          draggable="true"
+          @dragstart="handleDragStart($event, asset)"
           @click="handleAssetClick(asset)"
           @contextmenu.prevent="openContextMenu($event, asset)"
           :title="asset.location.split(/[/\\]/).pop()"
         >
-          <video v-if="isVideo(asset)" :src="getThumb(asset)" class="thumb-media" preload="metadata" />
-          <img v-else :src="getThumb(asset)" class="thumb-media" loading="lazy" />
+          <video v-if="isVideo(asset)" :src="getThumb(asset)" class="thumb-media" preload="metadata" draggable="false" />
+          <img v-else :src="getThumb(asset)" class="thumb-media" loading="lazy" draggable="false" />
           <div v-if="isVideo(asset)" class="thumb-play">▶</div>
           <div class="thumb-action-buttons">
             <button class="thumb-action-btn" @click.stop="openAddToProjectDialog(asset)" title="添加到项目">
@@ -746,12 +754,14 @@ onUnmounted(() => {
             v-for="asset in categoryAssets"
             :key="asset.id"
             class="thumb-item"
+            draggable="true"
+            @dragstart="handleDragStart($event, asset)"
             @click="handleAssetClick(asset)"
             @contextmenu.prevent="openContextMenu($event, asset)"
             :title="asset.location.split(/[/\\]/).pop()"
           >
-            <video v-if="isVideo(asset)" :src="getThumb(asset)" class="thumb-media" preload="metadata" />
-            <img v-else :src="getThumb(asset)" class="thumb-media" loading="lazy" />
+            <video v-if="isVideo(asset)" :src="getThumb(asset)" class="thumb-media" preload="metadata" draggable="false" />
+            <img v-else :src="getThumb(asset)" class="thumb-media" loading="lazy" draggable="false" />
             <div v-if="isVideo(asset)" class="thumb-play">▶</div>
             <div class="thumb-action-buttons">
               <button class="thumb-action-btn" @click.stop="openAddToProjectDialog(asset)" title="添加到项目">

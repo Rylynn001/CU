@@ -3,41 +3,25 @@ import { Camera, Mesh, Plane, Program, Renderer, Texture, Transform } from 'ogl'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 type GL = Renderer['gl']
-type GalleryItem = { image: string; text: string }
-type Direction = 'right' | 'left'
+type GalleryItem = { image: string }
 
 const props = withDefaults(defineProps<{
   items?: GalleryItem[]
   bend?: number
-  textColor?: string
   borderRadius?: number
-  font?: string
-  fontUrl?: string
   scrollSpeed?: number
   scrollEase?: number
 }>(), {
   bend: 0,
-  textColor: '#ffffff',
   borderRadius: 0.05,
-  font: 'bold 30px Orbitron',
-  fontUrl: '',
   scrollSpeed: 3,
   scrollEase: 0.05,
 })
 
 const containerRef = ref<HTMLDivElement | null>(null)
 let galleryApp: GalleryApp | undefined
-let mountToken = 0
 
 const normalizedItems = computed(() => props.items || [])
-
-function debounce<T extends (...args: never[]) => void>(func: T, wait: number) {
-  let timeout = 0
-  return (...args: Parameters<T>) => {
-    window.clearTimeout(timeout)
-    timeout = window.setTimeout(() => func(...args), wait)
-  }
-}
 
 function lerp(p1: number, p2: number, t: number) {
   return p1 + (p2 - p1) * t
@@ -53,156 +37,20 @@ function autoBind(instance: object) {
   })
 }
 
-function getFontSize(font: string) {
-  const match = font.match(/(\d+)px/)
-  return match ? Number.parseInt(match[1], 10) : 30
-}
-
-function createTextTexture(gl: GL, text: string, font: string, color: string) {
-  const canvas = document.createElement('canvas')
-  const context = canvas.getContext('2d')
-  if (!context) throw new Error('无法创建文字画布')
-
-  context.font = font
-  const metrics = context.measureText(text)
-  const textWidth = Math.ceil(metrics.width)
-  const textHeight = Math.ceil(getFontSize(font) * 1.2)
-
-  canvas.width = textWidth + 20
-  canvas.height = textHeight + 20
-
-  context.font = font
-  context.fillStyle = color
-  context.textBaseline = 'middle'
-  context.textAlign = 'center'
-  context.clearRect(0, 0, canvas.width, canvas.height)
-  context.fillText(text, canvas.width / 2, canvas.height / 2)
-
-  const texture = new Texture(gl, { generateMipmaps: false })
-  texture.image = canvas
-  return { texture, width: canvas.width, height: canvas.height }
-}
-
-async function loadFontFromFile(url: string) {
-  const fileName = (url.split('/').pop() || 'custom-font').split('?')[0]
-  const family = fileName.replace(/\.(woff2?|ttf|otf|eot)$/i, '').replace(/[^a-zA-Z0-9-_ ]/g, '').trim() || 'CircularGalleryFont'
-  const fontFace = new FontFace(family, `url(${url})`)
-  await fontFace.load()
-  document.fonts.add(fontFace)
-  return family
-}
-
-async function loadFontFromStylesheet(url: string) {
-  const response = await fetch(url)
-  if (!response.ok) throw new Error('字体样式加载失败')
-  const cssText = await response.text()
-  const faceBlocks = cssText.match(/@font-face\s*{[^}]*}/g) || []
-  let family = ''
-  const fontFaces: FontFace[] = []
-
-  faceBlocks.forEach((block) => {
-    const familyMatch = block.match(/font-family:\s*['"]?([^;'"]+)['"]?/)
-    const urlMatch = block.match(/url\(\s*['"]?([^'")]+)['"]?\s*\)/)
-    if (!familyMatch || !urlMatch) return
-
-    family = familyMatch[1].trim()
-    const descriptors: FontFaceDescriptors = {}
-    const weightMatch = block.match(/font-weight:\s*([^;]+);/)
-    const styleMatch = block.match(/font-style:\s*([^;]+);/)
-    const rangeMatch = block.match(/unicode-range:\s*([^;]+);/)
-    if (weightMatch) descriptors.weight = weightMatch[1].trim()
-    if (styleMatch) descriptors.style = styleMatch[1].trim()
-    if (rangeMatch) descriptors.unicodeRange = rangeMatch[1].trim()
-    fontFaces.push(new FontFace(family, `url(${urlMatch[1]})`, descriptors))
-  })
-
-  if (!family) throw new Error('未找到可用字体')
-  await Promise.allSettled(fontFaces.map(async (face) => {
-    await face.load()
-    document.fonts.add(face)
-  }))
-  return family
-}
-
-async function resolveFont(font: string, fontUrl: string) {
-  if (!fontUrl) {
-    try {
-      await document.fonts.load(font)
-      await document.fonts.ready
-    } catch {
-      // 浏览器会自动回退到可用字体。
-    }
-    return font
-  }
-
-  try {
-    const isStylesheet = fontUrl.includes('fonts.googleapis.com') || /\.css(\?.*)?$/i.test(fontUrl)
-    const family = isStylesheet ? await loadFontFromStylesheet(fontUrl) : await loadFontFromFile(fontUrl)
-    const sizeMatch = font.match(/^\s*(.*?\d+px)/)
-    return `${sizeMatch ? sizeMatch[1].trim() : 'bold 30px'} "${family}"`
-  } catch {
-    return font
-  }
-}
-
-class Title {
-  mesh!: Mesh
-
-  constructor(
-    private readonly gl: GL,
-    private readonly plane: Mesh,
-    private readonly text: string,
-    private readonly textColor: string,
-    private readonly font: string,
-  ) {
-    this.createMesh()
-  }
-
-  createMesh() {
-    const { texture, width, height } = createTextTexture(this.gl, this.text, this.font, this.textColor)
-    const geometry = new Plane(this.gl)
-    const program = new Program(this.gl, {
-      vertex: `
-        attribute vec3 position;
-        attribute vec2 uv;
-        uniform mat4 modelViewMatrix;
-        uniform mat4 projectionMatrix;
-        varying vec2 vUv;
-        void main() {
-          vUv = uv;
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        }
-      `,
-      fragment: `
-        precision highp float;
-        uniform sampler2D tMap;
-        varying vec2 vUv;
-        void main() {
-          vec4 color = texture2D(tMap, vUv);
-          if (color.a < 0.1) discard;
-          gl_FragColor = color;
-        }
-      `,
-      uniforms: { tMap: { value: texture } },
-      transparent: true,
-    })
-    this.mesh = new Mesh(this.gl, { geometry, program })
-    const aspect = width / height
-    const textHeightScaled = this.plane.scale.y * 0.15
-    this.mesh.scale.set(textHeightScaled * aspect, textHeightScaled, 1)
-    this.mesh.position.y = -this.plane.scale.y * 0.5 - textHeightScaled * 0.5 - 0.05
-    this.mesh.setParent(this.plane)
+function debounce<T extends (...args: never[]) => void>(func: T, wait: number) {
+  let timeout = 0
+  return (...args: Parameters<T>) => {
+    window.clearTimeout(timeout)
+    timeout = window.setTimeout(() => func(...args), wait)
   }
 }
 
 class Media {
-  extra = 0
   program!: Program
   plane!: Mesh
   scale = 1
   padding = 2
   width = 0
-  widthTotal = 0
   x = 0
   speed = 0
 
@@ -211,24 +59,20 @@ class Media {
     private readonly gl: GL,
     private readonly image: string,
     private readonly index: number,
-    private readonly length: number,
     private readonly scene: Transform,
     private screen: { width: number; height: number },
-    private readonly text: string,
     private viewport: { width: number; height: number },
     private readonly bend: number,
-    private readonly textColor: string,
     private readonly borderRadius: number,
-    private readonly font: string,
   ) {
     this.createShader()
     this.createMesh()
-    new Title(this.gl, this.plane, this.text, this.textColor, this.font)
     this.onResize()
   }
 
   createShader() {
-    const texture = new Texture(this.gl, { generateMipmaps: true })
+    // generateMipmaps 关闭：面板展示的是清晰静态图，mipmap 采样会让画面看起来发糊
+    const texture = new Texture(this.gl, { generateMipmaps: false })
     this.program = new Program(this.gl, {
       depthTest: false,
       depthWrite: false,
@@ -244,7 +88,7 @@ class Media {
         void main() {
           vUv = uv;
           vec3 p = position;
-          p.z = (sin(p.x * 4.0 + uTime) * 1.5 + cos(p.y * 2.0 + uTime) * 1.5) * (0.1 + uSpeed * 0.5);
+          p.z = (sin(p.x * 4.0 + uTime) * 0.8 + cos(p.y * 2.0 + uTime) * 0.8) * (0.08 + uSpeed * 0.35);
           gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
         }
       `,
@@ -304,8 +148,8 @@ class Media {
     this.plane.setParent(this.scene)
   }
 
-  update(scroll: { current: number; last: number }, direction: Direction) {
-    this.plane.position.x = this.x - scroll.current - this.extra
+  update(scroll: { current: number; last: number }) {
+    this.plane.position.x = this.x - scroll.current
     const x = this.plane.position.x
     const halfWidth = this.viewport.width / 2
 
@@ -324,13 +168,6 @@ class Media {
     this.speed = scroll.current - scroll.last
     this.program.uniforms.uTime.value += 0.04
     this.program.uniforms.uSpeed.value = this.speed
-
-    const planeOffset = this.plane.scale.x / 2
-    const viewportOffset = this.viewport.width / 2
-    const isBefore = this.plane.position.x + planeOffset < -viewportOffset
-    const isAfter = this.plane.position.x - planeOffset > viewportOffset
-    if (direction === 'right' && isBefore) this.extra -= this.widthTotal
-    if (direction === 'left' && isAfter) this.extra += this.widthTotal
   }
 
   onResize({ screen, viewport }: { screen?: { width: number; height: number }; viewport?: { width: number; height: number } } = {}) {
@@ -342,7 +179,6 @@ class Media {
     this.plane.scale.x = (this.viewport.width * (700 * this.scale)) / this.screen.width
     this.plane.program.uniforms.uPlaneSizes.value = [this.plane.scale.x, this.plane.scale.y]
     this.width = this.plane.scale.x + this.padding
-    this.widthTotal = this.width * this.length
     this.x = this.width * this.index
   }
 }
@@ -362,7 +198,7 @@ class GalleryApp {
 
   constructor(
     private readonly container: HTMLElement,
-    private readonly config: Required<Omit<NonNullable<typeof props>, 'items' | 'fontUrl'>> & { items: GalleryItem[] },
+    private readonly config: Required<Omit<NonNullable<typeof props>, 'items'>> & { items: GalleryItem[] },
   ) {
     autoBind(this)
     this.scroll = { ease: config.scrollEase, current: 0, target: 0, last: 0 }
@@ -406,29 +242,37 @@ class GalleryApp {
   }
 
   createMedias() {
+    // 有头有尾的直线排列：不做首尾拼接、不做循环 wraparound，滚到头/尾直接停住
     const galleryItems = this.config.items
-    const mediasImages = galleryItems.length ? galleryItems.concat(galleryItems) : []
-    this.medias = mediasImages.map((item, index) => new Media(
+    this.medias = galleryItems.map((item, index) => new Media(
       this.planeGeometry,
       this.gl,
       item.image,
       index,
-      mediasImages.length,
       this.scene,
       this.screen,
-      item.text,
       this.viewport,
       this.config.bend,
-      this.config.textColor,
       this.config.borderRadius,
-      this.config.font,
     ))
+  }
+
+  // 可滚动范围：[0, 最后一张图的 x 坐标]，超出范围直接夹住，不会绕回另一头
+  getScrollBounds() {
+    if (this.medias.length === 0) return { min: 0, max: 0 }
+    return { min: 0, max: this.medias[this.medias.length - 1].x }
+  }
+
+  clampScroll() {
+    const { min, max } = this.getScrollBounds()
+    this.scroll.target = Math.min(Math.max(this.scroll.target, min), max)
   }
 
   onWheel(e: WheelEvent) {
     e.preventDefault()
     const delta = e.deltaY || e.deltaX || e.detail
-    this.scroll.target += (delta > 0 ? this.config.scrollSpeed : -this.config.scrollSpeed) * 0.2
+    this.scroll.target += (delta > 0 ? this.config.scrollSpeed : -this.config.scrollSpeed) * 0.6
+    this.clampScroll()
     this.onCheckDebounce()
   }
 
@@ -436,11 +280,13 @@ class GalleryApp {
     if (e.key === 'ArrowRight') {
       e.preventDefault()
       this.scroll.target += this.config.scrollSpeed * 5
+      this.clampScroll()
       this.onCheckDebounce()
     }
     if (e.key === 'ArrowLeft') {
       e.preventDefault()
       this.scroll.target -= this.config.scrollSpeed * 5
+      this.clampScroll()
       this.onCheckDebounce()
     }
   }
@@ -448,9 +294,9 @@ class GalleryApp {
   onCheck() {
     if (!this.medias[0]) return
     const width = this.medias[0].width
-    const itemIndex = Math.round(Math.abs(this.scroll.target) / width)
-    const item = width * itemIndex
-    this.scroll.target = this.scroll.target < 0 ? -item : item
+    const itemIndex = Math.round(this.scroll.target / width)
+    this.scroll.target = width * itemIndex
+    this.clampScroll()
   }
 
   onResize() {
@@ -468,8 +314,7 @@ class GalleryApp {
 
   update() {
     this.scroll.current = lerp(this.scroll.current, this.scroll.target, this.scroll.ease)
-    const direction: Direction = this.scroll.current > this.scroll.last ? 'right' : 'left'
-    this.medias.forEach((media) => media.update(this.scroll, direction))
+    this.medias.forEach((media) => media.update(this.scroll))
     this.renderer.render({ scene: this.scene, camera: this.camera })
     this.scroll.last = this.scroll.current
     this.raf = window.requestAnimationFrame(this.update)
@@ -490,30 +335,22 @@ class GalleryApp {
   }
 }
 
-async function mountGallery() {
+function mountGallery() {
   const container = containerRef.value
   if (!container) return
 
-  const currentToken = ++mountToken
   galleryApp?.destroy()
-  galleryApp = undefined
-
-  const font = await resolveFont(props.font, props.fontUrl)
-  if (currentToken !== mountToken || !containerRef.value) return
-
   galleryApp = new GalleryApp(container, {
     items: normalizedItems.value,
     bend: props.bend,
-    textColor: props.textColor,
     borderRadius: props.borderRadius,
-    font,
     scrollSpeed: props.scrollSpeed,
     scrollEase: props.scrollEase,
   })
 }
 
 watch(
-  () => [normalizedItems.value, props.bend, props.textColor, props.borderRadius, props.font, props.fontUrl, props.scrollSpeed, props.scrollEase],
+  () => [normalizedItems.value, props.bend, props.borderRadius, props.scrollSpeed, props.scrollEase],
   () => {
     mountGallery()
   },
@@ -525,7 +362,6 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
-  mountToken += 1
   galleryApp?.destroy()
 })
 </script>

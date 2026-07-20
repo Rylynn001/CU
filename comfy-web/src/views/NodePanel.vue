@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import AssetSidebar from '../components/AssetSidebar.vue'
 import CircularGallery from '../components/CircularGallery.vue'
@@ -24,6 +24,20 @@ const panels = ref<PanelState[]>([
 
 const resizing = ref<{ index: number; startY: number; first: number; second: number } | null>(null)
 
+// 拖拽视觉反馈：isDragging 控制页面变暗，dragOverIndex 标记当前悬停的面板
+const isDragging = ref(false)
+const dragOverIndex = ref<number | null>(null)
+function handleGlobalDragStart() { isDragging.value = true }
+function handleGlobalDragEnd() { isDragging.value = false; dragOverIndex.value = null }
+onMounted(() => {
+  window.addEventListener('dragstart', handleGlobalDragStart)
+  window.addEventListener('dragend', handleGlobalDragEnd)
+})
+onUnmounted(() => {
+  window.removeEventListener('dragstart', handleGlobalDragStart)
+  window.removeEventListener('dragend', handleGlobalDragEnd)
+})
+
 const panelStyles = computed(() => panels.value.map((panel) => ({
   flexGrow: panel.ratio,
   flexBasis: 0,
@@ -34,7 +48,6 @@ const galleryItems = computed(() => panels.value.map((panel) => (
     .filter((asset) => !isVideo(asset))
     .map((asset) => ({
       image: getMediaUrl(asset.location),
-      text: asset.location.split(/[/\\]/).pop() || `资产 ${asset.id}`,
     }))
 )))
 
@@ -55,18 +68,40 @@ function isVideo(asset: Asset) {
   return ['mp4', 'mov', 'avi', 'webm'].includes(ext || '')
 }
 
-function addAssetToPanel(asset: Asset) {
+function addAssetToPanel(asset: Asset, index?: number) {
   if (isVideo(asset)) {
     ElMessage.warning('节点面板预览暂只支持图片资产')
     return
   }
 
-  panels.value.forEach((panel) => {
+  const targets = index === undefined ? panels.value : [panels.value[index]]
+  targets.forEach((panel) => {
     if (!panel.assets.some((item) => item.id === asset.id)) {
       panel.assets.push(asset)
     }
   })
   ElMessage.success('已添加到节点面板')
+}
+
+// 拖拽资产到指定面板
+function handlePanelDrop(e: DragEvent, index: number) {
+  dragOverIndex.value = null
+  const data = e.dataTransfer?.getData('application/json')
+  if (!data) return
+  try {
+    const asset: Asset = JSON.parse(data)
+    addAssetToPanel(asset, index)
+  } catch {
+    // 忽略非资产数据
+  }
+}
+
+// dragenter/dragleave 会在子元素间切换时反复冒泡触发，仅在真正离开面板边界（relatedTarget 不在面板内）时才取消高亮
+function handlePanelDragLeave(e: DragEvent, index: number) {
+  const related = e.relatedTarget as Node | null
+  if (!related || !(e.currentTarget as HTMLElement).contains(related)) {
+    if (dragOverIndex.value === index) dragOverIndex.value = null
+  }
 }
 
 function removeAsset(asset: Asset) {
@@ -108,22 +143,27 @@ function stopResize() {
 </script>
 
 <template>
-  <div class="node-panel-page">
+  <div class="node-panel-page" :class="{ dragging: isDragging }">
     <div class="node-orb node-orb-2" />
 
     <main class="panel-workspace">
       <section class="panel-shell" aria-label="节点预览面板">
         <div class="panel-stack">
           <template v-for="(panel, index) in panels" :key="index">
-            <article class="preview-panel" :style="panelStyles[index]">
+            <article
+              class="preview-panel"
+              :class="{ 'drag-over': dragOverIndex === index }"
+              :style="panelStyles[index]"
+              @dragover.prevent
+              @dragenter.prevent="dragOverIndex = index"
+              @dragleave.prevent="handlePanelDragLeave($event, index)"
+              @drop.prevent="handlePanelDrop($event, index)"
+            >
               <CircularGallery
                 :items="galleryItems[index]"
                 :bend="0"
-                text-color="#ffffff"
                 :border-radius="0.05"
                 :scroll-ease="0.05"
-                font-url=""
-                font="bold 30px Orbitron"
                 :scroll-speed="3"
               />
             </article>
@@ -166,6 +206,15 @@ function stopResize() {
   overflow: hidden;
   background: transparent;
   animation: page-enter 0.45s ease both;
+}
+
+.node-panel-page.dragging::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.18);
+  pointer-events: none;
+  z-index: 200;
 }
 
 .node-orb {
@@ -219,6 +268,12 @@ function stopResize() {
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
   box-shadow: var(--shadow-soft);
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.preview-panel.drag-over {
+  border-color: rgba(166, 231, 226, 0.5);
+  background: rgba(166, 231, 226, 0.08);
 }
 
 .resize-handle {

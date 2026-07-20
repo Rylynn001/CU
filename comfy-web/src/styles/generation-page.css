@@ -7,6 +7,27 @@
   animation: page-enter 0.45s ease both;
 }
 
+/* ── 拖拽资产时的视觉反馈 ── */
+.page.dragging::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+  z-index: 150;
+  transition: opacity 0.15s ease;
+}
+
+.panel-body.panel-drag-over {
+  background: rgba(166, 231, 226, 0.08);
+  outline: 1px dashed rgba(166, 231, 226, 0.45);
+  outline-offset: -4px;
+  border-radius: var(--radius-md);
+  transition: background 0.15s ease, outline-color 0.15s ease;
+  position: relative;
+  z-index: 200;
+}
+
 .orb {
   position: fixed;
   border-radius: 50%;
