@@ -5,6 +5,7 @@ export interface InputImage {
   file: File | null          // 本地上传的文件，优先使用
   preview: string            // 预览 URL（file 为 null 时用于重新上传）
   assetLocation: string      // 资产库中的存储路径（从资产库选择时有值）
+  assetId?: number | null    // 资产库中的 id，有值时直接使用，不再上传
 }
 
 export interface ImageGenerateParams {
@@ -31,12 +32,13 @@ export interface ImageGenerateResult {
 async function uploadInputImages(images: InputImage[], userId: number): Promise<number[]> {
   const ids: number[] = []
   for (const img of images) {
-    if (img.file) {
-      // 直接上传本地文件
+    if (img.assetId != null) {
+      // 从资产库直接引用，无需上传
+      ids.push(img.assetId)
+    } else if (img.file) {
       const uploaded = await uploadInputImage(img.file, userId)
       ids.push(uploaded.id)
     } else if (img.preview) {
-      // 从预览 URL 获取文件后上传
       const res = await fetch(img.preview)
       if (!res.ok) throw new Error(`获取参考图失败: ${res.status}`)
       const blob = await res.blob()

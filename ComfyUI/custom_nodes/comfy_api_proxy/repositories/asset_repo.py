@@ -14,37 +14,6 @@ def save_output_asset(location: str, user_id: int, asset_type: str) -> int:
         return cursor.lastrowid
 
 
-def save_input_asset(user_id: int, filename: str, location: str) -> int:
-    """写入 input_assets 表，返回新记录 id"""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            'INSERT INTO input_assets (rfid, filename, location) VALUES (%s, %s, %s)',
-            (user_id, filename, location)
-        )
-        conn.commit()
-        return cursor.lastrowid
-
-
-def get_input_asset(asset_id: int) -> dict | None:
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('SELECT * FROM input_assets WHERE id = %s', (asset_id,))
-        return cursor.fetchone()
-
-
-def get_input_assets_by_ids(asset_ids: list[int]) -> list[dict]:
-    if not asset_ids:
-        return []
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        placeholders = ','.join(['%s'] * len(asset_ids))
-        cursor.execute(
-            f'SELECT id, location FROM input_assets WHERE id IN ({placeholders})',
-            asset_ids
-        )
-        return cursor.fetchall()
-
 
 def get_user_assets(
     user_id: int,

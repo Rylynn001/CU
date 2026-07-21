@@ -237,10 +237,10 @@ const { ratios, resolutions, activeRatio, activeResolution, ratioOpen, sizeCusto
 // ── 输入图片 ──────────────────────────────────────────────
 // 图生图模式下的参考图列表，每项包含：file（本地文件）、preview（预览 URL）、assetLocation（资产路径）
 const inputImages = ref<InputImage[]>([])
+const maxReferenceImages = computed(() => modelSource.value === 'api' ? 12 : 1)
 
-// 从本地文件添加参考图（最多 4 张）
 function addLocalImage(file: File) {
-  if (inputImages.value.length >= 4) return
+  if (inputImages.value.length >= maxReferenceImages.value) return
   // URL.createObjectURL 创建临时的 blob: URL 用于预览
   inputImages.value.push({ file, preview: URL.createObjectURL(file), assetLocation: '' })
 }
@@ -255,16 +255,15 @@ function handleAssetSelect(assets: Array<{ id: number; location: string; asset_t
   }
 
   if (activeTab.value === 'img2img') {
-    // 图生图模式：API 最多 4 张，本地模式最多 1 张
-    const maxImages = modelSource.value === 'api' ? 4 : 1
     for (const asset of assets) {
-      if (inputImages.value.length >= maxImages) break
+      if (inputImages.value.length >= maxReferenceImages.value) break
       // 从资产路径中提取文件名，构造 /api/view 预览 URL
       const filename = asset.location.replace(/\\/g, '/').split('/').pop()!
       inputImages.value.push({
         file: null,
         preview: `/api/view?filename=${encodeURIComponent(filename)}&type=output`,
         assetLocation: asset.location,
+        assetId: asset.id,
       })
     }
   } else {
@@ -325,7 +324,7 @@ const editingIndex = ref(-1)
 // 3D 模型视角截图
 const showModelViewer = ref(false)
 function handleModelCapture(file: File) {
-  if (inputImages.value.length >= 4) return
+  if (inputImages.value.length >= maxReferenceImages.value) return
   inputImages.value.push({ file, preview: URL.createObjectURL(file), assetLocation: '' })
 }
 
@@ -813,8 +812,9 @@ function handleReuseParams(record: any, fromStorage = false) {
         const filename = assetUrl.url.split('/').pop() || ''
         inputImages.value.push({
           file: null,
-          preview: assetUrl.url,  // 直接使用后端返回的完整 URL
-          assetLocation: filename
+          preview: assetUrl.url,
+          assetLocation: filename,
+          assetId: record.input_asset_ids[idx],
         })
       }
     }
@@ -883,8 +883,8 @@ onUnmounted(() => {
           <div class="divider" />
 
           <!-- img2img upload -->
-          <div v-if="activeTab === 'img2img'">
-            <div class="section-label">参考图片
+          <div v-if="activeTab === 'img2img'" class="media-upload-section">
+            <div class="section-label">参考图片（最多 {{ maxReferenceImages }} 张）
               <span v-if="modelSource === 'local' && inputImages.length > 1" class="local-tip">本地模式仅使用图1</span>
             </div>
 
@@ -900,8 +900,8 @@ onUnmounted(() => {
               </div>
             </div>
 
-            <!-- 添加图片按钮（最多4张）-->
-            <div v-if="inputImages.length < 4" class="upload-actions">
+            <!-- 添加图片按钮 -->
+            <div v-if="inputImages.length < maxReferenceImages" class="upload-actions">
               <label class="local-upload-btn">
                 <input type="file" accept="image/*" @change="(e) => {
                   const file = (e.target as HTMLInputElement).files?.[0]

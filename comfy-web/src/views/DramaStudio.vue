@@ -1018,19 +1018,19 @@ function isPendingShotFrame(id: number, frameType: string) {
   return pendingShotFrameKeys.value.includes(framePendingKey(id, frameType))
 }
 
-// 收集镜头绑定的角色和场景的图片路径（用于上传图生图参考图）
-function getShotRefLocations(sb: any): string[] {
-  const locations: string[] = []
+// 收集镜头绑定的角色和场景的 asset_id（用于图生图参考图，直接引用不再重新上传）
+function getShotRefAssetIds(sb: any): number[] {
+  const ids: number[] = []
   const scene = scenes.value.find((s: any) => s.id === sb.scene_id || s.id === sb.sceneId)
-  if (scene?.image_url) locations.push(scene.image_url)
+  if (scene?.asset_id) ids.push(scene.asset_id)
   const charIdList: number[] = sb.character_ids
     ? String(sb.character_ids).split(',').map(Number).filter(Boolean)
     : []
   for (const cid of charIdList) {
     const c = chars.value.find((x: any) => x.id === cid)
-    if (c?.image_url) locations.push(c.image_url)
+    if (c?.asset_id) ids.push(c.asset_id)
   }
-  return locations
+  return ids
 }
 
 function buildFramePrompt(sb: any, frameType: 'first_frame' | 'last_frame'): string {
@@ -1050,19 +1050,7 @@ async function genShotFrame(sb: any, frameType: 'first_frame' | 'last_frame') {
   try {
     const userId = getCurrentUserId()
     const prompt = buildFramePrompt(sb, frameType)
-    const locations = getShotRefLocations(sb)
-
-    // 逐个上传参考图，拿到 input_asset_id
-    const input_asset_ids: number[] = []
-    for (const location of locations) {
-      const filename = location.replace(/\\/g, '/').split('/').pop()!
-      const res = await fetch(`/api/view?filename=${encodeURIComponent(filename)}&type=output`)
-      if (!res.ok) throw new Error(`参考图获取失败: ${filename}`)
-      const blob = await res.blob()
-      const file = new File([blob], filename, { type: blob.type || 'image/png' })
-      const uploaded = await uploadInputImage(file, userId ?? 1)
-      input_asset_ids.push(uploaded.id)
-    }
+    const input_asset_ids = getShotRefAssetIds(sb)
 
     const body: any = { model: IMAGE_MODEL_ID, prompt, aspect_ratio: '16:9', user_id: userId }
     if (input_asset_ids.length) body.input_asset_ids = input_asset_ids
@@ -1516,19 +1504,10 @@ async function genVideo(sb: any) {
   try {
     const userId = getCurrentUserId()
 
-    // 收集首帧/尾帧，上传为 input_assets
+    // 收集首帧/尾帧 asset_id，直接引用不再重新上传
     const input_asset_ids: number[] = []
-    for (const frameLocation of [sb.first_frame_image, sb.last_frame_image]) {
-      if (!frameLocation) continue
-      const filename = frameLocation.replace(/\\/g, '/').split('/').pop()!
-      try {
-        const res = await fetch(`/api/view?filename=${encodeURIComponent(filename)}&type=output`)
-        if (!res.ok) continue
-        const blob = await res.blob()
-        const file = new File([blob], filename, { type: blob.type || 'image/png' })
-        const uploaded = await uploadInputImage(file, userId ?? 1)
-        input_asset_ids.push(uploaded.id)
-      } catch (_) { /* 帧获取失败不阻断 */ }
+    for (const assetId of [sb.first_asset_id, sb.last_asset_id]) {
+      if (assetId) input_asset_ids.push(assetId)
     }
 
     // 若有 tts_audio_url，将音频也传入

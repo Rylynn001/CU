@@ -149,6 +149,10 @@ function removeAudio() {
 // 3D 妯″瀷瑙嗚鎴浘
 const showModelViewer = ref(false)
 function handleModelCapture(file: File) {
+  const total = inputFiles.value.length + selectedAssetIds.value.length
+  const imageCount = [...inputPreviews.value, ...selectedAssetPreviews.value].filter(p => p.type === 'image').length
+  if (total >= 12) { errorMsg.value = '最多只能上传 12 个素材'; return }
+  if (imageCount >= 9) { errorMsg.value = '最多只能上传 9 张图片'; return }
   inputFiles.value.push(file)
   inputPreviews.value.push({ url: URL.createObjectURL(file), type: 'image' })
 }
@@ -167,7 +171,38 @@ const {
   inputFiles, inputPreviews, selectedAssetIds, selectedAssetPreviews, allMediaItems,
   handleFilesChange, removeFile, removeAsset, clearAllInputs, handleAssetSelect,
   replaceFile, replaceAssetWithFile,
-} = useInputMedia((msg) => { errorMsg.value = msg })
+} = useInputMedia((msg) => { errorMsg.value = msg }, 9, 3, 12)
+
+const inputPreviewItems = computed(() => [
+  ...inputPreviews.value.map((preview, index) => ({
+    preview,
+    index,
+    source: 'file' as const,
+    key: `file-${index}-${preview.url}`,
+  })),
+  ...selectedAssetPreviews.value.map((preview, index) => ({
+    preview,
+    index,
+    source: 'asset' as const,
+    key: `asset-${preview.id}-${preview.url}`,
+  })),
+])
+
+function openInputEditor(source: 'file' | 'asset', index: number) {
+  if (source === 'file') {
+    openLocalEditor(index)
+  } else {
+    openAssetEditor(index)
+  }
+}
+
+function removeInputMedia(source: 'file' | 'asset', index: number) {
+  if (source === 'file') {
+    removeFile(index)
+  } else {
+    removeAsset(index)
+  }
+}
 
 // 从侧边栏拖拽资产到输入素材区域
 function handleAssetDrop(e: DragEvent) {
@@ -411,11 +446,10 @@ async function handleGenerate() {
       ratio: ratio.value, resolution: resolution.value, duration: duration.value,
       status: 'generating', mode: activeTab.value,
       // 鍥剧敓瑙嗛鏃惰褰曞弬鑰冪礌鏉愪俊鎭?
-      inputAssetIds: activeTab.value === 'img2video' ? [...selectedAssetIds.value] : undefined,
-      inputAssetUrls: activeTab.value === 'img2video' ? [
-        ...inputPreviews.value.map(p => ({ url: p.url, type: p.type })),
-        ...selectedAssetPreviews.value.map(p => ({ url: p.url, type: p.type })),
-      ] : undefined,
+      inputAssetIds: activeTab.value === 'img2video' ? selectedAssetPreviews.value.filter(p => !p.file).map(p => p.id) : undefined,
+      inputAssetUrls: activeTab.value === 'img2video'
+        ? inputPreviewItems.value.map(item => ({ url: item.preview.url, type: item.preview.type }))
+        : undefined,
     }
     records.value.unshift(record)
     saveRecords()
@@ -769,35 +803,23 @@ onUnmounted(() => {
           <div class="divider" />
 
           <!-- img2video upload -->
-          <div v-if="activeTab === 'img2video'">
-            <div class="section-label">输入素材（图片最多 4 张，视频最多 1 个，总计最多 2 个）</div>
+          <div v-if="activeTab === 'img2video'" class="media-upload-section">
+            <div class="section-label">输入素材（图片最多 9 张，视频最多 3 个，总计最多 12 个）</div>
 
             <!-- 宸蹭笂浼犳枃浠堕瑙?-->
-            <div v-if="inputPreviews.length > 0" class="previews-grid">
-              <div v-for="(preview, index) in inputPreviews" :key="'file-' + index" class="preview-item">
-                <video v-if="preview.type === 'video'" :src="preview.url" class="preview-media" />
-                <img v-else :src="preview.url" class="preview-media" />
-                <button v-if="preview.type === 'image'" class="edit-btn" @click="openLocalEditor(index)" title="编辑图片">
+            <div v-if="inputPreviewItems.length > 0" class="previews-grid">
+              <div v-for="(item, displayIndex) in inputPreviewItems" :key="item.key" class="preview-item">
+                <video v-if="item.preview.type === 'video'" :src="item.preview.url" class="preview-media" />
+                <img v-else :src="item.preview.url" class="preview-media" />
+                <button v-if="item.preview.type === 'image'" class="edit-btn" @click="openInputEditor(item.source, item.index)" title="编辑图片">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19l7-7-3-3-7 7v3h3z"/><path d="M18 13l1.5-1.5a2.12 2.12 0 0 0-3-3L15 10"/></svg>
                 </button>
-                <button class="remove-btn" @click="removeFile(index)">×</button>
-                <span class="preview-badge">{{ preview.type === 'video' ? '视频' : '图片' }}{{ index + 1 }}</span>
+                <button class="remove-btn" @click="removeInputMedia(item.source, item.index)">×</button>
+                <span class="preview-badge">{{ item.preview.type === 'video' ? '视频' : '图片' }}{{ displayIndex + 1 }}</span>
               </div>
             </div>
 
             <!-- 宸查€夋嫨璧勪骇棰勮 -->
-            <div v-if="selectedAssetPreviews.length > 0" class="previews-grid">
-              <div v-for="(preview, index) in selectedAssetPreviews" :key="'asset-' + preview.id" class="preview-item">
-                <video v-if="preview.type === 'video'" :src="preview.url" class="preview-media" />
-                <img v-else :src="preview.url" class="preview-media" />
-                <button v-if="preview.type === 'image'" class="edit-btn" @click="openAssetEditor(index)" title="编辑图片">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19l7-7-3-3-7 7v3h3z"/><path d="M18 13l1.5-1.5a2.12 2.12 0 0 0-3-3L15 10"/></svg>
-                </button>
-                <button class="remove-btn" @click="removeAsset(index)">×</button>
-                <span class="preview-badge">{{ preview.type === 'video' ? '视频' : '图片' }}{{ inputPreviews.length + index + 1 }}</span>
-              </div>
-            </div>
-
             <!-- 涓婁紶鎸夐挳 -->
             <div class="upload-actions">
               <label class="local-upload-btn">
@@ -808,7 +830,7 @@ onUnmounted(() => {
               <button class="asset-btn" @click="showModelViewer = true">
                 <span>3D 截图</span>
               </button>
-              <button v-if="inputPreviews.length > 0 || selectedAssetPreviews.length > 0" class="clear-all-btn-small" @click="clearAllInputs">
+              <button v-if="inputPreviewItems.length > 0" class="clear-all-btn-small" @click="clearAllInputs">
                 清空全部
               </button>
             </div>

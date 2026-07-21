@@ -218,9 +218,20 @@
 }
 
 /* ── 上传区 ── */
+.media-upload-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.media-upload-section .section-label {
+  margin-bottom: 0;
+}
+
 .upload-actions {
   display: flex;
   gap: 10px;
+  flex-wrap: wrap;
 }
 
 .asset-btn, .local-upload-btn {

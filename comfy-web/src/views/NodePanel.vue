@@ -2,7 +2,9 @@
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import AssetSidebar from '../components/AssetSidebar.vue'
-import CircularGallery from '../components/CircularGallery.vue'
+import ImageViewer from '../components/ImageViewer.vue'
+import VideoPlayer from '../components/VideoPlayer.vue'
+import MediaCoverflow, { type CoverflowItem } from '../components/MediaCoverflow.vue'
 
 interface Asset {
   id: number
@@ -43,22 +45,6 @@ const panelStyles = computed(() => panels.value.map((panel) => ({
   flexBasis: 0,
 })))
 
-const galleryItems = computed(() => panels.value.map((panel) => (
-  panel.assets
-    .filter((asset) => !isVideo(asset))
-    .map((asset) => ({
-      image: getMediaUrl(asset.location),
-    }))
-)))
-
-const selectedAssets = computed(() => {
-  const assets = new Map<number, Asset>()
-  panels.value.forEach((panel) => {
-    panel.assets.forEach((asset) => assets.set(asset.id, asset))
-  })
-  return Array.from(assets.values())
-})
-
 function getMediaUrl(location: string) {
   return `/api/api-proxy/output/${location.split(/[/\\]/).pop()}`
 }
@@ -68,12 +54,18 @@ function isVideo(asset: Asset) {
   return ['mp4', 'mov', 'avi', 'webm'].includes(ext || '')
 }
 
-function addAssetToPanel(asset: Asset, index?: number) {
-  if (isVideo(asset)) {
-    ElMessage.warning('节点面板预览暂只支持图片资产')
-    return
-  }
+// 视频首帧：加 #t=0.1 让 <video> 显示首帧画面而非黑屏
+function getPoster(asset: Asset) {
+  return `${getMediaUrl(asset.location)}#t=0.1`
+}
 
+// 接收 AssetSidebar 的 select 事件（payload 为数组）或拖放的单个资产
+function handleSidebarSelect(payload: Asset | Asset[]) {
+  const list = Array.isArray(payload) ? payload : [payload]
+  list.forEach((asset) => addAssetToPanel(asset))
+}
+
+function addAssetToPanel(asset: Asset, index?: number) {
   const targets = index === undefined ? panels.value : [panels.value[index]]
   targets.forEach((panel) => {
     if (!panel.assets.some((item) => item.id === asset.id)) {
@@ -104,10 +96,38 @@ function handlePanelDragLeave(e: DragEvent, index: number) {
   }
 }
 
-function removeAsset(asset: Asset) {
-  panels.value.forEach((panel) => {
-    panel.assets = panel.assets.filter((item) => item.id !== asset.id)
-  })
+// 面板资产 → coverflow 组件所需的数据结构
+const coverflowItems = computed(() =>
+  panels.value.map((panel) =>
+    panel.assets.map<CoverflowItem>((asset) => ({
+      id: asset.id,
+      url: getMediaUrl(asset.location),
+      poster: getPoster(asset),
+      isVideo: isVideo(asset),
+    }))
+  )
+)
+
+function removeAssetById(id: number, index: number) {
+  panels.value[index].assets = panels.value[index].assets.filter((item) => item.id !== id)
+}
+
+// 双击预览：图片放大 / 视频播放
+const showImageViewer = ref(false)
+const previewUrl = ref('')
+const showVideoPlayer = ref(false)
+const activeVideoUrl = ref('')
+const activeVideoId = ref<number | undefined>(undefined)
+
+function openPreview(item: CoverflowItem) {
+  if (item.isVideo) {
+    activeVideoUrl.value = item.url
+    activeVideoId.value = item.id
+    showVideoPlayer.value = true
+  } else {
+    previewUrl.value = item.url
+    showImageViewer.value = true
+  }
 }
 
 function startResize(index: number, event: PointerEvent) {
@@ -159,13 +179,13 @@ function stopResize() {
               @dragleave.prevent="handlePanelDragLeave($event, index)"
               @drop.prevent="handlePanelDrop($event, index)"
             >
-              <CircularGallery
-                :items="galleryItems[index]"
-                :bend="0"
-                :border-radius="0.05"
-                :scroll-ease="0.05"
-                :scroll-speed="3"
+              <MediaCoverflow
+                v-if="panel.assets.length > 0"
+                :items="coverflowItems[index]"
+                @remove="(id) => removeAssetById(id, index)"
+                @open="openPreview"
               />
+              <div v-else class="panel-empty">拖拽资产到此处</div>
             </article>
 
             <button
@@ -178,24 +198,13 @@ function stopResize() {
             />
           </template>
         </div>
-
-        <div v-if="selectedAssets.length > 0" class="asset-dock">
-          <button
-            v-for="asset in selectedAssets"
-            :key="asset.id"
-            type="button"
-            class="asset-pill"
-            :title="asset.location.split(/[/\\]/).pop()"
-            @click="removeAsset(asset)"
-          >
-            <img :src="getMediaUrl(asset.location)" alt="" />
-            <span>{{ asset.location.split(/[/\\]/).pop() }}</span>
-          </button>
-        </div>
       </section>
 
-      <AssetSidebar @select="addAssetToPanel" />
+      <AssetSidebar @select="handleSidebarSelect" />
     </main>
+
+    <ImageViewer :visible="showImageViewer" :src="previewUrl" @close="showImageViewer = false" />
+    <VideoPlayer :visible="showVideoPlayer" :src="activeVideoUrl" :asset-id="activeVideoId" @close="showVideoPlayer = false" />
   </div>
 </template>
 
@@ -276,6 +285,16 @@ function stopResize() {
   background: rgba(166, 231, 226, 0.08);
 }
 
+.panel-empty {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.25);
+  letter-spacing: 1px;
+}
+
 .resize-handle {
   position: relative;
   height: 10px;
@@ -303,56 +322,4 @@ function stopResize() {
 .resize-handle:focus-visible {
   background: rgba(255, 255, 255, 0.1);
 }
-
-.asset-dock {
-  position: absolute;
-  left: 14px;
-  right: 14px;
-  bottom: 12px;
-  display: flex;
-  gap: 8px;
-  overflow-x: auto;
-  padding: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 12px;
-  background: rgba(0, 0, 0, 0.28);
-  backdrop-filter: blur(18px);
-}
-
-.asset-pill {
-  width: 124px;
-  height: 36px;
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 8px 4px 4px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 9px;
-  background: rgba(255, 255, 255, 0.07);
-  color: rgba(255, 255, 255, 0.76);
-  cursor: pointer;
-}
-
-.asset-pill:hover {
-  border-color: rgba(255, 255, 255, 0.28);
-  background: rgba(255, 255, 255, 0.12);
-}
-
-.asset-pill img {
-  width: 28px;
-  height: 28px;
-  border-radius: 7px;
-  object-fit: cover;
-  flex-shrink: 0;
-}
-
-.asset-pill span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 11px;
-}
-
 </style>

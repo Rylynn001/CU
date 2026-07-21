@@ -22,14 +22,14 @@ QUEUE_MAX_SIZE = cfg.get_queue_max_size()
 
 
 def _load_input_assets_as_b64(input_asset_ids: list[int]) -> list[str]:
-    """批量读取 input_assets 文件，返回 base64 列表"""
+    """批量读取参考图文件，返回 base64 列表"""
     result = []
-    assets = asset_repo.get_input_assets_by_ids(input_asset_ids)
+    assets = asset_repo.get_assets_by_ids(input_asset_ids)
     asset_map = {a['id']: a for a in assets}
     for asset_id in input_asset_ids:
         asset = asset_map.get(asset_id)
         if not asset:
-            raise web.HTTPNotFound(reason=f'input asset {asset_id} not found')
+            raise web.HTTPNotFound(reason=f'asset {asset_id} not found')
         file_path = pathlib.Path(asset['location'])
         if not file_path.exists():
             raise web.HTTPNotFound(reason=f'file not found: {asset["location"]}')
@@ -111,14 +111,14 @@ async def _poll_ark_task(task_id: str, remote_id: str, api_key: str, base_url: s
                     input_ids_raw = task_queue.get_meta(task_id, 'input_asset_ids')
                     input_ids = json.loads(input_ids_raw) if input_ids_raw else []
                     if input_ids:
-                        in_assets = asset_repo.get_input_assets_by_ids(input_ids)
+                        in_assets = asset_repo.get_assets_by_ids(input_ids)
                         asset_map = {a['id']: a for a in in_assets}
                         for aid in input_ids:
                             if aid in asset_map:
                                 filename = pathlib.Path(asset_map[aid]['location']).name
                                 ext = pathlib.Path(filename).suffix.lower()
                                 asset_type = 'video' if ext in ('.mp4', '.mov', '.avi', '.webm') else 'image'
-                                input_asset_urls.append({'url': f'/api/api-proxy/input/{filename}', 'type': asset_type})
+                                input_asset_urls.append({'url': f'/api/api-proxy/output/{filename}', 'type': asset_type})
                 except Exception as e:
                     logger.warning(f'[{task_id}] 查询参考图失败: {e}')
 

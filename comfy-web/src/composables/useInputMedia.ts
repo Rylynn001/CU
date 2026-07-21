@@ -7,6 +7,7 @@ export interface MediaPreview {
 
 export interface AssetPreview extends MediaPreview {
   id: number  // 资产库中的 id，提交时传给后端
+  file?: File
 }
 
 /**
@@ -47,8 +48,8 @@ export function useInputMedia(
       newPreviews.push({ url: URL.createObjectURL(file), type: isVideo ? 'video' : 'image' })
     }
 
-    const totalImages = [...inputPreviews.value, ...newPreviews].filter(p => p.type === 'image').length
-    const totalVideos = [...inputPreviews.value, ...newPreviews].filter(p => p.type === 'video').length
+    const totalImages = [...inputPreviews.value, ...selectedAssetPreviews.value, ...newPreviews].filter(p => p.type === 'image').length
+    const totalVideos = [...inputPreviews.value, ...selectedAssetPreviews.value, ...newPreviews].filter(p => p.type === 'video').length
     const total = inputFiles.value.length + newFiles.length + selectedAssetIds.value.length
 
     if (totalImages > maxImages) { onError(`最多只能上传 ${maxImages} 张图片`); return }
@@ -118,10 +119,15 @@ export function useInputMedia(
 
   // 将资产库素材替换为本地编辑后的文件（编辑器修改后调用）
   function replaceAssetWithFile(index: number, file: File) {
-    selectedAssetIds.value.splice(index, 1)
-    selectedAssetPreviews.value.splice(index, 1)
-    inputFiles.value.push(file)
-    inputPreviews.value.push({ url: URL.createObjectURL(file), type: 'image' })
+    const oldPreview = selectedAssetPreviews.value[index]
+    if (!oldPreview) return
+    if (oldPreview.url.startsWith('blob:')) URL.revokeObjectURL(oldPreview.url)
+    selectedAssetPreviews.value[index] = {
+      ...oldPreview,
+      url: URL.createObjectURL(file),
+      type: 'image',
+      file,
+    }
   }
 
   // 替换本地上传列表中某个文件（编辑器修改后调用）

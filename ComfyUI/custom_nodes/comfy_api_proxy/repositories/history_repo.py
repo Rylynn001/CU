@@ -73,7 +73,7 @@ def get_user_history(
                 LEFT JOIN history_assets_rel out_r ON h.id = out_r.history_id
                 LEFT JOIN assets out_a ON out_r.asset_id = out_a.id
                 LEFT JOIN history_input_assets_rel in_r ON h.id = in_r.history_id
-                LEFT JOIN input_assets in_a ON in_r.asset_id = in_a.id
+                LEFT JOIN assets in_a ON in_r.asset_id = in_a.id
                 ORDER BY h.id DESC, out_a.id, in_a.id""",
             [*params, page_size, offset],
         )
@@ -120,7 +120,7 @@ def get_user_history(
                 ext = _pathlib.Path(filename).suffix.lower()
                 asset_type = 'video' if ext in ('.mp4', '.mov', '.avi', '.webm') else 'image'
                 history_map[hid]['input_asset_urls'].append({
-                    'url': f'/api/api-proxy/input/{filename}',
+                    'url': f'/api/api-proxy/output/{filename}',
                     'type': asset_type,
                 })
 
@@ -148,7 +148,7 @@ def find_history_by_asset_id(user_id: int, asset_id: int) -> dict | None:
                LEFT JOIN history_assets_rel out_r ON h.id = out_r.history_id
                LEFT JOIN assets out_a ON out_r.asset_id = out_a.id
                LEFT JOIN history_input_assets_rel in_r ON h.id = in_r.history_id
-               LEFT JOIN input_assets in_a ON in_r.asset_id = in_a.id
+               LEFT JOIN assets in_a ON in_r.asset_id = in_a.id
                WHERE h.user_id = %s AND h.del_flag = 0 AND target_r.asset_id = %s
                ORDER BY h.id DESC, out_a.id, in_a.id""",
             (user_id, asset_id)
@@ -198,7 +198,7 @@ def find_history_by_asset_id(user_id: int, asset_id: int) -> dict | None:
                     ext = _pathlib.Path(filename).suffix.lower()
                     asset_type = 'video' if ext in ('.mp4', '.mov', '.avi', '.webm') else 'image'
                     item['input_asset_urls'].append({
-                        'url': f'/api/api-proxy/input/{filename}',
+                        'url': f'/api/api-proxy/output/{filename}',
                         'type': asset_type,
                     })
 

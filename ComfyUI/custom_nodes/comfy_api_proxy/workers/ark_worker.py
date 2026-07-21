@@ -49,7 +49,7 @@ def process_txt2video(task: dict) -> None:
     except Exception as e:
         logger.error(f'[{task_id}] 提交 Ark 文生视频失败: {e}')
         history_id = task.get('history_id')
-        error_message = str(e)[:500]
+        error_message = str(e)
         try:
             if history_id:
                 history_repo.update_history(history_id=history_id, output_asset_ids=[], status='error', message=error_message)
@@ -101,7 +101,7 @@ def process_img2video(task: dict) -> None:
             try:
                 with conn.cursor(pymysql.cursors.DictCursor) as cursor:
                     for asset_id in input_asset_ids:
-                        cursor.execute('SELECT location FROM input_assets WHERE id = %s', (asset_id,))
+                        cursor.execute('SELECT location FROM assets WHERE id = %s', (asset_id,))
                         asset = cursor.fetchone()
                         if asset:
                             location = asset['location']
@@ -163,7 +163,7 @@ def process_img2video(task: dict) -> None:
     except Exception as e:
         logger.error(f'[{task_id}] 提交 Ark 图生视频失败: {e}')
         history_id = task.get('history_id')
-        error_message = str(e)[:500]
+        error_message = str(e)
         try:
             if history_id:
                 history_repo.update_history(history_id=history_id, output_asset_ids=[], status='error', message=error_message)

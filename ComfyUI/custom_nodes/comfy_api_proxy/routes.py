@@ -105,18 +105,6 @@ async def serve_output_file(request: web.Request):
     return web.FileResponse(file_path)
 
 
-# ── /api-proxy/input/{filename} ──────────────────────────────────────────
-
-@routes.get('/api-proxy/input/{filename}')
-async def serve_input_file(request: web.Request):
-    filename = request.match_info['filename']
-    if '..' in filename or '/' in filename or '\\' in filename:
-        raise web.HTTPBadRequest(reason='Invalid filename')
-    file_path = cfg.get_input_dir() / filename
-    if not file_path.exists():
-        raise web.HTTPNotFound()
-    return web.FileResponse(file_path)
-
 
 # ── /api-proxy/user/assets ────────────────────────────────────────────────
 
@@ -210,16 +198,16 @@ async def upload_input_image(request: web.Request):
     if not file_bytes:
         raise web.HTTPBadRequest(reason='file is required')
 
-    input_dir = cfg.get_input_dir()
+    output_dir = cfg.get_output_dir()
     ext = pathlib.Path(filename).suffix or '.png'
     unique_filename = f'{uuid.uuid4().hex}{ext}'
-    location = str(input_dir / unique_filename)
+    location = str(output_dir / unique_filename)
 
     with open(location, 'wb') as f:
         f.write(file_bytes)
 
     try:
-        asset_id = asset_repo.save_input_asset(user_id, unique_filename, location)
+        asset_id = asset_repo.save_output_asset(location, user_id, 'picture')
     except Exception as e:
         logger.error(f'[api-proxy] 上传输入图片数据库错误: {e}')
         raise web.HTTPInternalServerError(reason=str(e))
@@ -234,9 +222,9 @@ async def get_input_image_b64(request: web.Request):
     from .repositories import asset_repo
 
     asset_id = int(request.match_info['asset_id'])
-    asset = asset_repo.get_input_asset(asset_id)
+    asset = asset_repo.get_asset_by_id(asset_id)
     if not asset:
-        raise web.HTTPNotFound(reason=f'input asset {asset_id} not found')
+        raise web.HTTPNotFound(reason=f'asset {asset_id} not found')
 
     file_path = pathlib.Path(asset['location'])
     if not file_path.exists():

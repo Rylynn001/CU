@@ -14,11 +14,13 @@ export interface AssetPreview {
   id: number
   url: string
   type: 'image' | 'video'
+  file?: File
 }
 
 export interface VideoImg2VideoParams extends VideoGenerateParams {
-  inputFiles: File[]
-  inputAssetPreviews: AssetPreview[]
+  inputFiles?: File[]
+  inputAssetPreviews?: AssetPreview[]
+  inputAssetIds?: number[]
   audioFile?: File // 可选背景音频
 }
 
@@ -49,22 +51,22 @@ export async function submitVideoGeneration(params: VideoGenerateParams): Promis
 export async function submitImg2VideoGeneration(params: VideoImg2VideoParams): Promise<VideoGenerateResult> {
   const userId = params.userId ?? getCurrentUserId() ?? undefined
 
-  const allIds: number[] = []
+  const allIds: number[] = [...(params.inputAssetIds ?? [])]
 
   // 上传本地文件
-  for (const file of params.inputFiles) {
+  for (const file of params.inputFiles ?? []) {
     const res = await uploadInputImage(file, userId ?? 1)
     allIds.push(res.id)
   }
 
-  // 从资产库选的素材：下载后上传到 input_assets 表
-  for (const asset of params.inputAssetPreviews) {
-    const res = await fetch(asset.url)
-    const blob = await res.blob()
-    const ext = asset.type === 'video' ? 'mp4' : 'png'
-    const file = new File([blob], `asset_${asset.id}.${ext}`, { type: blob.type })
-    const uploaded = await uploadInputImage(file, userId ?? 1)
-    allIds.push(uploaded.id)
+  // 从资产库选的素材：原素材直接使用 asset.id，编辑后的素材先上传
+  for (const asset of params.inputAssetPreviews ?? []) {
+    if (asset.file) {
+      const res = await uploadInputImage(asset.file, userId ?? 1)
+      allIds.push(res.id)
+    } else {
+      allIds.push(asset.id)
+    }
   }
 
   // 上传音频（可选），和图片/视频走同一套上传流程
