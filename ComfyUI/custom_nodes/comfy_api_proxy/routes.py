@@ -584,3 +584,102 @@ async def remove_asset_from_category(request: web.Request):
         raise web.HTTPNotFound(reason='关联不存在')
     return web.json_response({'ok': True})
 
+
+# ── /api-proxy/node-boards ────────────────────────────────────────────────
+
+@routes.get('/api-proxy/node-boards')
+async def list_node_boards(request: web.Request):
+    from .repositories import board_repo
+    user_id = request.rel_url.query.get('user_id')
+    if not user_id:
+        raise web.HTTPBadRequest(reason='user_id is required')
+    try:
+        boards = board_repo.list_boards(int(user_id))
+        return web.json_response({'boards': boards})
+    except Exception as e:
+        logger.error(f'[node-board] 获取工作区列表失败: {e}')
+        raise web.HTTPInternalServerError(reason=str(e))
+
+
+@routes.post('/api-proxy/node-boards')
+async def create_node_board(request: web.Request):
+    from .repositories import board_repo
+    body = await request.json()
+    user_id = body.get('user_id')
+    name = (body.get('name') or '').strip() or '新工作区'
+    if not user_id:
+        raise web.HTTPBadRequest(reason='user_id is required')
+    try:
+        board = board_repo.create_board(int(user_id), name)
+        return web.json_response(board)
+    except Exception as e:
+        logger.error(f'[node-board] 创建工作区失败: {e}')
+        raise web.HTTPInternalServerError(reason=str(e))
+
+
+@routes.get('/api-proxy/node-boards/{board_id}')
+async def get_node_board(request: web.Request):
+    from .repositories import board_repo
+    board_id = int(request.match_info['board_id'])
+    user_id = request.rel_url.query.get('user_id')
+    if not user_id:
+        raise web.HTTPBadRequest(reason='user_id is required')
+    board = board_repo.get_board(board_id, int(user_id))
+    if not board:
+        raise web.HTTPNotFound(reason='工作区不存在')
+    return web.json_response(board)
+
+
+@routes.put('/api-proxy/node-boards/{board_id}')
+async def save_node_board(request: web.Request):
+    from .repositories import board_repo
+    board_id = int(request.match_info['board_id'])
+    body = await request.json()
+    user_id = body.get('user_id')
+    if not user_id:
+        raise web.HTTPBadRequest(reason='user_id is required')
+    panels = body.get('panels', [{}, {}, {}])
+    while len(panels) < 3:
+        panels.append({})
+    ok = board_repo.save_board(
+        board_id, int(user_id),
+        panels[0].get('asset_ids', []),
+        panels[1].get('asset_ids', []),
+        panels[2].get('asset_ids', []),
+        float(panels[0].get('ratio', 1.0)),
+        float(panels[1].get('ratio', 1.0)),
+        float(panels[2].get('ratio', 1.0)),
+    )
+    if not ok:
+        raise web.HTTPNotFound(reason='工作区不存在或无权限')
+    return web.json_response({'ok': True})
+
+
+@routes.patch('/api-proxy/node-boards/{board_id}')
+async def rename_node_board(request: web.Request):
+    from .repositories import board_repo
+    board_id = int(request.match_info['board_id'])
+    body = await request.json()
+    user_id = body.get('user_id')
+    name = (body.get('name') or '').strip()
+    if not user_id or not name:
+        raise web.HTTPBadRequest(reason='user_id and name are required')
+    ok = board_repo.rename_board(board_id, int(user_id), name)
+    if not ok:
+        raise web.HTTPNotFound(reason='工作区不存在或无权限')
+    return web.json_response({'ok': True})
+
+
+@routes.delete('/api-proxy/node-boards/{board_id}')
+async def delete_node_board(request: web.Request):
+    from .repositories import board_repo
+    board_id = int(request.match_info['board_id'])
+    user_id = request.rel_url.query.get('user_id')
+    if not user_id:
+        raise web.HTTPBadRequest(reason='user_id is required')
+    ok = board_repo.delete_board(board_id, int(user_id))
+    if not ok:
+        raise web.HTTPNotFound(reason='工作区不存在或无权限')
+    return web.json_response({'ok': True})
+
+

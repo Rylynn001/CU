@@ -349,6 +349,8 @@ async function pollTaskStatus(taskId: string, expectedType: 'image' | 'video', u
       const res = await fetch(url)
       if (!res.ok) {
         const text = await res.text()
+        // 404 表示任务不存在或已过期，属于终态，不重试
+        if (res.status === 404) throw new TaskFailedError(text || 'Task not found or expired')
         throw new Error(text || `task query failed: ${res.status}`)
       }
 

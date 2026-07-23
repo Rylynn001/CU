@@ -8,6 +8,7 @@ import DotFieldBackground from './components/DotFieldBackground.vue'
 
 const route = useRoute()
 const keepPrismBackground = computed(() => route.path === '/login' || route.path === '/')
+const hideSideNav = computed(() => route.path === '/node-panel')
 type BusinessTheme = 'light' | 'dot' | 'black'
 
 const savedTheme = localStorage.getItem('business-theme')
@@ -70,6 +71,7 @@ function toggleBusinessTheme() {
     <div v-else class="black-background" aria-hidden="true" />
   </template>
   <SideNav
+    v-if="!hideSideNav"
     :business-theme="businessTheme"
     :show-theme-toggle="!keepPrismBackground"
     @toggle-theme="toggleBusinessTheme"
@@ -79,6 +81,7 @@ function toggleBusinessTheme() {
     :class="{
       'theme-dot': isDotTheme && !keepPrismBackground,
       'theme-black': isBlackTheme && !keepPrismBackground,
+      'no-sidenav': hideSideNav,
     }"
   >
     <RouterView v-slot="{ Component, route }">
@@ -94,6 +97,10 @@ function toggleBusinessTheme() {
   margin-left: 64px;
   min-height: 100vh;
   transition: margin-left 0.25s ease;
+}
+
+.main-content.no-sidenav {
+  margin-left: 0;
 }
 
 .black-background {
