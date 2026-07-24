@@ -17,6 +17,7 @@ const emit = defineEmits<{
   close: []
   generated: [asset: GeneratedAsset]
   generating: [value: boolean]
+  'remove-ref': [id: number]
   'update:prompt': [value: string]
 }>()
 
@@ -131,6 +132,19 @@ async function handleGenerate() {
         <div v-if="refAssets.length" class="gsp-refs">
           <div v-for="a in refAssets" :key="a.id" class="gsp-ref-thumb">
             <img :src="a.url" />
+            <button
+              type="button"
+              class="gsp-ref-remove"
+              title="移除参考图"
+              :aria-label="`移除参考图 ${a.id}`"
+              :disabled="generating"
+              @click="emit('remove-ref', a.id)"
+            >
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
           </div>
         </div>
         <div v-else class="gsp-ref-empty">点击上方面板图片选择</div>
@@ -282,12 +296,40 @@ async function handleGenerate() {
   gap: 6px;
 }
 .gsp-ref-thumb {
+  position: relative;
   width: 54px; height: 54px;
   border-radius: 7px;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.3);
 }
 .gsp-ref-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.gsp-ref-remove {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 50%;
+  background: rgba(6, 8, 13, 0.82);
+  color: rgba(255, 255, 255, 0.78);
+  cursor: pointer;
+  opacity: 0.72;
+  transition: opacity 0.15s, background 0.15s, color 0.15s;
+}
+.gsp-ref-thumb:hover .gsp-ref-remove,
+.gsp-ref-remove:focus-visible {
+  opacity: 1;
+}
+.gsp-ref-remove:hover:not(:disabled) {
+  background: rgba(220, 38, 38, 0.82);
+  color: #fff;
+}
+.gsp-ref-remove:disabled { cursor: not-allowed; }
 .gsp-ref-empty {
   font-size: 11px;
   color: rgba(255,255,255,0.2);

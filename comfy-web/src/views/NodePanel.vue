@@ -37,6 +37,7 @@ interface PanelState {
 }
 
 const PANEL_COUNT = 3
+const PANEL_MIN_HEIGHT = 150
 
 // ── Board（工作区）管理 ──────────────────────────────────────────────────
 const boards = ref<BoardMeta[]>([])
@@ -122,6 +123,12 @@ const panels = ref<PanelState[]>([
 ])
 
 const coverflowRefs = ref<Array<InstanceType<typeof MediaCoverflow> | null>>([])
+const panelRefs = ref<Array<HTMLElement | null>>([])
+const genDockTop = ref(0)
+
+function syncGenDockTop() {
+  genDockTop.value = panelRefs.value[1]?.offsetTop ?? 0
+}
 
 // ── 持久化 ──────────────────────────────────────────────────────────────
 const saving = ref(false)
@@ -201,11 +208,13 @@ function handleGlobalDragEnd() { isDragging.value = false; dragOverIndex.value =
 onMounted(() => {
   window.addEventListener('dragstart', handleGlobalDragStart)
   window.addEventListener('dragend', handleGlobalDragEnd)
+  window.addEventListener('resize', syncGenDockTop)
   loadBoards()
 })
 onUnmounted(() => {
   window.removeEventListener('dragstart', handleGlobalDragStart)
   window.removeEventListener('dragend', handleGlobalDragEnd)
+  window.removeEventListener('resize', syncGenDockTop)
   stopLineLoop()
 })
 
@@ -253,6 +262,15 @@ function handlePanelDrop(e: DragEvent, index: number) {
   if (!data) return
   try {
     const payload = JSON.parse(data)
+    const fromPanel: number = payload.fromPanelIndex ?? -1
+    const job = activeGenState.value
+    if (
+      job && !job.submitted && !job.generating &&
+      index === job.panelIndex && fromPanel === job.refPanelIndex
+    ) {
+      addGenRef(payload.id, fromPanel)
+      return
+    }
     const asset: Asset = {
       id: payload.id,
       location: payload.location,
@@ -260,7 +278,6 @@ function handlePanelDrop(e: DragEvent, index: number) {
     }
     addAssetToPanel(asset, index)
     // 从 coverflow 拖来的：跨面板则从来源面板移除（移动而非复制）
-    const fromPanel: number = payload.fromPanelIndex ?? -1
     if (fromPanel >= 0 && fromPanel !== index) {
       panels.value[fromPanel].assets = panels.value[fromPanel].assets.filter((a) => a.id !== asset.id)
       markDirty()
@@ -309,6 +326,18 @@ function getGenRefAssets(job: GenState): SourceAsset[] {
 const activeGenState = computed(() =>
   genStates.value.find((job) => job.placeholderTempId === activeGenId.value) ?? null,
 )
+const openGenState = computed(() => activeGenState.value?.panelOpen ? activeGenState.value : null)
+const displayedCoverflowItems = computed(() => {
+  const job = openGenState.value
+  if (!job) return coverflowItems.value
+  return coverflowItems.value.map((items, index) => {
+    if (index === job.panelIndex) {
+      return items.filter((item) => item.id === job.placeholderTempId)
+    }
+    return index > job.panelIndex ? [] : items
+  })
+})
+const genDockStyle = computed(() => ({ top: `${genDockTop.value}px` }))
 const hasGenLinks = computed(() => genStates.value.some((job) => job.refAssetIds.length > 0))
 
 function findGenState(id: number) {
@@ -347,6 +376,7 @@ const genStates = ref<GenState[]>([])
 const activeGenId = ref<number | null>(null)
 
 function addGenPlaceholder(panelIndex: number, mode: 'image' | 'video') {
+  if (panelIndex !== 1) return
   const tempId = genTempIdCounter--
   panels.value[panelIndex].assets.push({
     id: tempId,
@@ -365,6 +395,7 @@ function activateGen(item: CoverflowItem, panelIndex: number) {
   if (existing) {
     activeGenId.value = item.id
     existing.panelOpen = true
+    nextTick(syncGenDockTop)
     return
   }
   const job: GenState = {
@@ -379,22 +410,37 @@ function activateGen(item: CoverflowItem, panelIndex: number) {
   }
   genStates.value.push(job)
   activeGenId.value = item.id
+  nextTick(syncGenDockTop)
 }
 
-// Fix3: toggle 多选参考图，多条连线
+function addGenRef(refAssetId: number, refPanelIndex: number) {
+  const job = activeGenState.value
+  if (!job || job.submitted || job.generating) return
+  const asset = panels.value[refPanelIndex]?.assets.find((item) => item.id === refAssetId)
+  if (!asset || asset.isGenPlaceholder) return
+  if (!job.refAssetIds.includes(refAssetId)) {
+    job.refAssetIds = [...job.refAssetIds, refAssetId]
+  }
+  job.refPanelIndex = refPanelIndex
+  nextTick().then(() => startLineLoop())
+}
+
+function removeGenRef(job: GenState, refAssetId: number) {
+  if (job.submitted || job.generating) return
+  job.refAssetIds = job.refAssetIds.filter((id) => id !== refAssetId)
+  updateLines()
+  if (!trace.value && !hasGenLinks.value) stopLineLoop()
+}
+
+// toggle 多选参考图，多条连线
 function selectGenRef(refAssetId: number, refPanelIndex: number) {
   const job = activeGenState.value
   if (!job || job.submitted || job.generating) return
-  const ids = job.refAssetIds
-  const i = ids.indexOf(refAssetId)
-  if (i >= 0) {
-    job.refAssetIds = ids.filter((id) => id !== refAssetId)
+  if (job.refAssetIds.includes(refAssetId)) {
+    removeGenRef(job, refAssetId)
   } else {
-    job.refAssetIds = [...ids, refAssetId]
+    addGenRef(refAssetId, refPanelIndex)
   }
-  job.refPanelIndex = refPanelIndex
-  if (job.refAssetIds.length) nextTick().then(() => startLineLoop())
-  else updateLines()
 }
 
 function clearGenState(pid: number) {
@@ -413,7 +459,8 @@ function closeGenPanel() {
   const job = activeGenState.value
   if (!job) return
   job.panelOpen = false
-  job.submitted = true
+  job.submitted = job.generating
+  if (!job.generating) activeGenId.value = null
   if (job.refAssetIds.length > 0) {
     startLineLoop()
   }
@@ -641,25 +688,37 @@ function openPreview(item: CoverflowItem) {
 }
 
 // ── 面板高度拖拽 ────────────────────────────────────────────────────────
-const resizing = ref<{ index: number; startY: number; first: number; second: number } | null>(null)
+const resizing = ref<{
+  index: number
+  startY: number
+  first: number
+  second: number
+  pixelsPerRatio: number
+} | null>(null)
 
 function startResize(index: number, event: PointerEvent) {
   const first = panels.value[index]
   const second = panels.value[index + 1]
-  if (!first || !second) return
-  resizing.value = { index, startY: event.clientY, first: first.ratio, second: second.ratio }
+  const firstEl = panelRefs.value[index]
+  const secondEl = panelRefs.value[index + 1]
+  if (!first || !second || !firstEl || !secondEl) return
+  const total = first.ratio + second.ratio
+  const pixelsPerRatio = (firstEl.offsetHeight + secondEl.offsetHeight) / total
+  resizing.value = { index, startY: event.clientY, first: first.ratio, second: second.ratio, pixelsPerRatio }
   window.addEventListener('pointermove', handleResize)
   window.addEventListener('pointerup', stopResize)
 }
 
 function handleResize(event: PointerEvent) {
   if (!resizing.value) return
-  const { index, startY, first, second } = resizing.value
-  const delta = (event.clientY - startY) / 180
+  const { index, startY, first, second, pixelsPerRatio } = resizing.value
+  const delta = (event.clientY - startY) / pixelsPerRatio
   const total = first + second
-  const nextFirst = Math.min(Math.max(first + delta, 0.45), total - 0.45)
+  const minRatio = Math.min(PANEL_MIN_HEIGHT / pixelsPerRatio, total / 2)
+  const nextFirst = Math.min(Math.max(first + delta, minRatio), total - minRatio)
   panels.value[index].ratio = nextFirst
   panels.value[index + 1].ratio = total - nextFirst
+  requestAnimationFrame(syncGenDockTop)
 }
 
 function stopResize() {
@@ -706,84 +765,91 @@ function stopResize() {
 
     <main class="panel-workspace">
       <section class="panel-shell" aria-label="节点预览面板">
-        <div class="panel-stack">
-          <template v-for="(panel, index) in panels" :key="index">
-            <article
-              class="preview-panel"
-              :class="{
-                'drag-over': dragOverIndex === index,
-                'is-trace': panel.traceAssets !== null,
-                'is-gen-ref': activeGenState && !activeGenState.submitted && !activeGenState.generating && index === activeGenState.panelIndex - 1,
-                'is-gen-dim': activeGenState && !activeGenState.submitted && !activeGenState.generating && index < activeGenState.panelIndex - 1,
-              }"
-              :style="panelStyles[index]"
-              @dragover.prevent
-              @dragenter.prevent="dragOverIndex = index"
-              @dragleave.prevent="handlePanelDragLeave($event, index)"
-              @drop.prevent="handlePanelDrop($event, index)"
-            >
-              <!-- 面板标记 -->
-              <div class="panel-tag">
-                面板 {{ index + 1 }}
-                <span v-if="panel.traceAssets !== null" class="trace-tag">溯源中</span>
-                <span v-if="activeGenState && !activeGenState.submitted && !activeGenState.generating && index === activeGenState.panelIndex - 1" class="gen-ref-tag">选择参考图</span>
-              </div>
-
-              <!-- 添加生成占位符：仅第 2、3 面板 -->
-              <div v-if="index > 0" class="panel-gen-btns">
-                <button type="button" class="gen-btn" @click="addGenPlaceholder(index, 'image')">＋图片生成</button>
-                <button type="button" class="gen-btn" @click="addGenPlaceholder(index, 'video')">＋视频生成</button>
-              </div>
-
-              <MediaCoverflow
-                v-if="coverflowItems[index].length > 0"
-                :ref="(el) => { coverflowRefs[index] = el as any }"
-                :items="coverflowItems[index]"
-                :highlight-ids="highlightIds[index]"
-                :panel-index="index"
-                :trace-root-id="traceRoot?.panelIndex === index ? traceRoot?.cardId : undefined"
-                @remove="(id) => removeAssetById(id, index)"
-                @open="openPreview"
-                @select="(item) => handleCardSelect(item, index)"
-                @exit-trace="clearTrace"
-              />
-              <div v-else class="panel-empty">拖拽资产到此处</div>
-
-              <!-- 生成参数面板：v-show 保持组件存活，generating 状态不丢失 -->
-              <template v-for="job in genStates.filter((item) => item.panelIndex === index)" :key="job.placeholderTempId">
-                <div
-                  v-show="job.panelOpen && activeGenId === job.placeholderTempId"
-                  class="gen-panel-cover"
-                  :class="{ 'gen-cover-visible': job.panelOpen && activeGenId === job.placeholderTempId }"
-                >
-                  <NodeGenSidePanel
-                    :mode="panels[index]?.assets.find(a => a.id === job.placeholderTempId)?.genMode ?? 'image'"
-                    :ref-assets="getGenRefAssets(job)"
-                    :prompt="job.prompt"
-                    @update:prompt="job.prompt = $event"
-                    @close="closeGenPanel"
-                    @generating="(value) => onGenGenerating(job.placeholderTempId, value)"
-                    @generated="(asset) => onGenCompleted(job.placeholderTempId, asset)"
-                  />
+        <div class="panel-stack" :class="{ 'is-gen-editing': openGenState }">
+          <div class="panel-column">
+            <template v-for="(panel, index) in panels" :key="index">
+              <article
+                :ref="(el) => { panelRefs[index] = el as HTMLElement }"
+                class="preview-panel"
+                :class="{
+                  'drag-over': dragOverIndex === index,
+                  'is-trace': panel.traceAssets !== null,
+                  'is-gen-ref': activeGenState && !activeGenState.submitted && !activeGenState.generating && index === activeGenState.panelIndex - 1,
+                  'is-gen-dim': activeGenState && !activeGenState.submitted && !activeGenState.generating && index < activeGenState.panelIndex - 1,
+                  'is-gen-left': openGenState && index >= openGenState.panelIndex,
+                  'is-gen-hidden': openGenState && index > openGenState.panelIndex,
+                }"
+                :style="panelStyles[index]"
+                @dragover.prevent
+                @dragenter.prevent="dragOverIndex = index"
+                @dragleave.prevent="handlePanelDragLeave($event, index)"
+                @drop.prevent="handlePanelDrop($event, index)"
+              >
+                <!-- 面板标记 -->
+                <div class="panel-tag">
+                  面板 {{ index + 1 }}
+                  <span v-if="panel.traceAssets !== null" class="trace-tag">溯源中</span>
+                  <span v-if="activeGenState && !activeGenState.submitted && !activeGenState.generating && index === activeGenState.panelIndex - 1" class="gen-ref-tag">选择参考图</span>
                 </div>
-              </template>
-            </article>
 
-            <button
-              v-if="index < panels.length - 1"
-              :key="`resize-${index}`"
-              type="button"
-              class="resize-handle"
-              aria-label="调整面板高度"
-              @pointerdown.prevent="startResize(index, $event)"
-            />
+                <!-- 第三面板只展示生成结果，生成入口仅放在第二面板 -->
+                <div v-if="index === 1 && !openGenState" class="panel-gen-btns">
+                  <button type="button" class="gen-btn" @click="addGenPlaceholder(index, 'image')">＋图片生成</button>
+                  <button type="button" class="gen-btn" @click="addGenPlaceholder(index, 'video')">＋视频生成</button>
+                </div>
+
+                <MediaCoverflow
+                  v-if="displayedCoverflowItems[index].length > 0"
+                  :ref="(el) => { coverflowRefs[index] = el as any }"
+                  :items="displayedCoverflowItems[index]"
+                  :highlight-ids="highlightIds[index]"
+                  :panel-index="index"
+                  :trace-root-id="traceRoot?.panelIndex === index ? traceRoot?.cardId : undefined"
+                  @remove="(id) => removeAssetById(id, index)"
+                  @open="openPreview"
+                  @select="(item) => handleCardSelect(item, index)"
+                  @drop-asset="(event) => handlePanelDrop(event, index)"
+                  @exit-trace="clearTrace"
+                />
+                <div v-else-if="!openGenState || index < openGenState.panelIndex" class="panel-empty">拖拽资产到此处</div>
+              </article>
+
+              <button
+                v-if="index < panels.length - 1"
+                :key="`resize-${index}`"
+                type="button"
+                class="resize-handle"
+                :class="{ 'is-gen-hidden': openGenState && index >= openGenState.panelIndex }"
+                aria-label="调整面板高度"
+                @pointerdown.prevent="startResize(index, $event)"
+              />
+            </template>
+          </div>
+
+          <!-- 参数区位于 panel-stack 内部右侧，并跨越第二、三面板 -->
+          <template v-for="job in genStates" :key="job.placeholderTempId">
+            <aside
+              class="gen-panel-dock"
+              :class="{ 'is-open': job.panelOpen && activeGenId === job.placeholderTempId }"
+              :style="genDockStyle"
+            >
+              <NodeGenSidePanel
+                :mode="panels[job.panelIndex]?.assets.find(a => a.id === job.placeholderTempId)?.genMode ?? 'image'"
+                :ref-assets="getGenRefAssets(job)"
+                :prompt="job.prompt"
+                @update:prompt="job.prompt = $event"
+                @remove-ref="(id) => removeGenRef(job, id)"
+                @close="closeGenPanel"
+                @generating="(value) => onGenGenerating(job.placeholderTempId, value)"
+                @generated="(asset) => onGenCompleted(job.placeholderTempId, asset)"
+              />
+            </aside>
           </template>
-        </div>
 
-        <!-- 溯源退出按钮已移至根节点卡片上（见 MediaCoverflow traceRootId）-->
+          <!-- 溯源退出按钮已移至根节点卡片上（见 MediaCoverflow traceRootId）-->
+        </div>
       </section>
 
-      <!-- 右侧：始终显示资产库 -->
       <AssetSidebar @select="handleSidebarSelect" />
     </main>
 
@@ -906,7 +972,15 @@ function stopResize() {
 }
 
 .panel-stack {
+  position: relative;
   height: 100%;
+  width: 100%;
+  min-height: 0;
+}
+
+.panel-column {
+  height: 100%;
+  width: 100%;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -914,6 +988,7 @@ function stopResize() {
 }
 
 .preview-panel {
+  width: 100%;
   position: relative;
   min-height: 150px;
   overflow: hidden;
@@ -923,7 +998,17 @@ function stopResize() {
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
   box-shadow: var(--shadow-soft);
-  transition: border-color 0.2s, background 0.2s;
+  transition: width 0.46s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.2s, background 0.2s;
+}
+
+.preview-panel.is-gen-left {
+  width: calc(64% - 7px);
+}
+
+.preview-panel.is-gen-hidden,
+.resize-handle.is-gen-hidden {
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .preview-panel.drag-over {
@@ -1043,45 +1128,47 @@ function stopResize() {
   transition: background 0.3s;
 }
 
-/* ── 生成参数面板（面板内放大覆盖） ── */
-.gen-panel-cover {
+/* ── 生成参数面板（右侧跨越第二、三面板） ── */
+.gen-panel-dock {
   position: absolute;
-  top: 0;
   bottom: 0;
-  left: 25%;
-  width: 50%;
+  right: 0;
+  width: calc(36% - 7px);
   z-index: 10;
   border-radius: var(--radius-lg);
   overflow: hidden;
-  transform-origin: center center;
-  /* 默认隐藏态（v-show 会设置 display:none，但 transition 用 class 控制） */
-  transform: scale(0.06);
+  transform: translateX(28px);
   opacity: 0;
+  visibility: hidden;
   pointer-events: none;
-  transition: transform 0.44s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.26s ease;
+  transition:
+    transform 0.38s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.24s ease,
+    visibility 0s linear 0.38s;
 }
 
-/* 打开态 */
-.gen-panel-cover.gen-cover-visible {
-  transform: scale(1);
+.gen-panel-dock.is-open {
+  transform: translateX(0);
   opacity: 1;
+  visibility: visible;
   pointer-events: auto;
+  transition-delay: 0s;
 }
 
-/* 展开动画（保留，兼容性） */
-.gen-cover-enter-active {
-  transition: transform 0.44s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.26s ease;
+@media (max-width: 1100px) {
+  .preview-panel.is-gen-left {
+    width: calc(58% - 7px);
+  }
+  .gen-panel-dock {
+    width: calc(42% - 7px);
+  }
 }
-.gen-cover-leave-active {
-  transition: transform 0.24s ease-in, opacity 0.2s ease;
-}
-.gen-cover-enter-from {
-  transform: scale(0.06);
-  opacity: 0;
-}
-.gen-cover-leave-to {
-  transform: scale(0.88);
-  opacity: 0;
+
+@media (prefers-reduced-motion: reduce) {
+  .preview-panel,
+  .gen-panel-dock {
+    transition-duration: 0.01ms;
+  }
 }
 
 /* ── 连线覆盖层 ── */

@@ -23,6 +23,7 @@ const emit = defineEmits<{
   remove: [id: number]
   open: [item: CoverflowItem]
   select: [item: CoverflowItem]
+  'drop-asset': [event: DragEvent]
   'exit-trace': []  // Fix1
 }>()
 
@@ -217,6 +218,8 @@ watch(() => props.items, (newItems, oldItems) => {
     ref="containerRef"
     class="coverflow"
     @wheel="onWheel"
+    @dragover.prevent
+    @drop.prevent.stop="emit('drop-asset', $event)"
   >
     <div
       v-for="(item, i) in items"
