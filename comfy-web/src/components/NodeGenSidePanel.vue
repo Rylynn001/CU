@@ -127,7 +127,7 @@ async function handleGenerate() {
       <div class="gsp-section">
         <div class="gsp-label">
           参考图
-          <span class="gsp-hint">{{ refAssets.length ? `已选 ${refAssets.length} 张` : '点击上方面板图片选择' }}</span>
+          <span class="gsp-hint">{{ refAssets.length ? `已选 ${refAssets.length} 张` : '点击或拖入第一面板图片' }}</span>
         </div>
         <div v-if="refAssets.length" class="gsp-refs">
           <div v-for="a in refAssets" :key="a.id" class="gsp-ref-thumb">
@@ -147,7 +147,7 @@ async function handleGenerate() {
             </button>
           </div>
         </div>
-        <div v-else class="gsp-ref-empty">点击上方面板图片选择</div>
+        <div v-else class="gsp-ref-empty">点击第一面板图片，或拖动图片到参数面板</div>
       </div>
 
       <!-- 模型 -->

@@ -202,8 +202,13 @@ async function restoreSnapshot() {
 // ── 拖拽视觉反馈 ────────────────────────────────────────────────────────
 const isDragging = ref(false)
 const dragOverIndex = ref<number | null>(null)
+const genDragOverId = ref<number | null>(null)
 function handleGlobalDragStart() { isDragging.value = true }
-function handleGlobalDragEnd() { isDragging.value = false; dragOverIndex.value = null }
+function handleGlobalDragEnd() {
+  isDragging.value = false
+  dragOverIndex.value = null
+  genDragOverId.value = null
+}
 
 onMounted(() => {
   window.addEventListener('dragstart', handleGlobalDragStart)
@@ -240,18 +245,30 @@ function getPoster(asset: Asset) {
 // 接收 AssetSidebar 的 select 事件（payload 为数组）或拖放的单个资产
 function handleSidebarSelect(payload: Asset | Asset[]) {
   const list = Array.isArray(payload) ? payload : [payload]
-  list.forEach((asset) => addAssetToPanel(asset))
+  addAssetToPanel(list)
 }
 
-function addAssetToPanel(asset: Asset, index?: number) {
+function addAssetToPanel(payload: Asset | Asset[], index?: number) {
+  const assets = Array.isArray(payload) ? payload : [payload]
   const targets = index === undefined ? panels.value : [panels.value[index]]
   targets.forEach((panel) => {
-    if (!panel.assets.some((item) => item.id === asset.id)) {
-      panel.assets.push(asset)
-    }
+    assets.forEach((asset) => {
+      if (!panel.assets.some((item) => item.id === asset.id)) panel.assets.push(asset)
+    })
   })
   markDirty()
-  ElMessage.success('已添加到节点面板')
+  ElMessage.success(assets.length > 1 ? `已添加 ${assets.length} 个素材` : '已添加到节点面板')
+}
+
+function getDraggedAssets(payload: any): Asset[] {
+  const list = Array.isArray(payload.assets) ? payload.assets : [payload]
+  return list
+    .filter((item: any) => typeof item?.id === 'number' && typeof item?.location === 'string')
+    .map((item: any) => ({
+      id: item.id,
+      location: item.location,
+      asset_type: item.asset_type,
+    }))
 }
 
 // 拖拽资产到指定面板（支持从 coverflow 跨面板移动）
@@ -263,23 +280,21 @@ function handlePanelDrop(e: DragEvent, index: number) {
   try {
     const payload = JSON.parse(data)
     const fromPanel: number = payload.fromPanelIndex ?? -1
+    const assets = getDraggedAssets(payload)
+    if (!assets.length) return
     const job = activeGenState.value
     if (
       job && !job.submitted && !job.generating &&
       index === job.panelIndex && fromPanel === job.refPanelIndex
     ) {
-      addGenRef(payload.id, fromPanel)
+      assets.forEach((asset) => addGenRef(asset.id, fromPanel))
       return
     }
-    const asset: Asset = {
-      id: payload.id,
-      location: payload.location,
-      asset_type: payload.asset_type,
-    }
-    addAssetToPanel(asset, index)
+    addAssetToPanel(assets, index)
     // 从 coverflow 拖来的：跨面板则从来源面板移除（移动而非复制）
     if (fromPanel >= 0 && fromPanel !== index) {
-      panels.value[fromPanel].assets = panels.value[fromPanel].assets.filter((a) => a.id !== asset.id)
+      const movedIds = new Set(assets.map((asset) => asset.id))
+      panels.value[fromPanel].assets = panels.value[fromPanel].assets.filter((asset) => !movedIds.has(asset.id))
       markDirty()
     }
   } catch {
@@ -291,6 +306,19 @@ function handlePanelDragLeave(e: DragEvent, index: number) {
   const related = e.relatedTarget as Node | null
   if (!related || !(e.currentTarget as HTMLElement).contains(related)) {
     if (dragOverIndex.value === index) dragOverIndex.value = null
+  }
+}
+
+function handleGenPanelDrop(e: DragEvent, job: GenState) {
+  genDragOverId.value = null
+  activeGenId.value = job.placeholderTempId
+  handlePanelDrop(e, job.panelIndex)
+}
+
+function handleGenPanelDragLeave(e: DragEvent, id: number) {
+  const related = e.relatedTarget as Node | null
+  if (!related || !(e.currentTarget as HTMLElement).contains(related)) {
+    if (genDragOverId.value === id) genDragOverId.value = null
   }
 }
 
@@ -411,6 +439,27 @@ function activateGen(item: CoverflowItem, panelIndex: number) {
   genStates.value.push(job)
   activeGenId.value = item.id
   nextTick(syncGenDockTop)
+}
+
+function handleGenPlaceholderDrop(e: DragEvent, item: CoverflowItem, panelIndex: number) {
+  const data = e.dataTransfer?.getData('application/json')
+  if (!data) return
+  try {
+    const payload = JSON.parse(data)
+    const fromPanel: number = payload.fromPanelIndex ?? -1
+    const assets = getDraggedAssets(payload)
+    if (!assets.length) return
+    if (fromPanel !== panelIndex - 1) {
+      handlePanelDrop(e, panelIndex)
+      return
+    }
+    isDragging.value = false
+    dragOverIndex.value = null
+    activateGen(item, panelIndex)
+    assets.forEach((asset) => addGenRef(asset.id, fromPanel))
+  } catch {
+    // 忽略非资产数据
+  }
 }
 
 function addGenRef(refAssetId: number, refPanelIndex: number) {
@@ -657,7 +706,7 @@ function updateLines() {
 
   // gen 参考连线：独立渲染，不受 trace 清除影响
   for (const job of genStates.value) {
-    if (!job.refAssetIds.length) continue
+    if (job.panelOpen || !job.refAssetIds.length) continue
     const fromCf = coverflowRefs.value[job.panelIndex]
     const toCf = coverflowRefs.value[job.refPanelIndex]
     for (const refId of job.refAssetIds) {
@@ -776,8 +825,7 @@ function stopResize() {
                   'is-trace': panel.traceAssets !== null,
                   'is-gen-ref': activeGenState && !activeGenState.submitted && !activeGenState.generating && index === activeGenState.panelIndex - 1,
                   'is-gen-dim': activeGenState && !activeGenState.submitted && !activeGenState.generating && index < activeGenState.panelIndex - 1,
-                  'is-gen-left': openGenState && index >= openGenState.panelIndex,
-                  'is-gen-hidden': openGenState && index > openGenState.panelIndex,
+                  'is-gen-hidden': openGenState && index >= openGenState.panelIndex,
                 }"
                 :style="panelStyles[index]"
                 @dragover.prevent
@@ -809,6 +857,7 @@ function stopResize() {
                   @open="openPreview"
                   @select="(item) => handleCardSelect(item, index)"
                   @drop-asset="(event) => handlePanelDrop(event, index)"
+                  @drop-on-gen="(event, item) => handleGenPlaceholderDrop(event, item, index)"
                   @exit-trace="clearTrace"
                 />
                 <div v-else-if="!openGenState || index < openGenState.panelIndex" class="panel-empty">拖拽资产到此处</div>
@@ -826,12 +875,19 @@ function stopResize() {
             </template>
           </div>
 
-          <!-- 参数区位于 panel-stack 内部右侧，并跨越第二、三面板 -->
+          <!-- 参数区位于 panel-stack 内部，并覆盖第二、三面板 -->
           <template v-for="job in genStates" :key="job.placeholderTempId">
             <aside
               class="gen-panel-dock"
-              :class="{ 'is-open': job.panelOpen && activeGenId === job.placeholderTempId }"
+              :class="{
+                'is-open': job.panelOpen && activeGenId === job.placeholderTempId,
+                'is-drag-over': genDragOverId === job.placeholderTempId,
+              }"
               :style="genDockStyle"
+              @dragover.prevent
+              @dragenter.prevent="genDragOverId = job.placeholderTempId"
+              @dragleave.prevent="handleGenPanelDragLeave($event, job.placeholderTempId)"
+              @drop.prevent.stop="handleGenPanelDrop($event, job)"
             >
               <NodeGenSidePanel
                 :mode="panels[job.panelIndex]?.assets.find(a => a.id === job.placeholderTempId)?.genMode ?? 'image'"
@@ -998,11 +1054,7 @@ function stopResize() {
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
   box-shadow: var(--shadow-soft);
-  transition: width 0.46s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.2s, background 0.2s;
-}
-
-.preview-panel.is-gen-left {
-  width: calc(64% - 7px);
+  transition: border-color 0.2s, background 0.2s;
 }
 
 .preview-panel.is-gen-hidden,
@@ -1128,16 +1180,17 @@ function stopResize() {
   transition: background 0.3s;
 }
 
-/* ── 生成参数面板（右侧跨越第二、三面板） ── */
+/* ── 生成参数面板（覆盖第二、三面板） ── */
 .gen-panel-dock {
   position: absolute;
   bottom: 0;
+  left: 0;
   right: 0;
-  width: calc(36% - 7px);
+  width: 100%;
   z-index: 10;
   border-radius: var(--radius-lg);
   overflow: hidden;
-  transform: translateX(28px);
+  transform: translateY(18px);
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
@@ -1148,20 +1201,16 @@ function stopResize() {
 }
 
 .gen-panel-dock.is-open {
-  transform: translateX(0);
+  transform: translateY(0);
   opacity: 1;
   visibility: visible;
   pointer-events: auto;
   transition-delay: 0s;
 }
 
-@media (max-width: 1100px) {
-  .preview-panel.is-gen-left {
-    width: calc(58% - 7px);
-  }
-  .gen-panel-dock {
-    width: calc(42% - 7px);
-  }
+.gen-panel-dock.is-drag-over {
+  outline: 2px solid rgba(166, 231, 226, 0.72);
+  outline-offset: -2px;
 }
 
 @media (prefers-reduced-motion: reduce) {

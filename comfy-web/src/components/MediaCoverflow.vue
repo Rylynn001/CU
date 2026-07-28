@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, onMounted, onBeforeUnmount, onBeforeUpdate, nextTick } from 'vue'
+import { computed, ref, watch, onMounted, onBeforeUnmount, onBeforeUpdate, nextTick } from 'vue'
 
 export interface CoverflowItem {
   id: number
@@ -24,11 +24,33 @@ const emit = defineEmits<{
   open: [item: CoverflowItem]
   select: [item: CoverflowItem]
   'drop-asset': [event: DragEvent]
+  'drop-on-gen': [event: DragEvent, item: CoverflowItem]
   'exit-trace': []  // Fix1
 }>()
 
 const containerRef = ref<HTMLDivElement | null>(null)
 const cardRefs = ref<HTMLDivElement[]>([])
+const dragPreviewRef = ref<HTMLDivElement | null>(null)
+const selectedIds = ref<number[]>([])
+const dragOverGenId = ref<number | null>(null)
+const selectionStart = ref<{ x: number; y: number } | null>(null)
+const selectionEnd = ref<{ x: number; y: number } | null>(null)
+const selectedItems = computed(() => props.items.filter(
+  (item) => selectedIds.value.includes(item.id) && !item.isGenPlaceholder,
+))
+const dragPreviewItems = computed(() => selectedItems.value.slice(0, 4))
+
+const selectionStyle = computed(() => {
+  const start = selectionStart.value
+  const end = selectionEnd.value
+  if (!start || !end) return {}
+  return {
+    left: `${Math.min(start.x, end.x)}px`,
+    top: `${Math.min(start.y, end.y)}px`,
+    width: `${Math.abs(end.x - start.x)}px`,
+    height: `${Math.abs(end.y - start.y)}px`,
+  }
+})
 
 function isHighlighted(id: number) {
   return props.highlightIds?.includes(id) ?? false
@@ -130,15 +152,26 @@ function onCardDblClick(item: CoverflowItem) {
 
 // 卡片拖拽开始 → 携带资产数据，支持跨面板移动
 function onCardDragStart(e: DragEvent, item: CoverflowItem, i: number) {
+  if (!selectedIds.value.includes(item.id)) selectedIds.value = [item.id]
+  const draggedItems = selectedItems.value
+  const assets = draggedItems.map((candidate) => ({
+    id: candidate.id,
+    location: candidate.location ?? candidate.url.split('/').pop() ?? String(candidate.id),
+    asset_type: candidate.isVideo ? 'video' : 'picture',
+  }))
   const data = JSON.stringify({
-    id: item.id,
-    location: item.location ?? item.url.split('/').pop() ?? String(item.id),
-    asset_type: item.isVideo ? 'video' : 'picture',
+    ...assets[0],
+    assets,
     fromPanelIndex: props.panelIndex ?? -1,
   })
   e.dataTransfer?.setData('application/json', data)
   if (e.dataTransfer) {
-    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.effectAllowed = 'copyMove'
+    if (draggedItems.length > 1 && dragPreviewRef.value) {
+      const preview = dragPreviewRef.value
+      e.dataTransfer.setDragImage(preview, preview.offsetWidth / 2, preview.offsetHeight / 2)
+      return
+    }
     // 浏览器默认用布局位置（transform前）计算ghost偏移，对有translateX的非居中卡片会漂移
     // 用getBoundingClientRect获取视觉位置（transform后）显式修正
     const card = cardRefs.value[i]
@@ -147,6 +180,79 @@ function onCardDragStart(e: DragEvent, item: CoverflowItem, i: number) {
       e.dataTransfer.setDragImage(card, e.clientX - rect.left, e.clientY - rect.top)
     }
   }
+}
+
+function onCardDrop(e: DragEvent, item: CoverflowItem) {
+  dragOverGenId.value = null
+  if (item.isGenPlaceholder) {
+    emit('drop-on-gen', e, item)
+    return
+  }
+  emit('drop-asset', e)
+}
+
+function onCardDragEnter(item: CoverflowItem) {
+  if (item.isGenPlaceholder) dragOverGenId.value = item.id
+}
+
+function onCardDragLeave(e: DragEvent, item: CoverflowItem) {
+  const related = e.relatedTarget as Node | null
+  if (item.isGenPlaceholder && (!related || !(e.currentTarget as HTMLElement).contains(related))) {
+    dragOverGenId.value = null
+  }
+}
+
+function getSelectionPoint(e: PointerEvent) {
+  const rect = containerRef.value?.getBoundingClientRect()
+  if (!rect) return null
+  return {
+    x: Math.min(Math.max(e.clientX - rect.left, 0), rect.width),
+    y: Math.min(Math.max(e.clientY - rect.top, 0), rect.height),
+  }
+}
+
+function startSelection(e: PointerEvent) {
+  if (e.button !== 0 || e.pointerType !== 'mouse') return
+  const point = getSelectionPoint(e)
+  if (!point) return
+  e.preventDefault()
+  selectedIds.value = []
+  selectionStart.value = point
+  selectionEnd.value = point
+}
+
+function updateSelection(e: PointerEvent) {
+  const start = selectionStart.value
+  const point = getSelectionPoint(e)
+  const container = containerRef.value
+  if (!start || !point || !container) return
+  selectionEnd.value = point
+  const containerRect = container.getBoundingClientRect()
+  const left = containerRect.left + Math.min(start.x, point.x)
+  const right = containerRect.left + Math.max(start.x, point.x)
+  const top = containerRect.top + Math.min(start.y, point.y)
+  const bottom = containerRect.top + Math.max(start.y, point.y)
+  selectedIds.value = props.items
+    .filter((item, index) => {
+      if (item.isGenPlaceholder) return false
+      const rect = cardRefs.value[index]?.getBoundingClientRect()
+      return !!rect && rect.right >= left && rect.left <= right && rect.bottom >= top && rect.top <= bottom
+    })
+    .map((item) => item.id)
+}
+
+function finishSelection() {
+  const start = selectionStart.value
+  const end = selectionEnd.value
+  if (start && end && Math.abs(end.x - start.x) < 4 && Math.abs(end.y - start.y) < 4) {
+    selectedIds.value = []
+  }
+  selectionStart.value = null
+  selectionEnd.value = null
+}
+
+function clearDragOver() {
+  dragOverGenId.value = null
 }
 
 // 暴露卡片边缘锚点的页面坐标，供父组件画溯源连线
@@ -175,12 +281,20 @@ onMounted(async () => {
   computeSize()
   ro = new ResizeObserver(computeSize)
   if (containerRef.value) ro.observe(containerRef.value)
+  window.addEventListener('pointermove', updateSelection)
+  window.addEventListener('pointerup', finishSelection)
+  window.addEventListener('pointercancel', finishSelection)
+  window.addEventListener('dragend', clearDragOver)
   raf = requestAnimationFrame(tick)
 })
 
 onBeforeUnmount(() => {
   cancelAnimationFrame(raf)
   window.clearTimeout(snapTimer)
+  window.removeEventListener('pointermove', updateSelection)
+  window.removeEventListener('pointerup', finishSelection)
+  window.removeEventListener('pointercancel', finishSelection)
+  window.removeEventListener('dragend', clearDragOver)
   ro?.disconnect()
 })
 
@@ -191,6 +305,8 @@ onBeforeUpdate(() => {
 
 // items 变化后重算位置：追踪居中 item id，移除时找其新 index 精确 snap
 watch(() => props.items, (newItems, oldItems) => {
+  const itemIds = new Set(newItems.map((item) => item.id))
+  selectedIds.value = selectedIds.value.filter((id) => itemIds.has(id))
   if (!oldItems || newItems.length >= oldItems.length) {
     // 卡片增加 → 滚到末尾（等 DOM 稳定）
     if (newItems.length > (oldItems?.length ?? 0)) {
@@ -218,9 +334,12 @@ watch(() => props.items, (newItems, oldItems) => {
     ref="containerRef"
     class="coverflow"
     @wheel="onWheel"
+    @pointerdown.self="startSelection"
     @dragover.prevent
     @drop.prevent.stop="emit('drop-asset', $event)"
   >
+    <div v-if="selectionStart" class="cf-selection-box" :style="selectionStyle" />
+    <div v-if="selectedIds.length > 1" class="cf-selection-count">已选 {{ selectedIds.length }} 张</div>
     <div
       v-for="(item, i) in items"
       :key="item.id"
@@ -228,14 +347,20 @@ watch(() => props.items, (newItems, oldItems) => {
       class="cf-card"
       :class="{
         'cf-highlight': isHighlighted(item.id),
+        'cf-selected': selectedIds.includes(item.id),
         'cf-placeholder': item.isGenPlaceholder,
         'cf-generating': item.isGenPlaceholder && item.isGenerating,
+        'cf-drop-target': dragOverGenId === item.id,
       }"
       :style="{ width: cardW + 'px', height: (cardW / 0.72) + 'px' }"
       :draggable="!item.isGenPlaceholder"
       @click.stop="onCardClick(item)"
       @dblclick.stop="!item.isGenPlaceholder && onCardDblClick(item)"
       @dragstart="!item.isGenPlaceholder && onCardDragStart($event, item, i)"
+      @dragover.prevent
+      @dragenter.prevent="onCardDragEnter(item)"
+      @dragleave.prevent="onCardDragLeave($event, item)"
+      @drop.prevent.stop="onCardDrop($event, item)"
     >
       <!-- 普通媒体卡片 -->
       <template v-if="!item.isGenPlaceholder">
@@ -295,6 +420,28 @@ watch(() => props.items, (newItems, oldItems) => {
       </button>
     </div>
   </div>
+
+  <Teleport to="body">
+    <div
+      v-if="selectedItems.length > 1"
+      ref="dragPreviewRef"
+      class="cf-drag-preview"
+      aria-hidden="true"
+    >
+      <div v-for="item in dragPreviewItems" :key="item.id" class="cf-drag-preview-card">
+        <video
+          v-if="item.isVideo"
+          :src="item.poster"
+          class="cf-drag-preview-media"
+          preload="metadata"
+          muted
+          playsinline
+        />
+        <img v-else :src="item.url" class="cf-drag-preview-media" />
+      </div>
+      <span class="cf-drag-preview-count">{{ selectedItems.length }} 张</span>
+    </div>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -308,6 +455,79 @@ watch(() => props.items, (newItems, oldItems) => {
   touch-action: pan-y;
 }
 .coverflow:active { cursor: default; }
+
+.cf-selection-box {
+  position: absolute;
+  z-index: 2100;
+  border: 1px solid rgba(255, 255, 255, 0.82);
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 0 0 1px rgba(8, 10, 16, 0.36);
+  pointer-events: none;
+}
+
+.cf-selection-count {
+  position: absolute;
+  right: 12px;
+  bottom: 10px;
+  z-index: 2100;
+  padding: 4px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 6px;
+  background: rgba(8, 10, 16, 0.82);
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 11px;
+  pointer-events: none;
+}
+
+.cf-drag-preview {
+  position: fixed;
+  left: -9999px;
+  top: -9999px;
+  display: grid;
+  grid-template-columns: repeat(2, 58px);
+  grid-auto-rows: 70px;
+  gap: 5px;
+  width: max-content;
+  padding: 5px;
+  border-radius: 7px;
+  background: rgba(8, 10, 16, 0.9);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}
+
+.cf-drag-preview-card {
+  width: 58px;
+  height: 70px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.82);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.cf-drag-preview-media {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.cf-drag-preview-count {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  min-width: 30px;
+  height: 24px;
+  padding: 0 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  border-radius: 12px;
+  background: rgba(8, 10, 16, 0.96);
+  color: #fff;
+  font-size: 11px;
+  box-sizing: border-box;
+}
 
 .cf-card {
   position: absolute;
@@ -327,6 +547,11 @@ watch(() => props.items, (newItems, oldItems) => {
 .cf-card.cf-highlight {
   border-color: rgba(166, 231, 226, 0.9);
   box-shadow: 0 0 0 2px rgba(166, 231, 226, 0.6), 0 12px 40px rgba(0, 0, 0, 0.4);
+}
+
+.cf-card.cf-selected {
+  border-color: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.32), 0 12px 40px rgba(0, 0, 0, 0.4);
 }
 
 .cf-media {
@@ -415,6 +640,19 @@ watch(() => props.items, (newItems, oldItems) => {
   border-color: rgba(166, 231, 226, 0.5);
   background: rgba(166, 231, 226, 0.05);
 }
+.cf-card.cf-placeholder.cf-drop-target {
+  border-style: solid;
+  border-color: rgba(166, 231, 226, 1);
+  background: rgba(166, 231, 226, 0.16);
+  box-shadow:
+    0 0 0 3px rgba(166, 231, 226, 0.34),
+    0 0 32px rgba(166, 231, 226, 0.34),
+    0 12px 40px rgba(0, 0, 0, 0.4);
+}
+.cf-card.cf-placeholder.cf-drop-target .cf-gen-inner {
+  color: rgba(255, 255, 255, 0.95);
+  transform: scale(1.04);
+}
 .cf-card.cf-highlight.cf-placeholder {
   border-style: solid;
   border-color: rgba(255, 255, 255, 0.9);
@@ -451,6 +689,7 @@ watch(() => props.items, (newItems, oldItems) => {
   gap: 8px;
   color: rgba(255, 255, 255, 0.35);
   pointer-events: none;
+  transition: color 0.18s, transform 0.18s;
 }
 .cf-gen-label {
   font-size: 12px;

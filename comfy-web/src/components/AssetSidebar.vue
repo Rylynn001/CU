@@ -769,9 +769,6 @@ onUnmounted(() => {
                   <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
                 </svg>
               </button>
-              <span class="thumb-fav-slot" @click.stop>
-                <FavoriteHeart :tag="asset.tag || 0" :size="11" @change="(t) => setFavorite(asset, t)" />
-              </span>
             </div>
             <button class="thumb-remove-btn" @click.stop="removeAssetFromCategory(asset)" title="移除">✕</button>
           </div>
