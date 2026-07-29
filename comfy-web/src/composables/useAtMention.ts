@@ -1,10 +1,12 @@
-import { ref } from 'vue'
+import { nextTick, ref } from 'vue'
 import type { Ref } from 'vue'
 
 interface MediaItem {
   url: string
   type: 'image' | 'video'
 }
+
+type TextareaHandle = HTMLTextAreaElement | { textarea?: HTMLTextAreaElement }
 
 /**
  * 处理提示词输入框中的 @ 提及功能。
@@ -17,17 +19,22 @@ export function useAtMention(
   getText: () => string,
   setText: (v: string) => void,
   getItems: () => MediaItem[],
-  textareaRef: Ref<{ textarea?: HTMLTextAreaElement } | null>,
+  textareaRef: Ref<TextareaHandle | null>,
 ) {
   const atMentionActive = ref(false)   // 是否显示 @ 选择弹窗
   const atMentionStartIdx = ref(-1)    // @ 符号在文本中的位置，用于替换
   const atMentionIndex = ref(-1)       // 当前键盘高亮的列表项索引
 
+  function getTextarea() {
+    const target = textareaRef.value
+    return target instanceof HTMLTextAreaElement ? target : target?.textarea
+  }
+
   // keyup 时检测 @ 触发和 Escape 关闭
   function onPromptKeyup(e: KeyboardEvent) {
     if (e.key === '@') {
       if (getItems().length === 0) return
-      const textarea = textareaRef.value?.textarea
+      const textarea = getTextarea()
       if (!textarea) return
       atMentionStartIdx.value = textarea.selectionStart - 1
       atMentionActive.value = true
@@ -56,7 +63,7 @@ export function useAtMention(
 
   // 将选中的媒体项插入到提示词中，替换 @ 符号
   function insertMention(idx: number) {
-    const textarea = textareaRef.value?.textarea
+    const textarea = getTextarea()
     if (!textarea) return
     const items = getItems()
     const item = items[idx]
@@ -66,9 +73,13 @@ export function useAtMention(
     const before = text.slice(0, start)
     const after = text.slice(start + 1)
     setText(`${before}${label} ${after}`)
+    const nextCaret = before.length + label.length + 1
     atMentionActive.value = false
     atMentionIndex.value = -1
-    textarea.focus()
+    nextTick(() => {
+      textarea.focus()
+      textarea.setSelectionRange(nextCaret, nextCaret)
+    })
   }
 
   // 关闭 @ 选择弹窗

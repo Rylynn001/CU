@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, onUnmounted } from 'vue'
+import { ref, watch, onMounted, onUnmounted } from 'vue'
 
 const props = defineProps<{
   visible: boolean
@@ -17,6 +17,7 @@ const emit = defineEmits<{
 const scale = ref(1)
 const offsetX = ref(0)
 const offsetY = ref(0)
+const viewerContent = ref<HTMLElement | null>(null)
 const isDragging = ref(false)
 const dragStartX = ref(0)
 const dragStartY = ref(0)
@@ -43,11 +44,24 @@ function resetView() {
 function handleWheel(e: WheelEvent) {
   e.preventDefault()
   const delta = e.deltaY > 0 ? -0.1 : 0.1
-  scale.value = Math.max(MIN_SCALE, Math.min(MAX_SCALE, scale.value + delta))
-  if (scale.value <= 1) {
+  const previousScale = scale.value
+  const nextScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, previousScale + delta))
+  if (nextScale === previousScale) return
+
+  if (nextScale <= 1) {
     offsetX.value = 0
     offsetY.value = 0
+  } else {
+    const rect = viewerContent.value?.getBoundingClientRect()
+    if (rect) {
+      const pointerX = e.clientX - (rect.left + rect.width / 2)
+      const pointerY = e.clientY - (rect.top + rect.height / 2)
+      const scaleRatio = nextScale / previousScale
+      offsetX.value = pointerX - (pointerX - offsetX.value) * scaleRatio
+      offsetY.value = pointerY - (pointerY - offsetY.value) * scaleRatio
+    }
   }
+  scale.value = nextScale
 }
 
 function startDrag(e: PointerEvent) {
@@ -84,8 +98,19 @@ function next() {
   emit('next')
 }
 
+function handleKeydown(e: KeyboardEvent) {
+  if (!props.visible || e.key !== 'Escape') return
+  e.preventDefault()
+  close()
+}
+
+onMounted(() => {
+  window.addEventListener('keydown', handleKeydown)
+})
+
 onUnmounted(() => {
   stopDrag()
+  window.removeEventListener('keydown', handleKeydown)
 })
 </script>
 
@@ -93,7 +118,7 @@ onUnmounted(() => {
   <Teleport to="body">
     <Transition name="img-viewer">
       <div v-if="visible" class="custom-image-viewer" @click="close" @wheel="handleWheel">
-        <div class="viewer-content" :class="{ draggable: scale > 1, dragging: isDragging }" @click.stop>
+        <div ref="viewerContent" class="viewer-content" :class="{ draggable: scale > 1, dragging: isDragging }" @click.stop>
           <img
             :src="src"
             class="viewer-image"

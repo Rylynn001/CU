@@ -5,6 +5,7 @@ import { getApiModels, pollTaskUntilDone, type ApiModel } from '../api/apiServic
 import { getCurrentUserId } from '../utils/user'
 import { submitImageGeneration, type InputImage } from '../services/imageGenerationService'
 import { submitVideoGeneration, submitImg2VideoGeneration } from '../services/videoGenerationService'
+import { useAtMention } from '../composables/useAtMention'
 import type { SourceAsset, GeneratedAsset } from './NodeGenerateDialog.vue'
 
 const props = defineProps<{
@@ -41,6 +42,28 @@ const localPrompt = computed({
   get: () => props.prompt,
   set: (v) => emit('update:prompt', v),
 })
+const promptInputRef = ref<HTMLTextAreaElement | null>(null)
+const mentionItems = computed(() => props.refAssets.map((asset) => ({
+  url: asset.url,
+  type: asset.isVideo ? 'video' as const : 'image' as const,
+})))
+const {
+  atMentionActive,
+  atMentionIndex,
+  onPromptKeyup,
+  onPromptKeydown,
+  insertMention,
+  closeMention,
+} = useAtMention(
+  () => props.prompt,
+  (value) => emit('update:prompt', value),
+  () => mentionItems.value,
+  promptInputRef,
+)
+
+function getMentionLabel(asset: SourceAsset, index: number) {
+  return asset.isVideo ? `@视频${index + 1}` : `@图${index + 1}`
+}
 
 async function loadModels() {
   try {
@@ -81,7 +104,7 @@ async function handleGenerate() {
         asset = { id: -Date.now(), url: result.images[0], isVideo: false }
       }
     } else {
-      const refIds = props.refAssets.filter((a) => !a.isVideo).map((a) => a.id)
+      const refIds = props.refAssets.map((a) => a.id)
       let taskId: string | undefined
       if (refIds.length > 0) {
         const r = await submitImg2VideoGeneration({
@@ -123,20 +146,21 @@ async function handleGenerate() {
     </div>
 
     <div class="gsp-body">
-      <!-- 已选参考图 -->
+      <!-- 已选参考素材 -->
       <div class="gsp-section">
         <div class="gsp-label">
-          参考图
-          <span class="gsp-hint">{{ refAssets.length ? `已选 ${refAssets.length} 张` : '点击或拖入第一面板图片' }}</span>
+          {{ mode === 'image' ? '参考图' : '参考素材' }}
+          <span class="gsp-hint">{{ refAssets.length ? `已选 ${refAssets.length} 项` : (mode === 'image' ? '点击或拖入第一面板图片' : '点击或拖入第一面板素材') }}</span>
         </div>
         <div v-if="refAssets.length" class="gsp-refs">
           <div v-for="a in refAssets" :key="a.id" class="gsp-ref-thumb">
-            <img :src="a.url" />
+            <video v-if="a.isVideo" :src="a.url" muted playsinline preload="metadata" />
+            <img v-else :src="a.url" />
             <button
               type="button"
               class="gsp-ref-remove"
-              title="移除参考图"
-              :aria-label="`移除参考图 ${a.id}`"
+              title="移除参考素材"
+              :aria-label="`移除参考素材 ${a.id}`"
               :disabled="generating"
               @click="emit('remove-ref', a.id)"
             >
@@ -147,7 +171,9 @@ async function handleGenerate() {
             </button>
           </div>
         </div>
-        <div v-else class="gsp-ref-empty">点击第一面板图片，或拖动图片到参数面板</div>
+        <div v-else class="gsp-ref-empty">
+          {{ mode === 'image' ? '点击第一面板图片，或拖动图片到参数面板' : '点击第一面板素材，或拖动素材到参数面板' }}
+        </div>
       </div>
 
       <!-- 模型 -->
@@ -161,7 +187,32 @@ async function handleGenerate() {
       <!-- 提示词 -->
       <div class="gsp-section">
         <div class="gsp-label">提示词</div>
-        <textarea v-model="localPrompt" class="gsp-textarea" rows="4" placeholder="描述你想生成的内容" />
+        <div class="gsp-prompt-wrap">
+          <textarea
+            ref="promptInputRef"
+            v-model="localPrompt"
+            class="gsp-textarea"
+            rows="4"
+            placeholder="描述你想生成的内容（输入 @ 引用参考素材）"
+            @keyup="onPromptKeyup"
+            @keydown="onPromptKeydown"
+            @blur="closeMention"
+          />
+          <div v-if="atMentionActive && refAssets.length" class="gsp-mention-dropdown">
+            <button
+              v-for="(asset, index) in refAssets"
+              :key="asset.id"
+              type="button"
+              class="gsp-mention-item"
+              :class="{ active: atMentionIndex === index }"
+              @mousedown.prevent="insertMention(index)"
+            >
+              <video v-if="asset.isVideo" :src="asset.url" muted playsinline preload="metadata" />
+              <img v-else :src="asset.url" />
+              <span>{{ getMentionLabel(asset, index) }}</span>
+            </button>
+          </div>
+        </div>
       </div>
 
       <!-- 图片专有参数 -->
@@ -302,7 +353,8 @@ async function handleGenerate() {
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.3);
 }
-.gsp-ref-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.gsp-ref-thumb img,
+.gsp-ref-thumb video { width: 100%; height: 100%; object-fit: cover; display: block; }
 .gsp-ref-remove {
   position: absolute;
   top: 3px;
@@ -345,8 +397,13 @@ async function handleGenerate() {
   border: 1px solid rgba(255,255,255,0.12);
   background: rgba(255,255,255,0.05);
   color: rgba(255,255,255,0.8);
+  color-scheme: dark;
   font-size: 12px;
   outline: none;
+}
+.gsp-select option {
+  background: #12151e;
+  color: rgba(255,255,255,0.86);
 }
 .gsp-textarea {
   width: 100%;
@@ -362,6 +419,52 @@ async function handleGenerate() {
   transition: border-color 0.2s;
 }
 .gsp-textarea:focus { border-color: rgba(255, 255, 255, 0.28); }
+
+.gsp-prompt-wrap {
+  position: relative;
+}
+.gsp-mention-dropdown {
+  position: absolute;
+  top: calc(100% + 5px);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  max-height: 176px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 7px;
+  background: rgba(8, 10, 16, 0.98);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.42);
+}
+.gsp-mention-item {
+  width: 100%;
+  height: 42px;
+  padding: 5px 7px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+}
+.gsp-mention-item:hover,
+.gsp-mention-item.active {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+.gsp-mention-item img,
+.gsp-mention-item video {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  border-radius: 4px;
+  object-fit: cover;
+}
 
 .gsp-chips { display: flex; flex-wrap: wrap; gap: 5px; }
 .gsp-chip {

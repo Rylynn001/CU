@@ -287,7 +287,8 @@ function handlePanelDrop(e: DragEvent, index: number) {
       job && !job.submitted && !job.generating &&
       index === job.panelIndex && fromPanel === job.refPanelIndex
     ) {
-      assets.forEach((asset) => addGenRef(asset.id, fromPanel))
+      const refIds = getValidGenRefIds(assets.map((asset) => asset.id), fromPanel, getGenMode(job))
+      refIds.forEach((id) => addGenRef(id, fromPanel))
       return
     }
     addAssetToPanel(assets, index)
@@ -347,7 +348,11 @@ function getGenRefAssets(job: GenState): SourceAsset[] {
   return job.refAssetIds
     .map((id) => upper.assets.find((a) => a.id === id))
     .filter(Boolean)
-    .map((a) => ({ id: a!.id, url: getMediaUrl(a!.location), isVideo: isVideo(a!) }))
+    .map((a) => ({
+      id: a!.id,
+      url: getMediaUrl(a!.location),
+      isVideo: a!.asset_type === 'video' || isVideo(a!),
+    }))
 }
 
 // 当前激活的生成任务，用于参考图选择和参数面板显示
@@ -403,6 +408,29 @@ interface GenState {
 const genStates = ref<GenState[]>([])
 const activeGenId = ref<number | null>(null)
 
+function getGenMode(job: GenState): 'image' | 'video' {
+  return panels.value[job.panelIndex]?.assets.find(
+    (asset) => asset.id === job.placeholderTempId,
+  )?.genMode ?? 'image'
+}
+
+function getValidGenRefIds(
+  refAssetIds: number[],
+  refPanelIndex: number,
+  mode: 'image' | 'video',
+) {
+  if (mode !== 'image') return refAssetIds
+  const refPanel = panels.value[refPanelIndex]
+  const validIds = refAssetIds.filter((id) => {
+    const asset = refPanel?.assets.find((item) => item.id === id)
+    return asset && asset.asset_type !== 'video' && !isVideo(asset)
+  })
+  if (validIds.length !== refAssetIds.length) {
+    ElMessage.warning('图片生成不支持视频参考，已忽略视频素材')
+  }
+  return validIds
+}
+
 function addGenPlaceholder(panelIndex: number, mode: 'image' | 'video') {
   if (panelIndex !== 1) return
   const tempId = genTempIdCounter--
@@ -453,10 +481,12 @@ function handleGenPlaceholderDrop(e: DragEvent, item: CoverflowItem, panelIndex:
       handlePanelDrop(e, panelIndex)
       return
     }
+    const refIds = getValidGenRefIds(assets.map((asset) => asset.id), fromPanel, item.genMode ?? 'image')
+    if (!refIds.length) return
     isDragging.value = false
     dragOverIndex.value = null
     activateGen(item, panelIndex)
-    assets.forEach((asset) => addGenRef(asset.id, fromPanel))
+    refIds.forEach((id) => addGenRef(id, fromPanel))
   } catch {
     // 忽略非资产数据
   }
@@ -467,6 +497,10 @@ function addGenRef(refAssetId: number, refPanelIndex: number) {
   if (!job || job.submitted || job.generating) return
   const asset = panels.value[refPanelIndex]?.assets.find((item) => item.id === refAssetId)
   if (!asset || asset.isGenPlaceholder) return
+  if (getGenMode(job) === 'image' && (asset.asset_type === 'video' || isVideo(asset))) {
+    ElMessage.warning('图片生成不支持视频参考')
+    return
+  }
   if (!job.refAssetIds.includes(refAssetId)) {
     job.refAssetIds = [...job.refAssetIds, refAssetId]
   }
