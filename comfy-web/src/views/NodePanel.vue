@@ -550,19 +550,20 @@ function closeGenPanel() {
 }
 
 // 生成完成：用真实资产替换占位符
-function onGenCompleted(pid: number, asset: GeneratedAsset) {
+function onGenCompleted(pid: number, generated: GeneratedAsset[] | GeneratedAsset) {
   const job = findGenState(pid)
   if (!job) return
+  const assets = Array.isArray(generated) ? generated : [generated]
+  if (!assets.length) return
   const idx = panels.value[job.panelIndex].assets.findIndex(
     (a) => a.id === job.placeholderTempId
   )
   if (idx >= 0) {
-    const filename = asset.url.split(/[/\\?]/).pop() || `${asset.id}`
-    panels.value[job.panelIndex].assets.splice(idx, 1, {
+    panels.value[job.panelIndex].assets.splice(idx, 1, ...assets.map((asset) => ({
       id: asset.id,
-      location: filename,
+      location: asset.url.split(/[/\\?]/).pop() || `${asset.id}`,
       asset_type: asset.isVideo ? 'video' : 'picture',
-    })
+    })))
   }
   clearGenState(pid)
   markDirty()

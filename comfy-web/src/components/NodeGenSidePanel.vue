@@ -16,7 +16,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   close: []
-  generated: [asset: GeneratedAsset]
+  generated: [assets: GeneratedAsset[]]
   generating: [value: boolean]
   'remove-ref': [id: number]
   'update:prompt': [value: string]
@@ -86,7 +86,7 @@ async function handleGenerate() {
   // 提交后1秒自动收回参数面板，生成在后台继续
   setTimeout(() => emit('close'), 1000)
   try {
-    let asset: GeneratedAsset | null = null
+    const assets: GeneratedAsset[] = []
     if (props.mode === 'image') {
       const inputImages: InputImage[] = props.refAssets.filter((a) => !a.isVideo).map((a) => ({
         file: null, preview: a.url, assetLocation: '', assetId: a.id,
@@ -98,10 +98,20 @@ async function handleGenerate() {
       })
       if (result.taskId) {
         const done = await pollTaskUntilDone(result.taskId, userId, 'image')
-        const first = done.images?.[0] as { url: string; asset_id?: number } | undefined
-        if (first?.asset_id) asset = { id: first.asset_id, url: first.url, isVideo: false }
+        done.images?.forEach((item, index) => {
+          const output = item as { url: string; asset_id?: number }
+          if (output.url) {
+            assets.push({
+              id: output.asset_id ?? -(Date.now() + index),
+              url: output.url,
+              isVideo: false,
+            })
+          }
+        })
       } else if (result.images?.length) {
-        asset = { id: -Date.now(), url: result.images[0], isVideo: false }
+        result.images.forEach((url, index) => {
+          assets.push({ id: -(Date.now() + index), url, isVideo: false })
+        })
       }
     } else {
       const refIds = props.refAssets.map((a) => a.id)
@@ -122,11 +132,19 @@ async function handleGenerate() {
       }
       if (taskId) {
         const done = await pollTaskUntilDone(taskId, userId, 'video')
-        const first = done.images?.[0] as { url: string; asset_id?: number } | undefined
-        if (first?.asset_id) asset = { id: first.asset_id, url: first.url, isVideo: true }
+        done.images?.forEach((item, index) => {
+          const output = item as { url: string; asset_id?: number }
+          if (output.url) {
+            assets.push({
+              id: output.asset_id ?? -(Date.now() + index),
+              url: output.url,
+              isVideo: true,
+            })
+          }
+        })
       }
     }
-    if (asset) { emit('generated', asset); ElMessage.success('生成完成') }
+    if (assets.length) { emit('generated', assets); ElMessage.success(`生成完成，共 ${assets.length} 个结果`) }
     else ElMessage.error('生成结果无效')
   } catch (e: any) {
     ElMessage.error(e?.message || '生成失败')
