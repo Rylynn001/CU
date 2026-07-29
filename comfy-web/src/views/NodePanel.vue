@@ -9,13 +9,13 @@ import MediaCoverflow, { type CoverflowItem } from '../components/MediaCoverflow
 import NodeGenSidePanel from '../components/NodeGenSidePanel.vue'
 import { type SourceAsset, type GeneratedAsset } from '../components/NodeGenerateDialog.vue'
 import BoardSelector from '../components/BoardSelector.vue'
-import { fetchHistoryByAsset } from '../api/apiService'
+import { fetchHistoryByAsset, pollTaskUntilDone } from '../api/apiService'
 import { getCurrentUserId } from '../utils/user'
 import {
   loadBoard, saveBoard, createBoard as apiBoardCreate,
   renameBoard as apiBoardRename, deleteBoard as apiBoardDelete,
   listBoards,
-  type BoardMeta, type NodePanelSnapshot,
+  type BoardMeta, type NodePanelSnapshot, type PendingGenerationTask,
 } from '../services/nodePanelStorage'
 
 const router = useRouter()
@@ -46,6 +46,7 @@ const selectedBoardId = ref<number | null>(null)
 function resetGenStates() {
   genStates.value = []
   activeGenId.value = null
+  restoredPollingHistoryIds.clear()
 }
 
 async function loadBoards() {
@@ -60,6 +61,8 @@ async function loadBoards() {
 
 async function enterBoard(id: number) {
   resetGenStates()
+  panel2ImageHistoryIds.value = []
+  panel2VideoHistoryIds.value = []
   panels.value.forEach((p) => { p.assets = []; p.ratio = 1; p.traceAssets = null })
   clearTrace()
   selectedBoardId.value = id
@@ -100,6 +103,8 @@ async function handleDeleteBoard(id: number) {
     if (selectedBoardId.value === id) {
       selectedBoardId.value = null
       resetGenStates()
+      panel2ImageHistoryIds.value = []
+      panel2VideoHistoryIds.value = []
       panels.value.forEach((p) => { p.assets = []; p.ratio = 1; p.traceAssets = null })
       clearTrace()
     }
@@ -112,6 +117,8 @@ function exitToSelector() {
   if (dirty.value) handleSave()
   selectedBoardId.value = null
   resetGenStates()
+  panel2ImageHistoryIds.value = []
+  panel2VideoHistoryIds.value = []
   panels.value.forEach((p) => { p.assets = []; p.ratio = 1; p.traceAssets = null })
   clearTrace()
 }
@@ -121,6 +128,8 @@ const panels = ref<PanelState[]>([
   { ratio: 1, assets: [], traceAssets: null },
   { ratio: 1, assets: [], traceAssets: null },
 ])
+const panel2ImageHistoryIds = ref<number[]>([])
+const panel2VideoHistoryIds = ref<number[]>([])
 
 const coverflowRefs = ref<Array<InstanceType<typeof MediaCoverflow> | null>>([])
 const panelRefs = ref<Array<HTMLElement | null>>([])
@@ -134,34 +143,48 @@ function syncGenDockTop() {
 const saving = ref(false)
 const dirty = ref(false)
 const lastSavedAt = ref<number | null>(null)
+let saveQueue: Promise<void> = Promise.resolve()
 
 function markDirty() { dirty.value = true }
 
-// 快照当前面板 → 存储；只存 assetId 与 ratio
-async function handleSave() {
+// 快照当前面板 → 存储；生成占位符通过 historyId 单独保存
+async function handleSave(showSuccess = true) {
   if (!selectedBoardId.value) return
   const userId = getCurrentUserId()
   if (!userId) return
+  const boardId = selectedBoardId.value
+  const snapshot: NodePanelSnapshot = {
+    panels: panels.value.map((p) => ({
+      assetIds: p.assets.filter((a) => !a.isGenPlaceholder).map((a) => a.id),
+      ratio: p.ratio,
+    })),
+    panel2ImageHistoryIds: [...panel2ImageHistoryIds.value],
+    panel2VideoHistoryIds: [...panel2VideoHistoryIds.value],
+    panel2ImagePendingTasks: [],
+    panel2VideoPendingTasks: [],
+    updatedAt: Date.now(),
+  }
   saving.value = true
-  try {
-    const snapshot: NodePanelSnapshot = {
-      panels: panels.value.map((p) => ({
-        assetIds: p.assets.map((a) => a.id),
-        ratio: p.ratio,
-      })),
-      updatedAt: Date.now(),
+  const save = async () => {
+    try {
+      await saveBoard(boardId, Number(userId), snapshot)
+      const board = boards.value.find((b) => b.id === boardId)
+      if (board) board.updatedAt = snapshot.updatedAt
+      if (selectedBoardId.value === boardId) {
+        dirty.value = false
+        lastSavedAt.value = snapshot.updatedAt
+      }
+      if (showSuccess) ElMessage.success('已保存')
+    } catch {
+      ElMessage.error('保存失败')
     }
-    await saveBoard(selectedBoardId.value, Number(userId), snapshot)
-    // 同步更新 board 列表中的 updatedAt
-    const board = boards.value.find((b) => b.id === selectedBoardId.value)
-    if (board) board.updatedAt = snapshot.updatedAt
-    dirty.value = false
-    lastSavedAt.value = snapshot.updatedAt
-    ElMessage.success('已保存')
-  } catch {
-    ElMessage.error('保存失败')
+  }
+  const queuedSave = saveQueue.then(save, save)
+  saveQueue = queuedSave
+  try {
+    await queuedSave
   } finally {
-    saving.value = false
+    if (saveQueue === queuedSave) saving.value = false
   }
 }
 
@@ -195,6 +218,12 @@ async function restoreSnapshot() {
     panels.value[i].ratio = p.ratio || 1
     panels.value[i].assets = await fetchAssetsByIds(p.assetIds)
   }
+  panel2ImageHistoryIds.value = snap.panel2ImageHistoryIds
+  panel2VideoHistoryIds.value = snap.panel2VideoHistoryIds
+  restorePanel2GeneratingStates(
+    snap.panel2ImagePendingTasks,
+    snap.panel2VideoPendingTasks,
+  )
   lastSavedAt.value = snap.updatedAt
   dirty.value = false
 }
@@ -336,6 +365,7 @@ const coverflowItems = computed(() =>
       isGenPlaceholder: asset.isGenPlaceholder,
       genMode: asset.genMode,
       isGenerating: genStates.value.some((job) => job.placeholderTempId === asset.id && job.generating),
+      hasError: genStates.value.some((job) => job.placeholderTempId === asset.id && job.failed),
     }))
   })
 )
@@ -404,9 +434,95 @@ interface GenState {
   submitted: boolean
   generating: boolean
   panelOpen: boolean
+  historyId?: number
+  taskId?: string
+  failed?: boolean
+  errorMessage?: string
+  settings?: Record<string, unknown>
 }
 const genStates = ref<GenState[]>([])
 const activeGenId = ref<number | null>(null)
+const restoredPollingHistoryIds = new Set<number>()
+
+function getHistoryPlaceholderId(historyId: number) {
+  return -1_000_000_000 - historyId
+}
+
+function restorePanel2GeneratingStates(
+  imageTasks: PendingGenerationTask[],
+  videoTasks: PendingGenerationTask[],
+) {
+  const pendingIds = new Set([
+    ...panel2ImageHistoryIds.value,
+    ...panel2VideoHistoryIds.value,
+  ])
+  const taskByHistoryId = new Map([
+    ...imageTasks.map((task) => [task.historyId, { task, genMode: 'image' as const }]),
+    ...videoTasks.map((task) => [task.historyId, { task, genMode: 'video' as const }]),
+  ])
+  genStates.value = genStates.value.filter((job) => job.historyId == null || pendingIds.has(job.historyId))
+  if (activeGenId.value != null && !findGenState(activeGenId.value)) activeGenId.value = null
+
+  for (const [historyId, genMode] of [
+    ...panel2ImageHistoryIds.value.map((id) => [id, 'image'] as const),
+    ...panel2VideoHistoryIds.value.map((id) => [id, 'video'] as const),
+  ]) {
+    const taskInfo = taskByHistoryId.get(historyId)
+    const task = taskInfo?.task
+    let job = genStates.value.find((item) => item.historyId === historyId)
+    if (!job) {
+      job = {
+        placeholderTempId: getHistoryPlaceholderId(historyId),
+        panelIndex: 1,
+        refAssetIds: task?.inputAssetIds ?? [],
+        refPanelIndex: 0,
+        prompt: task?.prompt ?? '',
+        submitted: true,
+        generating: task?.status !== 'error' && task?.status !== 'failed',
+        panelOpen: false,
+        historyId,
+        taskId: task?.taskId,
+        failed: task?.status === 'error' || task?.status === 'failed',
+        errorMessage: task?.message,
+        settings: task?.payload,
+      }
+      genStates.value.push(job)
+    }
+    if (!panels.value[1].assets.some((asset) => asset.id === job.placeholderTempId)) {
+      panels.value[1].assets.push({
+        id: job.placeholderTempId,
+        location: '',
+        asset_type: genMode === 'video' ? 'video' : 'picture',
+        isGenPlaceholder: true,
+        genMode,
+      })
+    }
+  }
+  nextTick(() => {
+    if (hasGenLinks.value) startLineLoop()
+  })
+  genStates.value.forEach((job) => { void pollRestoredTask(job) })
+}
+
+async function pollRestoredTask(job: GenState) {
+  if (!job.historyId || !job.taskId || !job.generating || restoredPollingHistoryIds.has(job.historyId)) return
+  const userId = getCurrentUserId()
+  if (!userId) return
+  restoredPollingHistoryIds.add(job.historyId)
+  try {
+    const result = await pollTaskUntilDone(job.taskId, Number(userId), getGenMode(job))
+    const assets = (result.images ?? []).map((item) => ({
+      id: item.asset_id ?? -(Date.now()),
+      url: item.url ?? '',
+      isVideo: getGenMode(job) === 'video',
+    })).filter((asset) => asset.url)
+    onGenCompleted(job.placeholderTempId, assets)
+  } catch (error: any) {
+    onGenFailed(job.placeholderTempId, error?.message || '生成失败')
+  } finally {
+    restoredPollingHistoryIds.delete(job.historyId)
+  }
+}
 
 function getGenMode(job: GenState): 'image' | 'video' {
   return panels.value[job.panelIndex]?.assets.find(
@@ -565,8 +681,39 @@ function onGenCompleted(pid: number, generated: GeneratedAsset[] | GeneratedAsse
       asset_type: asset.isVideo ? 'video' : 'picture',
     })))
   }
+  if (job.historyId) {
+    if (getGenMode(job) === 'video') {
+      panel2VideoHistoryIds.value = panel2VideoHistoryIds.value.filter((id) => id !== job.historyId)
+    } else {
+      panel2ImageHistoryIds.value = panel2ImageHistoryIds.value.filter((id) => id !== job.historyId)
+    }
+  }
   clearGenState(pid)
   markDirty()
+  void handleSave(false)
+}
+
+function onGenFailed(pid: number, message: string) {
+  const job = findGenState(pid)
+  if (!job) return
+  job.generating = false
+  job.submitted = true
+  job.failed = true
+  job.errorMessage = message
+  job.panelOpen = false
+  markDirty()
+  void handleSave(false)
+}
+
+function onGenSubmitted(pid: number, historyId: number) {
+  const job = findGenState(pid)
+  if (!job || job.panelIndex !== 1) return
+  job.historyId = historyId
+  const historyIds = getGenMode(job) === 'video'
+    ? panel2VideoHistoryIds.value
+    : panel2ImageHistoryIds.value
+  if (!historyIds.includes(historyId)) historyIds.push(historyId)
+  void handleSave(false)
 }
 
 function onGenGenerating(pid: number, value: boolean) {
@@ -841,7 +988,7 @@ function stopResize() {
 
       <div class="tb-right">
         <span class="tb-status" :class="{ dirty }">{{ dirty ? '未保存' : '已保存' }}</span>
-        <button type="button" class="tb-btn primary" :disabled="saving" @click="handleSave">
+        <button type="button" class="tb-btn primary" :disabled="saving" @click="handleSave()">
           {{ saving ? '保存中...' : '保存' }}
         </button>
       </div>
@@ -928,10 +1075,15 @@ function stopResize() {
                 :mode="panels[job.panelIndex]?.assets.find(a => a.id === job.placeholderTempId)?.genMode ?? 'image'"
                 :ref-assets="getGenRefAssets(job)"
                 :prompt="job.prompt"
+                :settings="job.settings"
+                :view-only="job.generating || job.failed"
+                :error-message="job.errorMessage"
                 @update:prompt="job.prompt = $event"
                 @remove-ref="(id) => removeGenRef(job, id)"
                 @close="closeGenPanel"
                 @generating="(value) => onGenGenerating(job.placeholderTempId, value)"
+                @submitted="(historyId) => onGenSubmitted(job.placeholderTempId, historyId)"
+                @failed="(message) => onGenFailed(job.placeholderTempId, message)"
                 @generated="(asset) => onGenCompleted(job.placeholderTempId, asset)"
               />
             </aside>

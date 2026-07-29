@@ -26,6 +26,7 @@ export interface VideoImg2VideoParams extends VideoGenerateParams {
 
 export interface VideoGenerateResult {
   taskId?: string
+  historyId?: number
   videoUrl?: string
   inputAssetIds?: number[]
 }
@@ -43,7 +44,7 @@ export async function submitVideoGeneration(params: VideoGenerateParams): Promis
   })
 
   if ('task_id' in result) {
-    return { taskId: result.task_id }
+    return { taskId: result.task_id, historyId: result.history_id }
   }
   return { videoUrl: result.video_url }
 }
@@ -85,5 +86,5 @@ export async function submitImg2VideoGeneration(params: VideoImg2VideoParams): P
     input_asset_ids: allIds,
   })
 
-  return { taskId: result.task_id, inputAssetIds: allIds }
+  return { taskId: result.task_id, historyId: result.history_id, inputAssetIds: allIds }
 }

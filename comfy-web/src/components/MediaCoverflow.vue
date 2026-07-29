@@ -10,6 +10,7 @@ export interface CoverflowItem {
   isGenPlaceholder?: boolean  // 生成占位符
   genMode?: 'image' | 'video'
   isGenerating?: boolean
+  hasError?: boolean
 }
 
 const props = defineProps<{
@@ -350,6 +351,7 @@ watch(() => props.items, (newItems, oldItems) => {
         'cf-selected': selectedIds.includes(item.id),
         'cf-placeholder': item.isGenPlaceholder,
         'cf-generating': item.isGenPlaceholder && item.isGenerating,
+        'cf-failed': item.isGenPlaceholder && item.hasError,
         'cf-drop-target': dragOverGenId === item.id,
       }"
       :style="{ width: cardW + 'px', height: (cardW / 0.72) + 'px' }"
@@ -386,8 +388,8 @@ watch(() => props.items, (newItems, oldItems) => {
             <line v-if="!item.genMode || item.genMode === 'image'" x1="12" y1="8" x2="12" y2="16"/>
             <line v-if="!item.genMode || item.genMode === 'image'" x1="8" y1="12" x2="16" y2="12"/>
           </svg>
-          <span class="cf-gen-label">{{ item.isGenerating ? (item.genMode === 'video' ? '视频生成中' : '图片生成中') : (item.genMode === 'video' ? '视频生成' : '图片生成') }}</span>
-          <span class="cf-gen-hint">{{ item.isGenerating ? '任务进行中' : '点击选择参考' }}</span>
+          <span class="cf-gen-label">{{ item.hasError ? (item.genMode === 'video' ? '视频生成失败' : '图片生成失败') : (item.isGenerating ? (item.genMode === 'video' ? '视频生成中' : '图片生成中') : (item.genMode === 'video' ? '视频生成' : '图片生成')) }}</span>
+          <span class="cf-gen-hint">{{ item.hasError ? '点击查看原因' : (item.isGenerating ? '任务进行中' : '点击选择参考') }}</span>
         </div>
       </template>
 
@@ -674,6 +676,15 @@ watch(() => props.items, (newItems, oldItems) => {
 .cf-card.cf-placeholder.cf-generating .cf-gen-inner {
   color: rgba(166, 231, 226, 0.9);
   animation: cf-generating-pulse 1.6s ease-in-out infinite;
+}
+.cf-card.cf-placeholder.cf-failed {
+  border-style: solid;
+  border-color: rgba(255, 104, 104, 0.8);
+  background: rgba(255, 80, 80, 0.1);
+  box-shadow: 0 0 0 2px rgba(255, 80, 80, 0.16), 0 0 28px rgba(255, 80, 80, 0.2);
+}
+.cf-card.cf-placeholder.cf-failed .cf-gen-inner {
+  color: rgba(255, 140, 140, 0.95);
 }
 @keyframes cf-generating-pulse {
   0%, 100% { opacity: 0.65; }

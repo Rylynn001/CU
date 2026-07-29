@@ -28,6 +28,7 @@ export interface ApiGenerateParams {
 export interface ApiGenerateResult {
   images: Array<{ b64?: string; url?: string; asset_id?: number }>
   taskId?: string
+  historyId?: number
 }
 
 // ── Config ────────────────────────────────────────────────────────────────
@@ -114,7 +115,7 @@ export async function apiGenerate(params: ApiGenerateParams): Promise<ApiGenerat
 
   if (data.task_id) {
     // 异步任务：返回 taskId，由调用方轮询
-    return { taskId: data.task_id, images: [] } as any
+    return { taskId: data.task_id, historyId: data.history_id, images: [] }
   } else if (data.images) {
     // 同步任务：直接返回图片
     return data
@@ -154,7 +155,7 @@ export interface ApiVideoResult {
 
 // 提交文生视频任务
 // 后端可能同步返回 video_url，也可能返回 task_id 表示异步任务
-export async function apiVideoGenerate(params: ApiVideoParams): Promise<ApiVideoResult | { task_id: string }> {
+export async function apiVideoGenerate(params: ApiVideoParams): Promise<ApiVideoResult | { task_id: string; history_id?: number }> {
   const res = await fetch(`${BASE}/txt2video`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -168,7 +169,7 @@ export async function apiVideoGenerate(params: ApiVideoParams): Promise<ApiVideo
 
   if (data.task_id) {
     // 异步任务，直接返回 task_id，由调用方轮询
-    return { task_id: data.task_id }
+    return { task_id: data.task_id, history_id: data.history_id }
   } else if (data.video_url) {
     // 同步返回结果
     return data
@@ -191,7 +192,7 @@ export interface ApiImg2VideoParams {
 }
 
 // 提交图生视频任务，始终返回 task_id（异步）
-export async function apiImg2VideoGenerate(params: ApiImg2VideoParams): Promise<{ task_id: string }> {
+export async function apiImg2VideoGenerate(params: ApiImg2VideoParams): Promise<{ task_id: string; history_id?: number }> {
   const res = await fetch(`${BASE}/img2video`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -202,7 +203,7 @@ export async function apiImg2VideoGenerate(params: ApiImg2VideoParams): Promise<
     throw new Error(text || `img2video generate failed: ${res.status}`)
   }
   const data = await res.json()
-  return { task_id: data.task_id }
+  return { task_id: data.task_id, history_id: data.history_id }
 }
 
 // ── History ───────────────────────────────────────────────────────────────
@@ -338,7 +339,7 @@ async function pollTaskStatus(taskId: string, expectedType: 'image' | 'video', u
   const maxAttempts = 120
 
   const getInterval = (attempt: number): number => {
-    if (attempt < 20) return 10000  // 前 20 次 10 秒
+    if (attempt < 20) return 2000   // 前 20 次 2 秒
     return 60000                    // 之后 60 秒
   }
 

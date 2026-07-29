@@ -1,6 +1,10 @@
 """历史记录数据库操作"""
+import logging
 import pathlib as _pathlib
 from .database import get_db_connection
+
+
+logger = logging.getLogger('comfy_api_proxy')
 
 
 def save_history(
@@ -240,6 +244,16 @@ def update_history(
                 [(history_id, aid) for aid in output_asset_ids]
             )
         conn.commit()
+
+    if status in ('done', 'completed', 'success', 'error', 'failed'):
+        try:
+            from . import board_repo
+            board_repo.resolve_panel2_history(
+                history_id,
+                output_asset_ids if status in ('done', 'completed', 'success') else [],
+            )
+        except Exception as e:
+            logger.error(f'[node-board] 同步历史任务 {history_id} 失败: {e}')
 
 
 def soft_delete_history(history_id: int) -> None:

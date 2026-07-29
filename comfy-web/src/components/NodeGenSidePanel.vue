@@ -12,12 +12,17 @@ const props = defineProps<{
   mode: 'image' | 'video'
   refAssets: SourceAsset[]
   prompt: string
+  settings?: Record<string, unknown>
+  viewOnly?: boolean
+  errorMessage?: string
 }>()
 
 const emit = defineEmits<{
   close: []
   generated: [assets: GeneratedAsset[]]
   generating: [value: boolean]
+  submitted: [historyId: number]
+  failed: [message: string]
   'remove-ref': [id: number]
   'update:prompt': [value: string]
 }>()
@@ -74,8 +79,24 @@ async function loadModels() {
   } catch { ElMessage.error('加载模型失败') }
 }
 
-onMounted(loadModels)
+function applySettings() {
+  const settings = props.settings
+  if (!settings) return
+  if (settings.model != null) modelId.value = String(settings.model)
+  if (typeof settings.aspect_ratio === 'string') aspectRatio.value = settings.aspect_ratio
+  if (typeof settings.quality === 'string') quality.value = settings.quality
+  if (typeof settings.n === 'number') batchSize.value = settings.n
+  if (typeof settings.ratio === 'string') videoRatio.value = settings.ratio
+  if (typeof settings.resolution === 'string') resolution.value = settings.resolution
+  if (typeof settings.duration === 'number') duration.value = settings.duration
+}
+
+onMounted(() => {
+  applySettings()
+  loadModels()
+})
 watch(() => props.mode, loadModels)
+watch(() => props.settings, applySettings, { deep: true })
 
 async function handleGenerate() {
   if (!modelId.value) { ElMessage.warning('请选择模型'); return }
@@ -97,6 +118,7 @@ async function handleGenerate() {
         img2img: inputImages.length > 0, inputImages, userId,
       })
       if (result.taskId) {
+        if (result.historyId) emit('submitted', result.historyId)
         const done = await pollTaskUntilDone(result.taskId, userId, 'image')
         done.images?.forEach((item, index) => {
           const output = item as { url: string; asset_id?: number }
@@ -116,6 +138,7 @@ async function handleGenerate() {
     } else {
       const refIds = props.refAssets.map((a) => a.id)
       let taskId: string | undefined
+      let historyId: number | undefined
       if (refIds.length > 0) {
         const r = await submitImg2VideoGeneration({
           modelId: modelId.value, prompt: props.prompt,
@@ -123,14 +146,17 @@ async function handleGenerate() {
           inputAssetIds: refIds, userId,
         })
         taskId = r.taskId
+        historyId = r.historyId
       } else {
         const r = await submitVideoGeneration({
           modelId: modelId.value, prompt: props.prompt,
           ratio: videoRatio.value, resolution: resolution.value, duration: duration.value, userId,
         })
         taskId = r.taskId
+        historyId = r.historyId
       }
       if (taskId) {
+        if (historyId) emit('submitted', historyId)
         const done = await pollTaskUntilDone(taskId, userId, 'video')
         done.images?.forEach((item, index) => {
           const output = item as { url: string; asset_id?: number }
@@ -147,7 +173,9 @@ async function handleGenerate() {
     if (assets.length) { emit('generated', assets); ElMessage.success(`生成完成，共 ${assets.length} 个结果`) }
     else ElMessage.error('生成结果无效')
   } catch (e: any) {
-    ElMessage.error(e?.message || '生成失败')
+    const message = e?.message || '生成失败'
+    emit('failed', message)
+    ElMessage.error(message)
   } finally {
     generating.value = false
     emit('generating', false)
@@ -156,14 +184,15 @@ async function handleGenerate() {
 </script>
 
 <template>
-  <div class="gsp-panel">
+  <div class="gsp-panel" :class="{ 'is-view-only': viewOnly }">
     <!-- 头部 -->
     <div class="gsp-header">
-      <span class="gsp-title">{{ generating ? (mode === 'video' ? '视频生成中' : '图片生成中') : (mode === 'video' ? '视频生成' : '图片生成') }}</span>
+      <span class="gsp-title">{{ errorMessage ? (mode === 'video' ? '视频生成失败' : '图片生成失败') : ((generating || viewOnly) ? (mode === 'video' ? '视频生成中' : '图片生成中') : (mode === 'video' ? '视频生成' : '图片生成')) }}</span>
       <button class="gsp-close" @click="emit('close')">✕</button>
     </div>
 
     <div class="gsp-body">
+      <div v-if="errorMessage" class="gsp-error">{{ errorMessage }}</div>
       <!-- 已选参考素材 -->
       <div class="gsp-section">
         <div class="gsp-label">
@@ -292,9 +321,9 @@ async function handleGenerate() {
 
     <!-- 生成按钮 -->
     <div class="gsp-footer">
-      <button class="gsp-generate" :disabled="generating" @click="handleGenerate">
+      <button class="gsp-generate" :disabled="generating || viewOnly" @click="handleGenerate">
         <span v-if="generating" class="gsp-spin" />
-        {{ generating ? '生成中...' : '开始生成' }}
+        {{ errorMessage ? '生成失败' : ((generating || viewOnly) ? '生成中...' : '开始生成') }}
       </button>
     </div>
   </div>
@@ -310,6 +339,20 @@ async function handleGenerate() {
   background: linear-gradient(180deg, rgba(18, 21, 30, 0.97), rgba(6, 8, 13, 0.96));
   backdrop-filter: var(--glass-blur);
   overflow: hidden;
+}
+.is-view-only .gsp-body {
+  pointer-events: none;
+}
+.gsp-error {
+  margin: 12px 16px 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 104, 104, 0.36);
+  border-radius: 6px;
+  background: rgba(255, 80, 80, 0.1);
+  color: rgba(255, 172, 172, 0.95);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
 }
 .gsp-header {
   display: flex;

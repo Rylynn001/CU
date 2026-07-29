@@ -9,9 +9,24 @@ export interface PanelSnapshot {
   ratio: number
 }
 
+export interface PendingGenerationTask {
+  historyId: number
+  type: string
+  taskId?: string
+  status: string
+  message?: string
+  prompt: string
+  payload: Record<string, unknown>
+  inputAssetIds: number[]
+}
+
 // 完整面板文档快照（兼容 NodePanel.vue 内部使用）
 export interface NodePanelSnapshot {
   panels: PanelSnapshot[]
+  panel2ImageHistoryIds: number[]
+  panel2VideoHistoryIds: number[]
+  panel2ImagePendingTasks: PendingGenerationTask[]
+  panel2VideoPendingTasks: PendingGenerationTask[]
   updatedAt: number
 }
 
@@ -60,10 +75,32 @@ export async function loadBoard(boardId: number, userId: number): Promise<NodePa
     const b = await apiFetch(`node-boards/${boardId}?user_id=${userId}`)
     return {
       panels: [
-        { assetIds: b.panel1_asset_ids ?? [], ratio: b.panel1_ratio ?? 1 },
-        { assetIds: b.panel2_asset_ids ?? [], ratio: b.panel2_ratio ?? 1 },
-        { assetIds: b.panel3_asset_ids ?? [], ratio: b.panel3_ratio ?? 1 },
+        { assetIds: b.panel1_asset_ids ?? [], ratio: 1 },
+        { assetIds: b.panel2_asset_ids ?? [], ratio: 1 },
+        { assetIds: b.panel3_asset_ids ?? [], ratio: 1 },
       ],
+      panel2ImageHistoryIds: b.panel2_image_history_ids ?? [],
+      panel2VideoHistoryIds: b.panel2_video_history_ids ?? [],
+      panel2ImagePendingTasks: (b.panel2_image_pending_tasks ?? []).map((task: any) => ({
+        historyId: task.history_id,
+        type: 'image',
+        taskId: task.task_id,
+        status: task.status ?? 'pending',
+        message: task.message ?? undefined,
+        prompt: task.prompt ?? '',
+        payload: task.payload ?? {},
+        inputAssetIds: task.input_asset_ids ?? [],
+      })),
+      panel2VideoPendingTasks: (b.panel2_video_pending_tasks ?? []).map((task: any) => ({
+        historyId: task.history_id,
+        type: 'video',
+        taskId: task.task_id,
+        status: task.status ?? 'pending',
+        message: task.message ?? undefined,
+        prompt: task.prompt ?? '',
+        payload: task.payload ?? {},
+        inputAssetIds: task.input_asset_ids ?? [],
+      })),
       updatedAt: b.updated_at ?? 0,
     }
   } catch {
@@ -80,8 +117,9 @@ export async function saveBoard(boardId: number, userId: number, snapshot: NodeP
       user_id: userId,
       panels: snapshot.panels.map((p) => ({
         asset_ids: p.assetIds,
-        ratio: p.ratio,
       })),
+      panel2_image_history_ids: snapshot.panel2ImageHistoryIds,
+      panel2_video_history_ids: snapshot.panel2VideoHistoryIds,
     }),
   })
 }

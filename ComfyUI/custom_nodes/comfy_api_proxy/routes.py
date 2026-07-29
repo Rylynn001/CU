@@ -646,9 +646,8 @@ async def save_node_board(request: web.Request):
         panels[0].get('asset_ids', []),
         panels[1].get('asset_ids', []),
         panels[2].get('asset_ids', []),
-        float(panels[0].get('ratio', 1.0)),
-        float(panels[1].get('ratio', 1.0)),
-        float(panels[2].get('ratio', 1.0)),
+        body.get('panel2_image_history_ids', []),
+        body.get('panel2_video_history_ids', []),
     )
     if not ok:
         raise web.HTTPNotFound(reason='工作区不存在或无权限')

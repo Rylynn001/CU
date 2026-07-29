@@ -21,6 +21,7 @@ export interface ImageGenerateParams {
 
 export interface ImageGenerateResult {
   taskId?: string    // 异步任务 id，有值时需轮询
+  historyId?: number // 后端历史记录 id，用于节点面板持久化
   images?: string[]  // 同步返回时的图片 URL 列表
 }
 
@@ -75,7 +76,7 @@ export async function submitImageGeneration(params: ImageGenerateParams): Promis
   })
 
   if (result.taskId) {
-    return { taskId: result.taskId }
+    return { taskId: result.taskId, historyId: result.historyId }
   }
 
   return {
