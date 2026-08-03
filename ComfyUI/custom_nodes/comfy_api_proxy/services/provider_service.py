@@ -27,7 +27,7 @@ def get_provider_config(provider_id: int | None = None, model_id: int | None = N
         return decrypt_api_key(result[0]), result[1]
 
     default = cfg.get_default_provider_config()
-    if default:
+    if default: 
         return decrypt_api_key(default['api_key']), default['base_url']
 
     api_key = cfg.get_api_key()

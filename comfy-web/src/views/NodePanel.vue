@@ -643,6 +643,11 @@ function selectGenRef(refAssetId: number, refPanelIndex: number) {
 }
 
 function clearGenState(pid: number) {
+  const job = findGenState(pid)
+  if (job?.historyId != null) {
+    panel2ImageHistoryIds.value = panel2ImageHistoryIds.value.filter((id) => id !== job.historyId)
+    panel2VideoHistoryIds.value = panel2VideoHistoryIds.value.filter((id) => id !== job.historyId)
+  }
   genStates.value = genStates.value.filter((job) => job.placeholderTempId !== pid)
   removeGenLinks(pid)
   if (activeGenId.value === pid) {
@@ -680,13 +685,6 @@ function onGenCompleted(pid: number, generated: GeneratedAsset[] | GeneratedAsse
       location: asset.url.split(/[/\\?]/).pop() || `${asset.id}`,
       asset_type: asset.isVideo ? 'video' : 'picture',
     })))
-  }
-  if (job.historyId) {
-    if (getGenMode(job) === 'video') {
-      panel2VideoHistoryIds.value = panel2VideoHistoryIds.value.filter((id) => id !== job.historyId)
-    } else {
-      panel2ImageHistoryIds.value = panel2ImageHistoryIds.value.filter((id) => id !== job.historyId)
-    }
   }
   clearGenState(pid)
   markDirty()
@@ -1435,6 +1433,6 @@ function stopResize() {
   animation: trace-dot 2s linear infinite;
 }
 @keyframes trace-dot {
-  to { stroke-dashoffset: -503; }
+  to { stroke-dashoffset: 503; }
 }
 </style>

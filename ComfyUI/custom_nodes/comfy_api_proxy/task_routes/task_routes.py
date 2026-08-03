@@ -124,7 +124,7 @@ async def _poll_ark_task(task_id: str, remote_id: str, api_key: str, base_url: s
 
                 task_queue.set_status(task_id, 'completed')
                 task_queue.set_result(task_id, {
-                    'result': [{'url': local_url, 'type': 'video'}],
+                    'result': [{'url': local_url, 'type': 'video', 'asset_id': output_asset_id}],
                     'history_id': history_id,
                     'input_asset_urls': input_asset_urls,
                 })
@@ -132,7 +132,7 @@ async def _poll_ark_task(task_id: str, remote_id: str, api_key: str, base_url: s
                 task_queue.release_downloading_lock(task_id)
                 return web.json_response({
                     'status': 'completed',
-                    'result': [{'url': local_url, 'type': 'video'}],
+                    'result': [{'url': local_url, 'type': 'video', 'asset_id': output_asset_id}],
                     'history_id': history_id,
                 })
             except Exception as download_error:
