@@ -5,13 +5,14 @@ import { ElMessage } from 'element-plus'
 interface Category {
   id: number
   name: string
-  assets: number[]
+  asset_count: number
 }
 
 interface Project {
   id: number
   name: string
-  categories: Category[]
+  category_count: number
+  categories?: Category[]   // 展开项目后按需加载
 }
 
 const props = defineProps<{
@@ -55,15 +56,32 @@ async function loadProjects() {
   }
 }
 
-function toggleProject(projectId: number) {
+async function toggleProject(projectId: number) {
   if (selectedProjectId.value === projectId) {
     // 如果点击的是已展开的项目，则收起
     selectedProjectId.value = null
     selectedCategoryId.value = null
   } else {
-    // 展开新项目
+    // 展开新项目，按需加载分类
     selectedProjectId.value = projectId
     selectedCategoryId.value = null
+    const project = projects.value.find(p => p.id === projectId)
+    if (project && !project.categories) await loadCategories(project)
+  }
+}
+
+// 点击项目时按需加载分类
+async function loadCategories(project: Project) {
+  const user = getUser()
+  if (!user) return
+  try {
+    const res = await fetch(`/api/api-proxy/projects/${project.id}/categories?user_id=${user.id}`)
+    if (!res.ok) throw new Error()
+    const data = await res.json()
+    project.categories = data.categories || []
+  } catch {
+    project.categories = []
+    ElMessage.error('加载分类失败')
   }
 }
 
@@ -80,22 +98,34 @@ async function handleConfirm() {
     return
   }
 
+  const user = getUser()
+  if (!user) { ElMessage.error('请先登录'); return }
+
   processing.value = true
   try {
     const res = await fetch(`/api/api-proxy/categories/${selectedCategoryId.value}/assets`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ asset_id: props.assetId }),
+      body: JSON.stringify({ asset_id: props.assetId, user_id: user.id }),
     })
-    if (!res.ok) throw new Error()
+    if (!res.ok) {
+      if (res.status === 403) throw new Error('非项目成员，无法提交素材')
+      throw new Error()
+    }
+    const data = await res.json()
 
-    const message = props.mode === 'add' ? '已添加到分类' : props.mode === 'move' ? '已移动到分类' : '已复制到分类'
-    ElMessage.success(message)
+    // member 提交进入待审核，提示区分
+    if (data.review_status === 'pending') {
+      ElMessage.success('已提交，等待管理员审核')
+    } else {
+      const message = props.mode === 'add' ? '已添加到分类' : props.mode === 'move' ? '已移动到分类' : '已复制到分类'
+      ElMessage.success(message)
+    }
 
     emit('confirm', selectedProjectId.value, selectedCategoryId.value)
     handleClose()
-  } catch {
-    ElMessage.error('操作失败')
+  } catch (e: any) {
+    ElMessage.error(e.message || '操作失败')
   } finally {
     processing.value = false
   }
@@ -152,7 +182,7 @@ watch(() => props.visible, (newVal) => {
 
                 <Transition name="categories-slide">
                   <div v-if="selectedProjectId === project.id" class="categories-list">
-                    <div v-if="project.categories.length === 0" class="no-categories">
+                    <div v-if="!project.categories || project.categories.length === 0" class="no-categories">
                       该项目暂无分类
                     </div>
                     <div
@@ -163,7 +193,7 @@ watch(() => props.visible, (newVal) => {
                       @click="selectedCategoryId = category.id"
                     >
                       <span class="category-name">{{ category.name }}</span>
-                      <span class="category-count">{{ category.assets.length }}</span>
+                      <span class="category-count">{{ category.asset_count }}</span>
                     </div>
                   </div>
                 </Transition>

@@ -18,6 +18,7 @@ import ModelViewer from '../components/ModelViewer.vue'
 import FavoriteHeart from '../components/FavoriteHeart.vue'
 import ProjectManager from '../components/ProjectManager.vue'
 import ImageViewer from '../components/ImageViewer.vue'
+import RecordContextMenu from '../components/RecordContextMenu.vue'
 // 本地 ComfyUI 接口：获取模型列表、采样器信息、提交任务、上传图片
 import { getModels, getKSamplerInfo, submitPrompt, uploadImage, type PromptParams } from '../api/comfyui'
 // WebSocket 连接：实时接收本地 ComfyUI 的生成进度和结果图片
@@ -166,7 +167,7 @@ function pollImage(record: GenerationRecord, userId?: number) {
     // 将返回的图片列表写入记录（过滤掉空值）
     rec.images = result.images.map((i: any) => i.url).filter(Boolean) as string[]
     // 同时保存资产 ID，用于后续收藏操作
-    rec.outputAssetIds = result.images.map((i: any) => i.id).filter(Boolean) as number[]
+    rec.outputAssetIds = result.images.map((i: any) => i.asset_id).filter(Boolean) as number[]
   })
 }
 
@@ -652,6 +653,12 @@ async function loadMoreHistory() {
 // ── 添加到项目 ────────────────────────────────────────────
 const showProjectManager = ref(false)
 const currentAssetId = ref<number | undefined>(undefined)
+
+// 历史记录右键菜单
+const recordMenu = ref<InstanceType<typeof RecordContextMenu> | null>(null)
+function openRecordMenu(e: MouseEvent, assetId: number, location: string) {
+  recordMenu.value?.open(e, { assetId, location, asset_type: 'picture' })
+}
 
 function openAddToProjectDialog(assetId: number) {
   currentAssetId.value = assetId
@@ -1165,7 +1172,10 @@ onUnmounted(() => {
           </template>
           <template #result="{ record: rec }">
             <div class="card-images">
-              <div v-for="(src, i) in rec.images" :key="i" class="card-image-wrap">
+              <div
+                v-for="(src, i) in rec.images" :key="i" class="card-image-wrap"
+                @contextmenu.prevent="rec.outputAssetIds?.[i] && openRecordMenu($event, rec.outputAssetIds[i], src)"
+              >
                 <img :src="src" class="card-image" @click="previewImage(src, rec.images)" />
                 <button class="download-btn" @click="downloadImage(src)" title="下载">
                   <span>⬇</span>
@@ -1222,6 +1232,9 @@ onUnmounted(() => {
       mode="add"
       @close="handleProjectManagerClose"
     />
+
+    <!-- 历史记录右键菜单 -->
+    <RecordContextMenu ref="recordMenu" @select="handleAssetSelect" @reuse-params="handleReuseParams" />
   </div>
 </template>
 

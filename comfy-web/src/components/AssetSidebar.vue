@@ -7,6 +7,8 @@ import VideoPlayer from './VideoPlayer.vue'
 import ImageViewer from './ImageViewer.vue'
 import ProjectManager from './ProjectManager.vue'
 import ConfirmDialog from './ConfirmDialog.vue'
+import ProjectTeamDialog from './ProjectTeamDialog.vue'
+import type { MemberRole } from '../api/apiService'
 
 interface Asset {
   id: number
@@ -18,13 +20,15 @@ interface Asset {
 interface Category {
   id: number
   name: string
-  assets: number[]
+  asset_count: number
 }
 
 interface Project {
   id: number
   name: string
-  categories: Category[]
+  category_count: number
+  categories?: Category[]   // 点击项目后按需加载
+  role?: MemberRole   // 当前用户在该项目的角色
 }
 
 interface HistoryRecord {
@@ -69,6 +73,20 @@ function openAddToProjectDialog(asset: Asset) {
 function handleProjectManagerClose() {
   showProjectManager.value = false
   currentAssetIdForProject.value = undefined
+}
+
+// ── 团队弹窗 ──────────────────────────────────────────────────────────────
+const showTeamDialog = ref(false)
+const currentUserId = computed(() => getUser()?.id ?? 0)
+
+function openTeamDialog() {
+  if (!selectedProject.value) return
+  showTeamDialog.value = true
+}
+
+// 审核通过后刷新当前分类资产
+function handleReviewed() {
+  if (selectedCategory.value) loadCategoryAssets(selectedCategory.value.id)
 }
 
 // ── 我的资产 ──────────────────────────────────────────────────────────────
@@ -184,16 +202,11 @@ async function loadProjects() {
   }
 }
 
-async function loadCategoryAssets(ids: number[]) {
-  if (!ids.length) { categoryAssets.value = []; return }
+async function loadCategoryAssets(categoryId: number) {
   if (categoryAssetsLoading.value) return
   categoryAssetsLoading.value = true
   try {
-    const res = await fetch('/api/api-proxy/assets/by-ids', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ids }),
-    })
+    const res = await fetch(`/api/api-proxy/categories/${categoryId}/assets`)
     if (!res.ok) throw new Error()
     const data = await res.json()
     categoryAssets.value = data.assets || []
@@ -207,15 +220,31 @@ async function loadCategoryAssets(ids: number[]) {
 async function selectCategory(cat: Category) {
   if (selectedCategory.value?.id === cat.id) return
   selectedCategory.value = cat
-  await loadCategoryAssets(cat.assets)
+  await loadCategoryAssets(cat.id)
 }
 
-function selectProject(p: Project) {
+// 点击项目时按需加载分类
+async function loadCategories(p: Project) {
+  const user = getUser()
+  if (!user) return
+  try {
+    const res = await fetch(`/api/api-proxy/projects/${p.id}/categories?user_id=${user.id}`)
+    if (!res.ok) throw new Error()
+    const data = await res.json()
+    p.categories = data.categories || []
+  } catch {
+    p.categories = []
+    ElMessage.error('加载分类失败')
+  }
+}
+
+async function selectProject(p: Project) {
   if (selectedProject.value?.id === p.id) return
   selectedProject.value = p
   selectedCategory.value = null
   categoryAssets.value = []
-  if (p.categories.length > 0) selectCategory(p.categories[0])
+  await loadCategories(p)
+  if (p.categories && p.categories.length > 0) selectCategory(p.categories[0])
 }
 
 function switchToProjects() {
@@ -246,7 +275,7 @@ async function confirmCreateProject() {
     })
     if (!res.ok) throw new Error()
     const data = await res.json()
-    projects.value.push({ id: data.id, name: data.name, categories: data.categories || [] })
+    projects.value.push({ id: data.id, name: data.name, category_count: (data.categories || []).length, categories: data.categories || [] })
     showCreateProject.value = false
     newProjectName.value = ''
   } catch {
@@ -274,7 +303,9 @@ async function confirmCreateCategory() {
     })
     if (!res.ok) throw new Error()
     const data = await res.json()
-    selectedProject.value.categories.push({ id: data.id, name: data.name, assets: [] })
+    if (!selectedProject.value.categories) selectedProject.value.categories = []
+    selectedProject.value.categories.push({ id: data.id, name: data.name, asset_count: 0 })
+    selectedProject.value.category_count += 1
     showCreateCategory.value = false
     newCategoryName.value = ''
   } catch {
@@ -341,7 +372,10 @@ async function deleteProject(p: Project) {
 async function deleteCategory(cat: Category) {
   await fetch(`/api/api-proxy/categories/${cat.id}`, { method: 'DELETE' })
   if (selectedProject.value) {
-    selectedProject.value.categories = selectedProject.value.categories.filter(c => c.id !== cat.id)
+    if (selectedProject.value.categories) {
+      selectedProject.value.categories = selectedProject.value.categories.filter(c => c.id !== cat.id)
+    }
+    selectedProject.value.category_count = Math.max(0, selectedProject.value.category_count - 1)
   }
   if (selectedCategory.value?.id === cat.id) { selectedCategory.value = null; categoryAssets.value = [] }
   ElMessage.success('删除成功')
@@ -354,9 +388,9 @@ async function removeAssetFromCategory(asset: Asset) {
       method: 'DELETE',
     })
     if (!res.ok) throw new Error()
-    // 从当前分类的资产列表中移除
-    selectedCategory.value.assets = selectedCategory.value.assets.filter(id => id !== asset.id)
+    // 从当前分类资产列表移除，并同步计数
     categoryAssets.value = categoryAssets.value.filter(a => a.id !== asset.id)
+    selectedCategory.value.asset_count = Math.max(0, selectedCategory.value.asset_count - 1)
     ElMessage.success('已移除')
   } catch {
     ElMessage.error('移除失败')
@@ -700,7 +734,7 @@ onUnmounted(() => {
               </template>
               <template v-else>
                 <span class="proj-item-name" @dblclick.stop="startEdit('project', p.id, p.name)">{{ p.name }}</span>
-                <span class="proj-item-meta">{{ p.categories.length }} 个分类</span>
+                <span class="proj-item-meta">{{ p.category_count }} 个分类</span>
               </template>
             </div>
             <button class="del-btn" @click.stop="confirmDeleteProject(p)" title="删除">
@@ -718,13 +752,16 @@ onUnmounted(() => {
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
           </button>
           <span class="proj-title" style="flex:1">{{ selectedProject.name }}</span>
+          <button class="icon-btn" @click="openTeamDialog" title="团队协作">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          </button>
           <button class="icon-btn" @click="showCreateCategory = true" title="新建分类">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           </button>
         </div>
 
         <!-- 分类 chips -->
-        <div v-if="selectedProject.categories.length > 0" class="cat-chips">
+        <div v-if="selectedProject.categories && selectedProject.categories.length > 0" class="cat-chips">
           <div
             v-for="cat in selectedProject.categories"
             :key="cat.id"
@@ -737,7 +774,7 @@ onUnmounted(() => {
             </template>
             <template v-else>
               <span @dblclick.stop="startEdit('category', cat.id, cat.name)">{{ cat.name }}</span>
-              <span class="cat-count">{{ cat.assets.length }}</span>
+              <span class="cat-count">{{ cat.asset_count }}</span>
               <span class="cat-del" @click.stop="confirmDeleteCategory(cat)">✕</span>
             </template>
           </div>
@@ -965,6 +1002,18 @@ onUnmounted(() => {
       :asset-id="currentAssetIdForProject"
       mode="add"
       @close="handleProjectManagerClose"
+    />
+
+    <!-- 团队协作弹窗 -->
+    <ProjectTeamDialog
+      v-if="selectedProject"
+      :visible="showTeamDialog"
+      :project-id="selectedProject.id"
+      :project-name="selectedProject.name"
+      :current-role="selectedProject.role || 'member'"
+      :current-user-id="currentUserId"
+      @close="showTeamDialog = false"
+      @reviewed="handleReviewed"
     />
 
     <!-- 确认删除弹窗 -->

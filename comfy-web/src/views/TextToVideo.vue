@@ -17,6 +17,7 @@ import ModelViewer from '../components/ModelViewer.vue'
 import FavoriteHeart from '../components/FavoriteHeart.vue'
 import ProjectManager from '../components/ProjectManager.vue'
 import ImageViewer from '../components/ImageViewer.vue'
+import RecordContextMenu from '../components/RecordContextMenu.vue'
 // 鍚庣 API 鎺ュ彛
 import { getApiModels, retryHistory, favoriteAsset, type ApiModel } from '../api/apiService'
 // 鍘嗗彶璁板綍绠＄悊
@@ -85,7 +86,7 @@ function pollVideo(record: VideoRecord, userId?: number) {
     // 浠庤繑鍥炵殑 images 鏁扮粍涓壘鍒拌棰戠被鍨嬬殑鏉＄洰
     const videoItem = result.images.find((i: any) => i.url)
     rec.videoUrl = videoItem?.url || ''
-    if (videoItem?.id) rec.outputAssetId = videoItem.id
+    if (videoItem?.asset_id) rec.outputAssetId = videoItem.asset_id
     // 濡傛灉鍚庣杩斿洖浜嗗弬鑰冪礌鏉愮殑绾夸笂 URL锛屾洿鏂板埌璁板綍涓紙鐢ㄤ簬灞曠ず锛?
     if ((result as any).inputAssetUrls?.length) {
       rec.inputAssetUrls = (result as any).inputAssetUrls
@@ -131,6 +132,7 @@ const resolutionOptions = [
   { label: '480p', value: '480p' },
   { label: '720p', value: '720p' },
   { label: '1080p', value: '1080p' },
+  { label: '4K', value: '4k' },
 ]
 
 // 鈹€鈹€ 杈撳叆濯掍綋 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
@@ -583,6 +585,12 @@ async function loadMoreHistory() {
 const showProjectManager = ref(false)
 const currentAssetId = ref<number | undefined>(undefined)
 
+// 历史记录右键菜单
+const recordMenu = ref<InstanceType<typeof RecordContextMenu> | null>(null)
+function openRecordMenu(e: MouseEvent, assetId: number, location: string) {
+  recordMenu.value?.open(e, { assetId, location, asset_type: 'video' })
+}
+
 function openAddToProjectDialog(assetId: number) {
   currentAssetId.value = assetId
   showProjectManager.value = true
@@ -954,7 +962,11 @@ onUnmounted(() => {
           </template>
           <template #result="{ record: rec }">
             <div v-if="rec.videoUrl" class="card-video">
-              <div class="video-thumb" @click="openVideo(rec.videoUrl, rec.outputAssetId)">
+              <div
+                class="video-thumb"
+                @click="openVideo(rec.videoUrl, rec.outputAssetId)"
+                @contextmenu.prevent="rec.outputAssetId && openRecordMenu($event, rec.outputAssetId, rec.videoUrl)"
+              >
                 <video :src="rec.videoUrl" class="video-player" preload="metadata" />
                 <div class="video-play-icon">▶</div>
                 <button class="download-btn" @click.stop="downloadVideo(rec.videoUrl)" title="下载">
@@ -980,6 +992,9 @@ onUnmounted(() => {
       <!-- 鈹€鈹€ 鍙充晶璧勪骇渚ц竟鏍?鈹€鈹€ -->
       <AssetSidebar v-show="!showRecordEditor" @select="handleAssetSelect" @reuse-params="handleReuseParams" />
     </div>
+
+    <!-- 历史记录右键菜单 -->
+    <RecordContextMenu ref="recordMenu" @select="handleAssetSelect" @reuse-params="handleReuseParams" />
 
     <ImageViewer
       :visible="showImageViewer"

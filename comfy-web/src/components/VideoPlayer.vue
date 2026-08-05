@@ -62,6 +62,13 @@ function close() {
   emit('close')
 }
 
+function download() {
+  const a = document.createElement('a')
+  a.href = props.src
+  a.download = props.src.replace(/\\/g, '/').split('/').pop()?.split('?')[0] || 'video.mp4'
+  a.click()
+}
+
 function togglePlay() {
   if (!videoRef.value) return
   isPlaying.value ? videoRef.value.pause() : videoRef.value.play()
@@ -188,6 +195,14 @@ async function extractEnds() {
             </button>
             <button class="vp-extract-btn" :disabled="extractingEnds" @click="extractEnds">
               {{ extractingEnds ? '处理中...' : '抽取首尾帧' }}
+            </button>
+            <button class="vp-extract-btn" @click="download" title="下载">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;flex-shrink:0">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/>
+                <line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+              下载
             </button>
           </div>
         </div>

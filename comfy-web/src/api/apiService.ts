@@ -410,3 +410,154 @@ export async function favoriteAsset(assetId: number, userId: number, tag: 0 | 1 
   })
   if (!res.ok) throw new Error(`favorite failed: ${res.status}`)
 }
+
+// ── 团队协作：成员与审核 ────────────────────────────────────────────────────
+
+export type MemberRole = 'owner' | 'admin' | 'member'
+
+export interface ProjectMember {
+  user_id: number
+  role: MemberRole
+  user_name: string | null
+}
+
+// 待审核素材
+export interface PendingAsset {
+  category_id: number
+  assets_id: number
+  submitted_by: number
+  created_at: string | null
+  category_name: string
+  location: string | null
+  asset_type: string | null
+  reject_count: number   // 该素材在此分类历史上被驳回次数
+}
+
+// 审核时间线条目
+export interface ReviewEvent {
+  action: 'submit' | 'approve' | 'reject'
+  comment: string | null
+  reviewer_id: number | null
+  reviewer_name: string | null
+  created_at: string | null
+}
+
+// 我的提交条目
+export interface MySubmission {
+  category_id: number
+  assets_id: number
+  review_status: 'pending' | 'approved' | 'rejected'
+  created_at: string | null
+  category_name: string
+  location: string | null
+  asset_type: string | null
+  reject_count: number
+}
+
+// 提交素材到分类（member 提交需审核，owner/admin 直接通过）
+export async function addAssetToCategory(categoryId: number, assetId: number, userId: number): Promise<void> {
+  const res = await fetch(`${BASE}/categories/${categoryId}/assets`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ asset_id: assetId, user_id: userId }),
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(text || `add asset failed: ${res.status}`)
+  }
+}
+
+// 获取项目成员列表（需当前用户是项目成员）
+export async function listMembers(projectId: number, userId: number): Promise<ProjectMember[]> {
+  const res = await fetch(`${BASE}/projects/${projectId}/members?user_id=${userId}`)
+  if (!res.ok) throw new Error(`list members failed: ${res.status}`)
+  const data = await res.json()
+  return data.members || []
+}
+
+// 候选用户（尚未加入项目的用户）
+export interface CandidateUser {
+  id: number
+  user_name: string
+}
+
+// 获取可添加的候选用户列表（owner/admin 可操作）
+export async function listCandidateUsers(projectId: number, userId: number): Promise<CandidateUser[]> {
+  const res = await fetch(`${BASE}/projects/${projectId}/candidate-users?user_id=${userId}`)
+  if (!res.ok) throw new Error(`list candidate users failed: ${res.status}`)
+  const data = await res.json()
+  return data.users || []
+}
+
+// 邀请成员（owner/admin 可操作），按用户名添加
+export async function addMember(projectId: number, userId: number, username: string, role: MemberRole = 'member'): Promise<void> {
+  const res = await fetch(`${BASE}/projects/${projectId}/members`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id: userId, username, role }),
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(text || `add member failed: ${res.status}`)
+  }
+}
+
+// 设置成员角色（owner/admin 可操作）
+export async function setMemberRole(projectId: number, userId: number, targetUserId: number, role: MemberRole): Promise<void> {
+  const res = await fetch(`${BASE}/projects/${projectId}/members/${targetUserId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id: userId, role }),
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(text || `set role failed: ${res.status}`)
+  }
+}
+
+// 移除成员（owner/admin 可操作）
+export async function removeMember(projectId: number, userId: number, targetUserId: number): Promise<void> {
+  const res = await fetch(`${BASE}/projects/${projectId}/members/${targetUserId}?user_id=${userId}`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(text || `remove member failed: ${res.status}`)
+  }
+}
+
+// 获取项目待审核素材（owner/admin 可查）
+export async function listPendingAssets(projectId: number, userId: number): Promise<PendingAsset[]> {
+  const res = await fetch(`${BASE}/projects/${projectId}/pending-assets?user_id=${userId}`)
+  if (!res.ok) throw new Error(`list pending failed: ${res.status}`)
+  const data = await res.json()
+  return data.assets || []
+}
+
+// 审核素材（通过 / 拒绝），可附评语
+export async function reviewAsset(categoryId: number, assetId: number, userId: number, approve: boolean, comment?: string): Promise<void> {
+  const res = await fetch(`${BASE}/categories/${categoryId}/assets/${assetId}/review`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id: userId, approve, comment }),
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(text || `review failed: ${res.status}`)
+  }
+}
+
+// 查某素材在某分类的审核时间线（owner/admin 或提交人可查）
+export async function fetchReviewTimeline(categoryId: number, assetId: number, userId: number): Promise<ReviewEvent[]> {
+  const res = await fetch(`${BASE}/categories/${categoryId}/assets/${assetId}/reviews?user_id=${userId}`)
+  if (!res.ok) throw new Error(`fetch timeline failed: ${res.status}`)
+  return res.json()
+}
+
+// 查当前用户在项目下的提交（含被驳回的）
+export async function listMySubmissions(projectId: number, userId: number): Promise<MySubmission[]> {
+  const res = await fetch(`${BASE}/projects/${projectId}/my-submissions?user_id=${userId}`)
+  if (!res.ok) throw new Error(`list my submissions failed: ${res.status}`)
+  const data = await res.json()
+  return data.submissions || []
+}

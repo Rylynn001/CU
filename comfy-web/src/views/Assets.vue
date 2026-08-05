@@ -5,7 +5,9 @@ import VideoPlayer from '../components/VideoPlayer.vue'
 import ImageViewer from '../components/ImageViewer.vue'
 import AssetGrid from '../components/AssetGrid.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
+import ProjectTeamDialog from '../components/ProjectTeamDialog.vue'
 import { favoriteAsset } from '../api/apiService'
+import type { MemberRole } from '../api/apiService'
 
 interface Asset {
   id: number
@@ -17,13 +19,15 @@ interface Asset {
 interface Category {
   id: number
   name: string
-  assets: number[]
+  asset_count: number
 }
 
 interface Project {
   id: number
   name: string
-  categories: Category[]
+  category_count: number
+  categories?: Category[]   // 点击项目后按需加载
+  role?: MemberRole   // 当前用户在该项目的角色
 }
 
 // ── 资产展示 ──────────────────────────────────────────────────────────────
@@ -150,6 +154,20 @@ function getUser() {
   return s ? JSON.parse(s) : null
 }
 
+// ── 团队弹窗 ──────────────────────────────────────────────────────────────
+const showTeamDialog = ref(false)
+const currentUserId = computed(() => getUser()?.id ?? 0)
+
+function openTeamDialog() {
+  if (!selectedProject.value) return
+  showTeamDialog.value = true
+}
+
+// 审核通过后刷新当前分类资产
+function handleReviewed() {
+  if (selectedCategory.value) loadCategoryAssetDetails(selectedCategory.value.id)
+}
+
 // ── 资产加载 ──────────────────────────────────────────────────────────────
 async function loadAssets(assetType?: 'picture' | 'video') {
   const user = getUser()
@@ -219,19 +237,14 @@ const categoryAssetsLoading = ref(false)
 async function selectCategory(cat: Category) {
   if (selectedCategory.value?.id === cat.id) return
   selectedCategory.value = cat
-  await loadCategoryAssetDetails(cat.assets)
+  await loadCategoryAssetDetails(cat.id)
 }
 
-async function loadCategoryAssetDetails(ids: number[]) {
-  if (!ids.length) { categoryAssets.value = []; return }
+async function loadCategoryAssetDetails(categoryId: number) {
   if (categoryAssetsLoading.value) return
   categoryAssetsLoading.value = true
   try {
-    const res = await fetch('/api/api-proxy/assets/by-ids', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ids }),
-    })
+    const res = await fetch(`/api/api-proxy/categories/${categoryId}/assets`)
     if (!res.ok) throw new Error()
     const data = await res.json()
     categoryAssets.value = data.assets || []
@@ -242,15 +255,30 @@ async function loadCategoryAssetDetails(ids: number[]) {
   }
 }
 
-function selectProject(p: Project) {
+// 点击项目时按需加载分类
+async function loadCategories(p: Project) {
+  const user = getUser()
+  if (!user) return
+  try {
+    const res = await fetch(`/api/api-proxy/projects/${p.id}/categories?user_id=${user.id}`)
+    if (!res.ok) throw new Error()
+    const data = await res.json()
+    p.categories = data.categories || []
+  } catch {
+    p.categories = []
+    ElMessage.error('加载分类失败')
+  }
+}
+
+async function selectProject(p: Project) {
   // 已选中同一项目不重复加载
   if (selectedProject.value?.id === p.id) return
   selectedProject.value = p
-  if (p.categories.length > 0) {
+  selectedCategory.value = null
+  categoryAssets.value = []
+  await loadCategories(p)
+  if (p.categories && p.categories.length > 0) {
     selectCategory(p.categories[0])
-  } else {
-    selectedCategory.value = null
-    categoryAssets.value = []
   }
 }
 
@@ -282,7 +310,7 @@ async function confirmCreateProject() {
     })
     if (!res.ok) throw new Error('创建失败')
     const data = await res.json()
-    projects.value.push({ id: data.id, name: data.name, categories: data.categories || [] })
+    projects.value.push({ id: data.id, name: data.name, category_count: (data.categories || []).length, categories: data.categories || [] })
     ElMessage.success('项目已创建')
     showCreateProject.value = false
     newProjectName.value = ''
@@ -362,7 +390,9 @@ async function confirmCreateCategory() {
     })
     if (!res.ok) throw new Error('创建失败')
     const data = await res.json()
-    selectedProject.value.categories.push({ id: data.id, name: data.name, assets: [] })
+    if (!selectedProject.value.categories) selectedProject.value.categories = []
+    selectedProject.value.categories.push({ id: data.id, name: data.name, asset_count: 0 })
+    selectedProject.value.category_count += 1
     ElMessage.success('分类已创建')
     showCreateCategory.value = false
     newCategoryName.value = ''
@@ -378,7 +408,10 @@ async function deleteCategory(cat: Category) {
   const res = await fetch(`/api/api-proxy/categories/${cat.id}`, { method: 'DELETE' })
   if (!res.ok) throw new Error('删除失败')
   if (selectedProject.value) {
-    selectedProject.value.categories = selectedProject.value.categories.filter(c => c.id !== cat.id)
+    if (selectedProject.value.categories) {
+      selectedProject.value.categories = selectedProject.value.categories.filter(c => c.id !== cat.id)
+    }
+    selectedProject.value.category_count = Math.max(0, selectedProject.value.category_count - 1)
   }
   if (selectedCategory.value?.id === cat.id) { selectedCategory.value = null; categoryAssets.value = [] }
   ElMessage.success('已删除')
@@ -392,7 +425,7 @@ async function removeAssetFromCategory(asset: Asset) {
     })
     if (!res.ok) throw new Error()
     // 从当前分类的资产列表中移除
-    selectedCategory.value.assets = selectedCategory.value.assets.filter(id => id !== asset.id)
+    selectedCategory.value.asset_count = Math.max(0, selectedCategory.value.asset_count - 1)
     categoryAssets.value = categoryAssets.value.filter(a => a.id !== asset.id)
     ElMessage.success('已移除')
   } catch {
@@ -444,7 +477,7 @@ async function submitEdit() {
       })
       if (!res.ok) throw new Error('重命名失败')
       if (selectedProject.value) {
-        const cat = selectedProject.value.categories.find(c => c.id === id)
+        const cat = selectedProject.value.categories?.find(c => c.id === id)
         if (cat) cat.name = name
       }
       if (selectedCategory.value?.id === id) selectedCategory.value.name = name
@@ -649,7 +682,7 @@ onUnmounted(() => {
               </div>
               <div class="project-card-info">
                 <span class="project-card-name">{{ p.name }}</span>
-                <span class="project-card-meta">{{ p.categories.length }} 个分类</span>
+                <span class="project-card-meta">{{ p.category_count }} 个分类</span>
               </div>
             </div>
           </div>
@@ -662,10 +695,13 @@ onUnmounted(() => {
                 <span class="bc-sep">›</span>
                 <span class="bc-current">{{ selectedProject.name }}</span>
               </div>
-              <button class="refresh-btn" @click="showCreateCategory = true">+ 新建分类</button>
+              <div style="display:flex; gap:8px;">
+                <button class="refresh-btn" @click="openTeamDialog">团队协作</button>
+                <button class="refresh-btn" @click="showCreateCategory = true">+ 新建分类</button>
+              </div>
             </div>
 
-            <div v-if="selectedProject.categories.length === 0" class="empty">
+            <div v-if="!selectedProject.categories || selectedProject.categories.length === 0" class="empty">
               <div class="empty-orb" />
               <p class="empty-text">暂无分类，点击右上角新建</p>
             </div>
@@ -692,7 +728,7 @@ onUnmounted(() => {
                   </template>
                   <template v-else>
                     <span @dblclick.stop="startEdit('category', cat.id, cat.name)">{{ cat.name }}</span>
-                    <span class="cat-count">{{ cat.assets.length }}</span>
+                    <span class="cat-count">{{ cat.asset_count }}</span>
                     <span class="cat-del-tab" title="删除" @click.stop="confirmDeleteCategory(cat)">✕</span>
                   </template>
                 </div>
@@ -801,6 +837,18 @@ onUnmounted(() => {
       :confirm-loading="deleteConfirmLoading"
       @confirm="handleDeleteConfirm"
       @cancel="handleDeleteCancel"
+    />
+
+    <!-- 团队协作弹窗 -->
+    <ProjectTeamDialog
+      v-if="selectedProject"
+      :visible="showTeamDialog"
+      :project-id="selectedProject.id"
+      :project-name="selectedProject.name"
+      :current-role="selectedProject.role || 'member'"
+      :current-user-id="currentUserId"
+      @close="showTeamDialog = false"
+      @reviewed="handleReviewed"
     />
   </div>
 </template>

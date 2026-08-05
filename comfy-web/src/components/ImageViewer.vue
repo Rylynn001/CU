@@ -86,6 +86,13 @@ function stopDrag() {
   window.removeEventListener('pointerup', stopDrag)
 }
 
+function download() {
+  const a = document.createElement('a')
+  a.href = props.src
+  a.download = props.src.replace(/\\/g, '/').split('/').pop()?.split('?')[0] || 'image.png'
+  a.click()
+}
+
 function close() {
   emit('close')
 }
@@ -126,6 +133,7 @@ onUnmounted(() => {
             draggable="false"
             @pointerdown.prevent="startDrag"
           />
+          <button class="download-btn" @click.stop="download" title="下载"><span>⬇</span></button>
           <button class="viewer-close" @click="close" title="关闭 (ESC)">✕</button>
           <button v-if="showNav" class="viewer-nav viewer-prev" @click="prev" title="上一张 (←)">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
@@ -205,6 +213,25 @@ onUnmounted(() => {
 .viewer-close:hover {
   background: rgba(255, 255, 255, 0.15);
   border-color: rgba(255, 255, 255, 0.4);
+  transform: scale(1.1);
+}
+.download-btn {
+  position: absolute;
+  bottom: 12px; right: 12px;
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  background: rgba(4, 8, 13, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: white; font-size: 18px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.2s, transform 0.2s, border-color 0.2s;
+  backdrop-filter: blur(10px);
+}
+.download-btn:hover {
+  background: rgba(255, 255, 255, 0.92);
+  border-color: rgba(255, 255, 255, 0.74);
+  color: #03050a;
   transform: scale(1.1);
 }
 .viewer-nav {

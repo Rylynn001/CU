@@ -63,12 +63,32 @@ async def _download_video(task_id: str, video_url: str, stored_user_id: str | No
     filename = f'{uuid.uuid4().hex}.mp4'
     save_path = OUTPUT_DIR / filename
 
-    async with aiohttp.ClientSession() as session:
-        async with session.get(video_url, timeout=aiohttp.ClientTimeout(total=600)) as resp:
-            if resp.status != 200:
-                raise Exception(f'Failed to download video: {resp.status}')
-            with open(save_path, 'wb') as f:
-                f.write(await resp.read())
+    max_retries = 3
+    last_error = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(video_url, timeout=aiohttp.ClientTimeout(total=600)) as resp:
+                    if resp.status != 200:
+                        raise Exception(f'Failed to download video: {resp.status}')
+                    expected_size = resp.content_length
+                    written = 0
+                    with open(save_path, 'wb') as f:
+                        async for chunk in resp.content.iter_chunked(1 << 16):
+                            f.write(chunk)
+                            written += len(chunk)
+            # 校验下载完整性，防止半截文件被当成成功
+            if expected_size is not None and written < expected_size:
+                raise Exception(f'视频下载不完整: {written}/{expected_size} 字节')
+            break
+        except Exception as e:
+            last_error = e
+            save_path.unlink(missing_ok=True)
+            logger.warning(f'[{task_id}] 视频下载失败(第 {attempt}/{max_retries} 次): {e}')
+            if attempt < max_retries:
+                await asyncio.sleep(2 * attempt)
+    else:
+        raise Exception(f'视频下载重试 {max_retries} 次仍失败: {last_error}')
 
     local_url = f'/api/api-proxy/output/{filename}'
     logger.info(f'[{task_id}] 视频已保存至 {save_path}')
@@ -137,7 +157,8 @@ async def _poll_ark_task(task_id: str, remote_id: str, api_key: str, base_url: s
                 })
             except Exception as download_error:
                 task_queue.release_downloading_lock(task_id)
-                raise download_error
+                logger.error(f'[{task_id}] 下载视频失败，将在下次轮询重试: {download_error}')
+                return None
 
         elif remote_status == "failed":
             error_info = result.get("error") if isinstance(result, dict) else None
