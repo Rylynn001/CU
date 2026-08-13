@@ -146,7 +146,7 @@ async function handleLogout() {
   background: rgba(255, 255, 255, 0.9);
   animation: pulse-dot 2.5s ease-in-out infinite;
   flex-shrink: 0;
-  box-shadow: 0 0 24px rgba(166, 231, 226, 0.24);
+  box-shadow: 0 0 24px rgba(255,255,255, 0.24);
 }
 
 .nav-list {

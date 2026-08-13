@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted } from 'vue'
-import { ElMessage } from 'element-plus'
 
 const props = defineProps<{
   visible: boolean
@@ -20,6 +19,17 @@ const isPlaying = ref(false)
 const currentTime = ref(0)
 const duration = ref(0)
 const extracting = ref(false)
+const notice = ref<{ type: 'success' | 'error' | 'warning'; message: string } | null>(null)
+let noticeTimer: ReturnType<typeof setTimeout> | null = null
+
+function showNotice(type: 'success' | 'error' | 'warning', message: string) {
+  notice.value = { type, message }
+  if (noticeTimer) clearTimeout(noticeTimer)
+  noticeTimer = setTimeout(() => {
+    notice.value = null
+    noticeTimer = null
+  }, 3000)
+}
 
 watch(() => props.visible, (v) => {
   if (!v) videoRef.value?.pause()
@@ -55,7 +65,10 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 onMounted(() => window.addEventListener('keydown', onKeydown))
-onUnmounted(() => window.removeEventListener('keydown', onKeydown))
+onUnmounted(() => {
+  window.removeEventListener('keydown', onKeydown)
+  if (noticeTimer) clearTimeout(noticeTimer)
+})
 
 function close() {
   videoRef.value?.pause()
@@ -98,11 +111,10 @@ const extractingEnds = ref(false)
 
 async function doExtract(timeSec: number) {
   if (!props.assetId) {
-    ElMessage.warning('无法获取资产ID')
-    return
+    throw new Error('无法获取资产ID')
   }
   const userStr = localStorage.getItem('user')
-  if (!userStr) { ElMessage.error('请先登录'); return }
+  if (!userStr) throw new Error('请先登录')
   const user = JSON.parse(userStr)
 
   const res = await fetch('/api/api-proxy/extract-frame', {
@@ -118,24 +130,24 @@ async function extractFrame() {
   extracting.value = true
   try {
     await doExtract(currentTime.value)
-    ElMessage.success('抽帧成功，已保存到资产库')
+    showNotice('success', '抽帧成功，已保存到资产库')
   } catch (e: any) {
-    ElMessage.error(e.message || '抽帧失败')
+    showNotice('error', e.message || '抽帧失败')
   } finally {
     extracting.value = false
   }
 }
 
 async function extractEnds() {
-  if (!duration.value) { ElMessage.warning('视频时长未加载'); return }
+  if (!duration.value) { showNotice('warning', '视频时长未加载'); return }
   videoRef.value?.pause()
   extractingEnds.value = true
   try {
     await doExtract(0)
     await doExtract(Math.max(0, duration.value - 0.1))
-    ElMessage.success('首尾帧已保存到资产库')
+    showNotice('success', '首尾帧已保存到资产库')
   } catch (e: any) {
-    ElMessage.error(e.message || '抽帧失败')
+    showNotice('error', e.message || '抽帧失败')
   } finally {
     extractingEnds.value = false
   }
@@ -145,6 +157,12 @@ async function extractEnds() {
 <template>
   <Teleport to="body">
     <div v-if="visible" class="vp-overlay" @click.self="close">
+      <Transition name="vp-notice">
+        <div v-if="notice" class="vp-notice" :class="notice.type" role="status">
+          <span class="vp-notice-dot" />
+          {{ notice.message }}
+        </div>
+      </Transition>
       <div class="vp-modal">
         <button class="vp-close" @click="close">×</button>
         <button v-if="showNav" class="vp-nav vp-nav-prev" @click="emit('prev')" title="上一个 (←)">
@@ -221,6 +239,41 @@ async function extractEnds() {
   align-items: center;
   justify-content: center;
 }
+
+.vp-notice {
+  position: fixed;
+  top: 28px;
+  left: 50%;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  max-width: calc(100vw - 32px);
+  padding: 10px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 8px;
+  background: #202126;
+  color: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  font-size: 13px;
+  transform: translateX(-50%);
+}
+
+.vp-notice-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.72);
+  flex-shrink: 0;
+}
+.vp-notice.success .vp-notice-dot { background: #4ade80; }
+.vp-notice.error .vp-notice-dot { background: #fb7185; }
+.vp-notice.warning .vp-notice-dot { background: #facc15; }
+
+.vp-notice-enter-active,
+.vp-notice-leave-active { transition: opacity 0.2s, transform 0.2s; }
+.vp-notice-enter-from,
+.vp-notice-leave-to { opacity: 0; transform: translate(-50%, -8px); }
 
 .vp-modal {
   position: relative;
@@ -305,7 +358,7 @@ async function extractEnds() {
 
 .vp-fill {
   height: 100%;
-  background: rgba(108, 99, 255, 0.9);
+  background: rgba(255,255,255, 0.9);
   border-radius: 2px;
   transition: width 0.1s linear;
 }
@@ -331,7 +384,7 @@ async function extractEnds() {
   transition: background 0.2s;
 }
 .vp-play-btn:hover {
-  background: rgba(108, 99, 255, 0.4);
+  background: rgba(255,255,255, 0.4);
 }
 
 .vp-time {
@@ -348,17 +401,17 @@ async function extractEnds() {
   align-items: center;
   padding: 5px 14px;
   border-radius: 6px;
-  background: rgba(108, 99, 255, 0.15);
-  border: 1px solid rgba(108, 99, 255, 0.35);
-  color: rgba(167, 139, 250, 0.9);
+  background: rgba(255,255,255, 0.15);
+  border: 1px solid rgba(255,255,255, 0.35);
+  color: rgba(255,255,255, 0.9);
   font-size: 12px;
   cursor: pointer;
   transition: all 0.2s;
   white-space: nowrap;
 }
 .vp-extract-btn:hover:not(:disabled) {
-  background: rgba(108, 99, 255, 0.35);
-  border-color: rgba(108, 99, 255, 0.6);
+  background: rgba(255,255,255, 0.35);
+  border-color: rgba(255,255,255, 0.6);
   color: #fff;
 }
 .vp-extract-btn:disabled {

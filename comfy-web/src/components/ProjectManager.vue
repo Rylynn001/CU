@@ -285,7 +285,7 @@ watch(() => props.visible, (newVal) => {
 .dialog-body::-webkit-scrollbar { width: 4px; }
 .dialog-body::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.03); }
 .dialog-body::-webkit-scrollbar-thumb {
-  background: rgba(108, 99, 255, 0.3);
+  background: rgba(255,255,255, 0.3);
   border-radius: 2px;
 }
 
@@ -300,8 +300,8 @@ watch(() => props.visible, (newVal) => {
   width: 24px;
   height: 24px;
   border-radius: 50%;
-  border: 2px solid rgba(108, 99, 255, 0.3);
-  border-top-color: rgba(108, 99, 255, 0.9);
+  border: 2px solid rgba(255,255,255, 0.3);
+  border-top-color: rgba(255,255,255, 0.9);
   animation: spin 0.8s linear infinite;
 }
 
@@ -327,8 +327,8 @@ watch(() => props.visible, (newVal) => {
 }
 
 .project-section.expanded {
-  border-color: rgba(108, 99, 255, 0.3);
-  background: rgba(108, 99, 255, 0.05);
+  border-color: rgba(255,255,255, 0.3);
+  background: rgba(255,255,255, 0.05);
 }
 
 .project-header {
@@ -387,12 +387,12 @@ watch(() => props.visible, (newVal) => {
 
 .category-item:hover {
   background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(108, 99, 255, 0.2);
+  border-color: rgba(255,255,255, 0.2);
 }
 
 .category-item.selected {
-  background: rgba(108, 99, 255, 0.2);
-  border-color: rgba(108, 99, 255, 0.6);
+  background: rgba(255,255,255, 0.2);
+  border-color: rgba(255,255,255, 0.6);
 }
 
 .category-name {
@@ -413,8 +413,8 @@ watch(() => props.visible, (newVal) => {
 }
 
 .category-item.selected .category-count {
-  background: rgba(167, 139, 250, 0.25);
-  color: rgba(167, 139, 250, 0.9);
+  background: rgba(255,255,255, 0.25);
+  color: rgba(255,255,255, 0.9);
 }
 
 .dialog-footer {
@@ -448,13 +448,13 @@ watch(() => props.visible, (newVal) => {
 }
 
 .dialog-btn.confirm {
-  background: rgba(108, 99, 255, 0.3);
-  border-color: rgba(108, 99, 255, 0.6);
+  background: rgba(255,255,255, 0.3);
+  border-color: rgba(255,255,255, 0.6);
   color: rgba(255, 255, 255, 0.95);
 }
 
 .dialog-btn.confirm:hover:not(:disabled) {
-  background: rgba(108, 99, 255, 0.45);
+  background: rgba(255,255,255, 0.45);
 }
 
 .dialog-btn.confirm:disabled {

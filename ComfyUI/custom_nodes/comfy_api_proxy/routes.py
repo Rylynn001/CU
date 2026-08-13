@@ -590,12 +590,16 @@ async def add_asset_to_category(request: web.Request):
     body = await request.json()
     asset_id = body.get('asset_id')
     user_id = body.get('user_id')
+    resubmit_id = body.get('resubmit_id')  # 续接被驳回的提交记录（重新提交时传）
     if asset_id is None or user_id is None:
         raise web.HTTPBadRequest(reason='asset_id and user_id are required')
     try:
-        review_status = asset_repo.add_asset_to_category(category_id, int(asset_id), int(user_id))
+        review_status = asset_repo.add_asset_to_category(
+            category_id, int(asset_id), int(user_id),
+            resubmit_id=int(resubmit_id) if resubmit_id is not None else None
+        )
         if review_status is None:
-            raise web.HTTPForbidden(reason='非项目成员，无法提交素材')
+            raise web.HTTPForbidden(reason='非项目成员或无权续接该提交记录')
         return web.json_response({'ok': True, 'review_status': review_status})
     except web.HTTPException:
         raise
@@ -709,18 +713,15 @@ async def remove_project_member(request: web.Request):
     return web.json_response({'ok': True})
 
 
-# ── /api-proxy/projects/{project_id}/pending-assets ───────────────────────
+# ── /api-proxy/pending-assets ─────────────────────────────────────────────
 
-@routes.get('/api-proxy/projects/{project_id}/pending-assets')
+@routes.get('/api-proxy/pending-assets')
 async def list_pending_assets(request: web.Request):
     from .repositories import asset_repo
-    project_id = int(request.match_info['project_id'])
     user_id = request.rel_url.query.get('user_id')
     if not user_id:
         raise web.HTTPBadRequest(reason='user_id is required')
-    assets = asset_repo.list_pending_assets(project_id, int(user_id))
-    if assets is None:
-        raise web.HTTPForbidden(reason='无审核权限')
+    assets = asset_repo.list_pending_assets(int(user_id))
     return web.json_response({'assets': assets})
 
 
@@ -755,16 +756,13 @@ async def get_asset_review_timeline(request: web.Request):
     return web.json_response(result)
 
 
-@routes.get('/api-proxy/projects/{project_id}/my-submissions')
+@routes.get('/api-proxy/my-submissions')
 async def list_my_submissions(request: web.Request):
     from .repositories import asset_repo
-    project_id = int(request.match_info['project_id'])
     user_id = request.rel_url.query.get('user_id')
     if not user_id:
         raise web.HTTPBadRequest(reason='user_id is required')
-    subs = asset_repo.list_my_submissions(project_id, int(user_id))
-    if subs is None:
-        raise web.HTTPForbidden(reason='非项目成员')
+    subs = asset_repo.list_my_submissions(int(user_id))
     return web.json_response({'submissions': subs})
 
 

@@ -1249,11 +1249,11 @@ function stopResize() {
 }
 
 .preview-panel.drag-over {
-  border-color: rgba(166, 231, 226, 0.5);
-  background: rgba(166, 231, 226, 0.08);
+  border-color: rgba(255,255,255, 0.5);
+  background: rgba(255,255,255, 0.08);
 }
 .preview-panel.is-trace {
-  border-color: rgba(166, 231, 226, 0.4);
+  border-color: rgba(255,255,255, 0.4);
 }
 
 .panel-tag {
@@ -1272,8 +1272,8 @@ function stopResize() {
 .trace-tag {
   padding: 2px 8px;
   border-radius: 6px;
-  background: rgba(166, 231, 226, 0.16);
-  color: #a6e7e2;
+  background: rgba(255,255,255, 0.16);
+  color: rgba(255,255,255,0.82);
   letter-spacing: 0;
 }
 
@@ -1394,7 +1394,7 @@ function stopResize() {
 }
 
 .gen-panel-dock.is-drag-over {
-  outline: 2px solid rgba(166, 231, 226, 0.72);
+  outline: 2px solid rgba(255,255,255, 0.72);
   outline-offset: -2px;
 }
 

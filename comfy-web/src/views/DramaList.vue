@@ -207,7 +207,7 @@ onMounted(load)
   transition: transform 0.22s ease, box-shadow 0.22s ease, border-color 0.2s;
 }
 .project-card:hover {
-  border-color: #a78bfa;
+  border-color: rgba(255,255,255,0.82);
   box-shadow: 0 8px 32px rgba(0,0,0,0.4);
   transform: translateY(-3px);
 }
@@ -226,8 +226,8 @@ onMounted(load)
   border-radius: 2px;
   transition: background 0.2s;
 }
-.project-card:hover .film-hole:nth-child(2) { background: #a78bfa; }
-.project-card:hover .film-hole:nth-child(4) { background: rgba(167,139,250,0.5); }
+.project-card:hover .film-hole:nth-child(2) { background: rgba(255,255,255,0.14); }
+.project-card:hover .film-hole:nth-child(4) { background: rgba(255,255,255,0.5); }
 
 .card-body { padding: 18px 18px 14px; flex: 1; display: flex; flex-direction: column; gap: 10px; }
 .card-header { display: flex; justify-content: space-between; align-items: center; }
@@ -235,7 +235,7 @@ onMounted(load)
   display: flex; align-items: center; gap: 5px;
   font-size: 11px; font-weight: 600; color: rgba(255,255,255,0.4); letter-spacing: 0.04em;
 }
-.episode-badge svg { color: #a78bfa; }
+.episode-badge svg { color: rgba(255,255,255,0.82); }
 
 .btn-ghost-icon {
   background: none; border: none; cursor: pointer; padding: 4px;
@@ -250,8 +250,8 @@ onMounted(load)
 .project-meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .style-tag {
   font-size: 11px; font-weight: 500; padding: 2px 8px;
-  background: rgba(167,139,250,0.12); color: #c4b5fd; border-radius: 99px;
-  border: 1px solid rgba(167,139,250,0.2);
+  background: rgba(255,255,255,0.12); color: rgba(255,255,255,0.82); border-radius: 99px;
+  border: 1px solid rgba(255,255,255,0.2);
 }
 .meta-item { display: flex; align-items: center; gap: 4px; font-size: 12px; color: rgba(255,255,255,0.4); }
 
@@ -280,7 +280,7 @@ onMounted(load)
   color: rgba(255,255,255,0.3);
   transition: all 0.2s ease;
 }
-.empty-card:hover { border-color: #a78bfa; background: rgba(167,139,250,0.06); color: #a78bfa; transform: translateY(-2px); }
+.empty-card:hover { border-color: rgba(255,255,255,0.82); background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.82); transform: translateY(-2px); }
 .empty-title { font-size: 14px; font-weight: 600; color: rgba(255,255,255,0.7); margin: 0; }
 .empty-desc { font-size: 12px; color: rgba(255,255,255,0.35); max-width: 220px; line-height: 1.6; margin: 0; }
 
@@ -290,7 +290,7 @@ onMounted(load)
   display: flex; align-items: center; justify-content: center;
 }
 .modal {
-  background: #1a1a2e; border: 1px solid rgba(255,255,255,0.1);
+  background: #1a1a1d; border: 1px solid rgba(255,255,255,0.1);
   border-radius: 16px; padding: 32px; width: 460px;
   box-shadow: 0 24px 64px rgba(0,0,0,0.6);
 }
@@ -306,18 +306,18 @@ onMounted(load)
   border-radius: 8px; padding: 8px 12px; color: #fff; font-size: 13px;
   outline: none; transition: border-color 0.2s;
 }
-.field-input:focus { border-color: #a78bfa; }
-.field-input option { background: #1a1a2e; }
+.field-input:focus { border-color: rgba(255,255,255,0.82); }
+.field-input option { background: #1a1a1d; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; padding-top: 6px; }
 
 /* buttons */
 .btn-primary {
   display: flex; align-items: center; gap: 6px;
-  background: #7c3aed; color: #fff; border: none;
+  background: rgba(255,255,255,0.14); color: #fff; border: none;
   border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 500;
   cursor: pointer; transition: background 0.2s;
 }
-.btn-primary:hover { background: #6d28d9; }
+.btn-primary:hover { background: rgba(255,255,255,0.14); }
 .btn-ghost {
   background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.7);
   border: 1px solid rgba(255,255,255,0.1); border-radius: 8px;

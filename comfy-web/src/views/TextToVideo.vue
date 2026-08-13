@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 defineOptions({ name: 'TextToVideo' })
 // Vue 鏍稿績
 import { ref, onMounted, onUnmounted, computed, nextTick, watch } from 'vue'
@@ -1044,7 +1044,7 @@ onUnmounted(() => {
 /* 鈹€鈹€ 瑙嗛椤典笓灞炴牱寮?鈹€鈹€ */
 
 .prompt-hint {
-  color: rgba(167,139,250,0.6);
+  color: rgba(255,255,255,0.6);
   font-size: 10px;
   margin-left: 8px;
 }
@@ -1059,10 +1059,10 @@ onUnmounted(() => {
   color: rgba(255,255,255,0.5); font-size: 11px;
   cursor: pointer; transition: all 0.2s;
 }
-.filter-btn:hover { border-color: rgba(108,99,255,0.3); background: rgba(108,99,255,0.05); }
+.filter-btn:hover { border-color: rgba(255,255,255,0.3); background: rgba(255,255,255,0.05); }
 .filter-btn.active {
-  border-color: rgba(108,99,255,0.6);
-  background: rgba(108,99,255,0.2);
+  border-color: rgba(255,255,255,0.6);
+  background: rgba(255,255,255,0.2);
   color: rgba(255,255,255,0.9);
 }
 
@@ -1074,7 +1074,7 @@ onUnmounted(() => {
   border-radius: 8px; overflow: hidden;
   height: 34px; width: 120px; transition: border-color 0.2s;
 }
-.stepper:hover { border-color: rgba(108,99,255,0.35); }
+.stepper:hover { border-color: rgba(255,255,255,0.35); }
 
 .stepper-btn {
   width: 30px; height: 100%;
@@ -1082,7 +1082,7 @@ onUnmounted(() => {
   color: rgba(255,255,255,0.45); font-size: 15px; cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
-.stepper-btn:hover { background: rgba(108,99,255,0.2); color: #fff; }
+.stepper-btn:hover { background: rgba(255,255,255,0.2); color: #fff; }
 
 .stepper-input {
   flex: 1; height: 100%;
@@ -1103,7 +1103,7 @@ onUnmounted(() => {
   background: transparent; color: rgba(255,255,255,0.4);
   font-size: 12px; cursor: pointer; transition: all 0.2s;
 }
-.audio-upload-btn:hover { border-color: rgba(108,99,255,0.45); color: rgba(108,99,255,0.8); }
+.audio-upload-btn:hover { border-color: rgba(255,255,255,0.45); color: rgba(255,255,255,0.8); }
 .audio-file-card {
   display: inline-flex; align-items: center; gap: 8px;
   height: 36px; padding: 0 10px 0 12px; border-radius: 8px;
@@ -1131,8 +1131,8 @@ onUnmounted(() => {
   gap: 6px; transition: all 0.3s;
 }
 .asset-btn:hover, .local-upload-btn:hover {
-  border-color: rgba(108,99,255,0.45);
-  background: rgba(108,99,255,0.04);
+  border-color: rgba(255,255,255,0.45);
+  background: rgba(255,255,255,0.04);
   color: rgba(255,255,255,0.8);
 }
 
@@ -1177,7 +1177,7 @@ onUnmounted(() => {
   cursor: pointer; display: flex; align-items: center; justify-content: center;
   transition: all 0.2s; z-index: 2;
 }
-.edit-btn:hover { background: rgba(108,99,255,0.9); transform: scale(1.1); }
+.edit-btn:hover { background: rgba(255,255,255,0.9); transform: scale(1.1); }
 
 .preview-badge {
   position: absolute; bottom: 4px; left: 4px;
@@ -1252,8 +1252,8 @@ onUnmounted(() => {
   opacity: 0;
 }
 .add-to-project-btn:hover {
-  background: rgba(108, 99, 255, 0.8);
-  border-color: rgba(167, 139, 250, 0.5);
+  background: rgba(255,255,255, 0.8);
+  border-color: rgba(255,255,255, 0.5);
   transform: scale(1.1);
 }
 
@@ -1265,9 +1265,9 @@ onUnmounted(() => {
   animation: record-locate-pulse 1.8s ease;
 }
 @keyframes record-locate-pulse {
-  0% { box-shadow: 0 0 0 0 rgba(108,99,255,0.6); background: rgba(108,99,255,0.12); }
-  60% { box-shadow: 0 0 0 8px rgba(108,99,255,0); background: rgba(108,99,255,0.12); }
-  100% { box-shadow: 0 0 0 0 rgba(108,99,255,0); background: transparent; }
+  0% { box-shadow: 0 0 0 0 rgba(255,255,255,0.6); background: rgba(255,255,255,0.12); }
+  60% { box-shadow: 0 0 0 8px rgba(255,255,255,0); background: rgba(255,255,255,0.12); }
+  100% { box-shadow: 0 0 0 0 rgba(255,255,255,0); background: transparent; }
 }
 
 .history-pagination {
@@ -1299,24 +1299,24 @@ onUnmounted(() => {
   cursor: pointer;
   transition: all 0.2s;
 }
-.page-size-btn:hover { border-color: rgba(108,99,255,0.3); color: rgba(255,255,255,0.8); }
+.page-size-btn:hover { border-color: rgba(255,255,255,0.3); color: rgba(255,255,255,0.8); }
 .page-size-btn.active {
-  border-color: rgba(108,99,255,0.6);
-  background: rgba(108,99,255,0.2);
+  border-color: rgba(255,255,255,0.6);
+  background: rgba(255,255,255,0.2);
   color: rgba(255,255,255,0.9);
 }
 
 .load-more-btn {
   padding: 4px 16px;
   border-radius: 6px;
-  border: 1px solid rgba(108,99,255,0.4);
-  background: rgba(108,99,255,0.12);
+  border: 1px solid rgba(255,255,255,0.4);
+  background: rgba(255,255,255,0.12);
   color: rgba(255,255,255,0.7);
   font-size: 12px;
   cursor: pointer;
   transition: all 0.2s;
 }
-.load-more-btn:hover:not(:disabled) { background: rgba(108,99,255,0.25); color: #fff; }
+.load-more-btn:hover:not(:disabled) { background: rgba(255,255,255,0.25); color: #fff; }
 .load-more-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .no-more-text {

@@ -127,12 +127,12 @@ function handleKeydown(e: KeyboardEvent) {
 }
 .orb-1 {
   width: 500px; height: 500px;
-  background: radial-gradient(circle, rgba(108,99,255,0.16) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(255,255,255,0.16) 0%, transparent 70%);
   top: -140px; left: 40px;
 }
 .orb-2 {
   width: 400px; height: 400px;
-  background: radial-gradient(circle, rgba(167,139,250,0.12) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(255,255,255,0.12) 0%, transparent 70%);
   bottom: -100px; right: 60px;
   animation-delay: 3s;
 }
@@ -161,7 +161,7 @@ function handleKeydown(e: KeyboardEvent) {
   color: rgba(255,255,255,0.92);
   letter-spacing: 3px;
   margin: 0 0 8px;
-  background: linear-gradient(135deg, #6c63ff, #a78bfa);
+  background: linear-gradient(135deg, rgba(255,255,255,0.14), rgba(255,255,255,0.82));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;

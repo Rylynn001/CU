@@ -113,12 +113,12 @@ async function handleGenerate() {
 }
 .orb-1 {
   width: 500px; height: 500px;
-  background: radial-gradient(circle, rgba(108,99,255,0.16) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(255,255,255,0.16) 0%, transparent 70%);
   top: -140px; left: 40px;
 }
 .orb-2 {
   width: 400px; height: 400px;
-  background: radial-gradient(circle, rgba(167,139,250,0.12) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(255,255,255,0.12) 0%, transparent 70%);
   bottom: -100px; right: 60px;
   animation-delay: 3s;
 }
@@ -160,8 +160,8 @@ async function handleGenerate() {
 
 .model-tag {
   font-size: 10px;
-  color: rgba(167,139,250,0.7);
-  border: 1px solid rgba(108,99,255,0.25);
+  color: rgba(255,255,255,0.7);
+  border: 1px solid rgba(255,255,255,0.25);
   padding: 2px 10px;
   border-radius: 20px;
   letter-spacing: 1px;
@@ -189,7 +189,7 @@ async function handleGenerate() {
   margin-top: 8px;
   border-radius: 12px; border: none;
   cursor: pointer; overflow: hidden;
-  background: linear-gradient(135deg, #6c63ff, #a78bfa, #6c63ff);
+  background: linear-gradient(135deg, rgba(255,255,255,0.14), rgba(255,255,255,0.82), rgba(255,255,255,0.82));
   background-size: 200% auto;
   color: #fff; font-size: 14px;
   font-weight: 600; letter-spacing: 2px;
@@ -255,15 +255,15 @@ async function handleGenerate() {
 
 .download-link {
   font-size: 12px;
-  color: rgba(167,139,250,0.7);
+  color: rgba(255,255,255,0.7);
   text-decoration: none;
-  border: 1px solid rgba(108,99,255,0.2);
+  border: 1px solid rgba(255,255,255,0.2);
   padding: 5px 18px;
   border-radius: 20px;
   letter-spacing: 1px;
   transition: border-color 0.2s, color 0.2s;
 }
-.download-link:hover { border-color: rgba(108,99,255,0.5); color: #a78bfa; }
+.download-link:hover { border-color: rgba(255,255,255,0.5); color: rgba(255,255,255,0.82); }
 
 /* Loading */
 .api-loading {
@@ -286,16 +286,16 @@ async function handleGenerate() {
 .ring {
   position: absolute;
   border-radius: 50%;
-  border: 1.5px solid rgba(108, 99, 255, 0.5);
+  border: 1.5px solid rgba(255,255,255, 0.5);
   animation: breathe 3s ease-in-out infinite;
 }
 .r1 { width: 100%; height: 100%; animation-delay: 0s; }
-.r2 { width: 72%; height: 72%; animation-delay: 0.5s; border-color: rgba(167,139,250,0.5); }
-.r3 { width: 44%; height: 44%; animation-delay: 1s; border-color: rgba(196,181,253,0.6); }
+.r2 { width: 72%; height: 72%; animation-delay: 0.5s; border-color: rgba(255,255,255,0.5); }
+.r3 { width: 44%; height: 44%; animation-delay: 1s; border-color: rgba(255,255,255,0.6); }
 .center-dot {
   width: 10px; height: 10px;
   border-radius: 50%;
-  background: #a78bfa;
+  background: rgba(255,255,255,0.14);
   animation: pulse-dot 2s ease-in-out infinite;
 }
 
@@ -307,8 +307,8 @@ async function handleGenerate() {
 .empty-orb {
   width: 60px; height: 60px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(108,99,255,0.15) 0%, transparent 70%);
-  border: 1px solid rgba(108,99,255,0.15);
+  background: radial-gradient(circle, rgba(255,255,255,0.15) 0%, transparent 70%);
+  border: 1px solid rgba(255,255,255,0.15);
   animation: breathe 4s ease-in-out infinite;
 }
 .empty-text {

@@ -76,17 +76,17 @@ const progressPct = computed(() => Math.round(props.progress))
 .ring {
   position: absolute;
   border-radius: 50%;
-  border: 1.5px solid rgba(108, 99, 255, 0.5);
+  border: 1.5px solid rgba(255,255,255, 0.5);
   animation: breathe 3s ease-in-out infinite;
 }
 .r1 { width: 100%; height: 100%; animation-delay: 0s; }
-.r2 { width: 72%; height: 72%; animation-delay: 0.5s; border-color: rgba(167,139,250,0.5); }
-.r3 { width: 44%; height: 44%; animation-delay: 1s; border-color: rgba(196,181,253,0.6); }
+.r2 { width: 72%; height: 72%; animation-delay: 0.5s; border-color: rgba(255,255,255,0.5); }
+.r3 { width: 44%; height: 44%; animation-delay: 1s; border-color: rgba(255,255,255,0.6); }
 
 .center-dot {
   width: 10px; height: 10px;
   border-radius: 50%;
-  background: #a78bfa;
+  background: rgba(255,255,255,0.14);
   animation: pulse-dot 2s ease-in-out infinite;
 }
 
@@ -101,7 +101,7 @@ const progressPct = computed(() => Math.round(props.progress))
 
 .progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, #6c63ff, #a78bfa);
+  background: linear-gradient(90deg, rgba(255,255,255,0.14), rgba(255,255,255,0.82));
   border-radius: 2px;
   transition: width 0.4s ease;
 }
@@ -137,8 +137,8 @@ const progressPct = computed(() => Math.round(props.progress))
 .empty-orb {
   width: 60px; height: 60px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(108,99,255,0.15) 0%, transparent 70%);
-  border: 1px solid rgba(108,99,255,0.15);
+  background: radial-gradient(circle, rgba(255,255,255,0.15) 0%, transparent 70%);
+  border: 1px solid rgba(255,255,255,0.15);
   animation: breathe 4s ease-in-out infinite;
 }
 

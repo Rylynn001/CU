@@ -140,8 +140,8 @@ onMounted(load)
 .drama-meta { display: flex; align-items: center; gap: 10px; }
 .style-tag {
   font-size: 11px; font-weight: 500; padding: 2px 8px;
-  background: rgba(167,139,250,0.12); color: #c4b5fd; border-radius: 99px;
-  border: 1px solid rgba(167,139,250,0.2);
+  background: rgba(255,255,255,0.12); color: rgba(255,255,255,0.82); border-radius: 99px;
+  border: 1px solid rgba(255,255,255,0.2);
 }
 .meta-item { font-size: 12px; color: rgba(255,255,255,0.4); }
 
@@ -163,14 +163,14 @@ onMounted(load)
   cursor: pointer; transition: all 0.2s ease;
 }
 .ep-card:hover {
-  border-color: #a78bfa;
-  background: rgba(167,139,250,0.06);
+  border-color: rgba(255,255,255,0.82);
+  background: rgba(255,255,255,0.06);
   transform: translateX(4px);
 }
 
 .ep-number {
   width: 40px; height: 40px; border-radius: 10px; flex-shrink: 0;
-  background: rgba(167,139,250,0.12); color: #a78bfa;
+  background: rgba(255,255,255,0.12); color: rgba(255,255,255,0.82);
   display: flex; align-items: center; justify-content: center;
   font-size: 15px; font-weight: 700;
 }
@@ -184,15 +184,15 @@ onMounted(load)
 }
 .status-draft { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.4); }
 .status-processing { background: rgba(250,204,21,0.12); color: #fbbf24; }
-.status-done { background: rgba(74,222,128,0.12); color: #4ade80; }
+.status-done { background: rgba(255,255,255,0.12); color: rgba(255,255,255,0.82); }
 
 .ep-badge {
   font-size: 11px; padding: 2px 7px; border-radius: 99px;
-  background: rgba(167,139,250,0.12); color: #c4b5fd;
+  background: rgba(255,255,255,0.12); color: rgba(255,255,255,0.82);
 }
 
 .ep-arrow { color: rgba(255,255,255,0.2); transition: color 0.2s; }
-.ep-card:hover .ep-arrow { color: #a78bfa; }
+.ep-card:hover .ep-arrow { color: rgba(255,255,255,0.82); }
 
 .loading-center {
   display: flex; align-items: center; justify-content: center; height: 100%;
@@ -202,11 +202,11 @@ onMounted(load)
 
 .btn-primary {
   display: flex; align-items: center; gap: 6px;
-  background: #7c3aed; color: #fff; border: none;
+  background: rgba(255,255,255,0.14); color: #fff; border: none;
   border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 500;
   cursor: pointer; transition: background 0.2s;
 }
-.btn-primary:hover { background: #6d28d9; }
+.btn-primary:hover { background: rgba(255,255,255,0.14); }
 
 /* 统一为参数面板的玻璃风格 */
 .style-tag,

@@ -52,7 +52,7 @@ function toggleBusinessTheme() {
       :cursor-force="0.03"
       :bulge-only="false"
       gradient-from="#ffffff"
-      gradient-to="#B497CF"
+      gradient-to="rgba(255,255,255,0.82)"
       glow-color="#000000"
     />
     <LightRaysBackground

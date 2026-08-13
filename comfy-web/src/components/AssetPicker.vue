@@ -290,12 +290,12 @@ watch(() => props.visible, (val) => {
   transition: all 0.2s;
 }
 .filter-btn:hover {
-  border-color: rgba(108,99,255,0.4);
+  border-color: rgba(255,255,255,0.24);
   color: rgba(255,255,255,0.8);
 }
 .filter-btn.active {
-  background: rgba(108,99,255,0.25);
-  border-color: rgba(108,99,255,0.7);
+  background: rgba(255,255,255,0.12);
+  border-color: rgba(255,255,255,0.64);
   color: rgba(255,255,255,0.95);
 }
 
@@ -320,16 +320,16 @@ watch(() => props.visible, (val) => {
 .ring {
   position: absolute;
   border-radius: 50%;
-  border: 1.5px solid rgba(108, 99, 255, 0.5);
+  border: 1.5px solid rgba(255,255,255,0.36);
   animation: breathe 3s ease-in-out infinite;
 }
 .r1 { width: 100%; height: 100%; animation-delay: 0s; }
-.r2 { width: 72%; height: 72%; animation-delay: 0.5s; border-color: rgba(167,139,250,0.5); }
-.r3 { width: 44%; height: 44%; animation-delay: 1s; border-color: rgba(196,181,253,0.6); }
+.r2 { width: 72%; height: 72%; animation-delay: 0.5s; border-color: rgba(255,255,255,0.3); }
+.r3 { width: 44%; height: 44%; animation-delay: 1s; border-color: rgba(255,255,255,0.6); }
 .center-dot {
   width: 10px; height: 10px;
   border-radius: 50%;
-  background: #a78bfa;
+  background: rgba(255,255,255,0.14);
   animation: pulse-dot 2s ease-in-out infinite;
 }
 
@@ -343,8 +343,8 @@ watch(() => props.visible, (val) => {
 .empty-orb {
   width: 60px; height: 60px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(108,99,255,0.15) 0%, transparent 70%);
-  border: 1px solid rgba(108,99,255,0.15);
+  background: radial-gradient(circle, rgba(255,255,255,0.09) 0%, transparent 70%);
+  border: 1px solid rgba(255,255,255,0.14);
   animation: breathe 4s ease-in-out infinite;
 }
 .empty-text {
@@ -371,10 +371,10 @@ watch(() => props.visible, (val) => {
   transition: border-color 0.2s;
   cursor: pointer;
 }
-.gallery-item:hover { border-color: rgba(108,99,255,0.3); }
+.gallery-item:hover { border-color: rgba(255,255,255,0.3); }
 .gallery-item.selected {
-  border-color: rgba(108,99,255,0.8);
-  box-shadow: 0 0 20px rgba(108,99,255,0.3);
+  border-color: rgba(255,255,255,0.75);
+  box-shadow: 0 0 20px rgba(255,255,255,0.14);
 }
 
 .gallery-image {
@@ -404,8 +404,8 @@ watch(() => props.visible, (val) => {
 
 .asset-type-badge {
   font-size: 10px;
-  color: rgba(167,139,250,0.8);
-  background: rgba(167,139,250,0.15);
+  color: rgba(255,255,255,0.82);
+  background: rgba(255,255,255,0.1);
   padding: 2px 6px;
   border-radius: 4px;
   flex-shrink: 0;
@@ -416,7 +416,7 @@ watch(() => props.visible, (val) => {
   top: 8px; right: 8px;
   width: 28px; height: 28px;
   border-radius: 50%;
-  background: rgba(108,99,255,0.95);
+  background: rgba(255,255,255,0.14);
   color: white;
   display: flex;
   align-items: center;
@@ -443,7 +443,7 @@ watch(() => props.visible, (val) => {
   transition: all 0.2s;
 }
 .gallery-item:hover .download-btn { opacity: 1; }
-.download-btn:hover { background: rgba(108,99,255,0.9); transform: scale(1.1); }
+.download-btn:hover { background: rgba(255,255,255,0.14); transform: scale(1.1); }
 
 .fav-slot {
   position: absolute;
@@ -488,11 +488,11 @@ watch(() => props.visible, (val) => {
 }
 .cancel-btn:hover { background: rgba(255,255,255,0.12); }
 .confirm-btn {
-  background: linear-gradient(135deg, #6c63ff, #a78bfa);
-  color: white;
+  background: rgba(255,255,255,0.92);
+  color: #111318;
   font-weight: 500;
 }
-.confirm-btn:hover:not(:disabled) { opacity: 0.9; transform: translateY(-1px); }
+.confirm-btn:hover:not(:disabled) { background: #fff; transform: translateY(-1px); }
 .confirm-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 @keyframes breathe {
@@ -525,7 +525,7 @@ watch(() => props.visible, (val) => {
   position: absolute;
   bottom: 20px; right: 20px;
   padding: 10px 20px;
-  background: rgba(108,99,255,0.9);
+  background: rgba(255,255,255,0.14);
   border: none;
   border-radius: 8px;
   color: white;
@@ -536,7 +536,7 @@ watch(() => props.visible, (val) => {
   gap: 6px;
   transition: all 0.2s;
 }
-.preview-download-btn:hover { background: rgba(108,99,255,1); transform: translateY(-2px); }
+.preview-download-btn:hover { background: rgba(255,255,255,0.94); transform: translateY(-2px); }
 
 .load-more-bar {
   display: flex;
@@ -547,14 +547,14 @@ watch(() => props.visible, (val) => {
 .load-more-btn {
   padding: 6px 20px;
   border-radius: 7px;
-  border: 1px solid rgba(108,99,255,0.4);
-  background: rgba(108,99,255,0.1);
+  border: 1px solid rgba(255,255,255,0.28);
+  background: rgba(255,255,255,0.08);
   color: rgba(255,255,255,0.65);
   font-size: 12px;
   cursor: pointer;
   transition: all 0.2s;
 }
-.load-more-btn:hover:not(:disabled) { background: rgba(108,99,255,0.22); color: #fff; }
+.load-more-btn:hover:not(:disabled) { background: rgba(255,255,255,0.16); color: #fff; }
 .load-more-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .no-more-text {

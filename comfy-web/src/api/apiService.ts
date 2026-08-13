@@ -423,11 +423,15 @@ export interface ProjectMember {
 
 // 待审核素材
 export interface PendingAsset {
+  id: number   // category_assets 行 id
   category_id: number
   assets_id: number
   submitted_by: number
+  submitted_by_name: string | null
   created_at: string | null
   category_name: string
+  project_id: number   // 所属项目 ID
+  project_name: string   // 所属项目名称
   location: string | null
   asset_type: string | null
   reject_count: number   // 该素材在此分类历史上被驳回次数
@@ -440,31 +444,41 @@ export interface ReviewEvent {
   reviewer_id: number | null
   reviewer_name: string | null
   created_at: string | null
+  assets_id: number | null
+  location: string | null
+  asset_type: string | null
 }
 
 // 我的提交条目
 export interface MySubmission {
+  id: number   // category_assets 行 id，重新提交时用于续接该记录
   category_id: number
   assets_id: number
   review_status: 'pending' | 'approved' | 'rejected'
   created_at: string | null
   category_name: string
+  project_id: number
+  project_name: string
   location: string | null
   asset_type: string | null
   reject_count: number
 }
 
-// 提交素材到分类（member 提交需审核，owner/admin 直接通过）
-export async function addAssetToCategory(categoryId: number, assetId: number, userId: number): Promise<void> {
+// 提交素材到分类（member 提交需审核，owner/admin 直接通过）。
+// resubmitId：续接一条被驳回的提交记录（MySubmission.id），不传则视为全新提交。
+export async function addAssetToCategory(
+  categoryId: number, assetId: number, userId: number, resubmitId?: number
+): Promise<{ review_status: 'approved' | 'pending' }> {
   const res = await fetch(`${BASE}/categories/${categoryId}/assets`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ asset_id: assetId, user_id: userId }),
+    body: JSON.stringify({ asset_id: assetId, user_id: userId, resubmit_id: resubmitId }),
   })
   if (!res.ok) {
     const text = await res.text()
     throw new Error(text || `add asset failed: ${res.status}`)
   }
+  return res.json()
 }
 
 // 获取项目成员列表（需当前用户是项目成员）
@@ -526,9 +540,9 @@ export async function removeMember(projectId: number, userId: number, targetUser
   }
 }
 
-// 获取项目待审核素材（owner/admin 可查）
-export async function listPendingAssets(projectId: number, userId: number): Promise<PendingAsset[]> {
-  const res = await fetch(`${BASE}/projects/${projectId}/pending-assets?user_id=${userId}`)
+// 获取用户有权限审核的所有待审核素材（跨所有项目）
+export async function listPendingAssets(userId: number): Promise<PendingAsset[]> {
+  const res = await fetch(`${BASE}/pending-assets?user_id=${userId}`)
   if (!res.ok) throw new Error(`list pending failed: ${res.status}`)
   const data = await res.json()
   return data.assets || []
@@ -554,9 +568,9 @@ export async function fetchReviewTimeline(categoryId: number, assetId: number, u
   return res.json()
 }
 
-// 查当前用户在项目下的提交（含被驳回的）
-export async function listMySubmissions(projectId: number, userId: number): Promise<MySubmission[]> {
-  const res = await fetch(`${BASE}/projects/${projectId}/my-submissions?user_id=${userId}`)
+// 查当前用户在所有项目下的提交（含被驳回的）
+export async function listMySubmissions(userId: number): Promise<MySubmission[]> {
+  const res = await fetch(`${BASE}/my-submissions?user_id=${userId}`)
   if (!res.ok) throw new Error(`list my submissions failed: ${res.status}`)
   const data = await res.json()
   return data.submissions || []

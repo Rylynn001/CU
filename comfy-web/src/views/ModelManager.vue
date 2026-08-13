@@ -225,12 +225,12 @@ onMounted(() => {
 }
 .orb-1 {
   width: 500px; height: 500px;
-  background: radial-gradient(circle, rgba(108,99,255,0.12) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(255,255,255,0.12) 0%, transparent 70%);
   top: -120px; left: -80px;
 }
 .orb-2 {
   width: 400px; height: 400px;
-  background: radial-gradient(circle, rgba(167,139,250,0.1) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
   bottom: -100px; right: -60px;
   animation-delay: 3.5s;
 }
@@ -261,7 +261,7 @@ onMounted(() => {
 .breath-dot {
   width: 8px; height: 8px;
   border-radius: 50%;
-  background: #a78bfa;
+  background: rgba(255,255,255,0.14);
   animation: pulse-dot 2.5s ease-in-out infinite;
 }
 
@@ -289,7 +289,7 @@ onMounted(() => {
   display: flex; align-items: center; justify-content: center;
   transition: background 0.2s, color 0.2s;
 }
-.icon-action-btn:hover { background: rgba(108,99,255,0.2); color: #fff; }
+.icon-action-btn:hover { background: rgba(255,255,255,0.2); color: #fff; }
 
 .add-btn {
   display: flex;
@@ -297,7 +297,7 @@ onMounted(() => {
   gap: 6px;
   padding: 8px 16px;
   border-radius: 10px;
-  background: linear-gradient(135deg, #6c63ff, #a78bfa);
+  background: linear-gradient(135deg, rgba(255,255,255,0.14), rgba(255,255,255,0.82));
   border: none;
   color: #fff;
   font-size: 13px;
@@ -361,12 +361,12 @@ onMounted(() => {
   color: rgba(255,255,255,0.25);
   letter-spacing: 1px;
 }
-.key-status.active { color: rgba(167,139,250,0.7); }
+.key-status.active { color: rgba(255,255,255,0.7); }
 
 .save-btn {
   padding: 7px 20px;
   border-radius: 8px;
-  background: linear-gradient(135deg, #6c63ff, #a78bfa);
+  background: linear-gradient(135deg, rgba(255,255,255,0.14), rgba(255,255,255,0.82));
   border: none;
   color: #fff;
   font-size: 12px;
@@ -397,15 +397,15 @@ onMounted(() => {
   animation: breathe-border 5s ease-in-out infinite;
 }
 .model-card:hover {
-  border-color: rgba(108,99,255,0.4);
-  background: rgba(108,99,255,0.05);
+  border-color: rgba(255,255,255,0.4);
+  background: rgba(255,255,255,0.05);
   transform: translateY(-2px);
 }
 .model-card:hover .card-glow { opacity: 1; }
 
 .card-glow {
   position: absolute; inset: 0;
-  background: radial-gradient(ellipse at top left, rgba(108,99,255,0.08) 0%, transparent 60%);
+  background: radial-gradient(ellipse at top left, rgba(255,255,255,0.08) 0%, transparent 60%);
   opacity: 0;
   transition: opacity 0.3s;
   pointer-events: none;
@@ -420,12 +420,12 @@ onMounted(() => {
 .model-icon {
   width: 40px; height: 40px;
   border-radius: 12px;
-  background: rgba(108,99,255,0.15);
-  border: 1px solid rgba(108,99,255,0.2);
+  background: rgba(255,255,255,0.15);
+  border: 1px solid rgba(255,255,255,0.2);
   display: flex; align-items: center; justify-content: center;
   font-size: 16px;
   font-weight: 700;
-  color: #a78bfa;
+  color: rgba(255,255,255,0.82);
 }
 
 .delete-btn {
@@ -463,9 +463,9 @@ onMounted(() => {
   padding: 2px 8px;
   border-radius: 6px;
   font-size: 10px;
-  color: rgba(167,139,250,0.9);
-  background: rgba(108,99,255,0.15);
-  border: 1px solid rgba(108,99,255,0.2);
+  color: rgba(255,255,255,0.9);
+  background: rgba(255,255,255,0.15);
+  border: 1px solid rgba(255,255,255,0.2);
   letter-spacing: 0.5px;
   width: fit-content;
 }
@@ -488,8 +488,8 @@ onMounted(() => {
 .empty-orb {
   width: 60px; height: 60px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(108,99,255,0.12) 0%, transparent 70%);
-  border: 1px solid rgba(108,99,255,0.15);
+  background: radial-gradient(circle, rgba(255,255,255,0.12) 0%, transparent 70%);
+  border: 1px solid rgba(255,255,255,0.15);
   animation: breathe 4s ease-in-out infinite;
 }
 

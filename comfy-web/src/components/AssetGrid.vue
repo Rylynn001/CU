@@ -125,7 +125,7 @@ function isVideo(asset: Asset): boolean {
 .ring {
   position: absolute;
   border-radius: 50%;
-  border: 1.5px solid rgba(166,231,226,0.42);
+  border: 1.5px solid rgba(255,255,255,0.42);
   animation: breathe 3s ease-in-out infinite;
 }
 .r1 { width: 100%; height: 100%; animation-delay: 0s; }
@@ -147,7 +147,7 @@ function isVideo(asset: Asset): boolean {
 .empty-orb {
   width: 60px; height: 60px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(166,231,226,0.12) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(255,255,255,0.12) 0%, transparent 70%);
   border: 1px solid rgba(255,255,255,0.13);
   animation: breathe 4s ease-in-out infinite;
 }

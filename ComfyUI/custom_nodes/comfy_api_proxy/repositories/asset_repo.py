@@ -232,10 +232,15 @@ def rename_category(category_id: int, name: str) -> bool:
         return cursor.rowcount > 0
 
 
-def add_asset_to_category(category_id: int, asset_id: int, user_id: int) -> str | None:
+def add_asset_to_category(
+    category_id: int, asset_id: int, user_id: int, resubmit_id: int | None = None
+) -> str | None:
     """提交素材到分类。owner/admin 直接通过，member 进入待审核。
-    已被驳回的素材允许重新提交（状态改回 pending）。
-    返回 review_status（'approved'/'pending'）；非成员返回 None。"""
+
+    resubmit_id: 续接一条被驳回的提交记录（category_assets.id）。驳回后用户上传的是
+    修改过的新素材，assets_id 会变，所以不能再靠 (category_id, assets_id) 反查旧记录，
+    必须由调用方明确传入要续接的行 id。
+    返回 review_status（'approved'/'pending'）；非成员或续接目标不合法返回 None。"""
     with get_db_connection() as conn:
         cursor = conn.cursor()
         # 通过分类反查项目，再查提交人在该项目的角色
@@ -250,61 +255,93 @@ def add_asset_to_category(category_id: int, asset_id: int, user_id: int) -> str 
         if not row:
             return None
         review_status = 'approved' if row['role'] in ('owner', 'admin') else 'pending'
-        # 查是否已有关联行
-        cursor.execute(
-            'SELECT review_status FROM category_assets WHERE category_id = %s AND assets_id = %s',
-            (category_id, asset_id)
-        )
-        existing = cursor.fetchone()
-        if existing:
-            # 已通过或待审核的直接返回现状，不重复提交
-            if existing['review_status'] in ('approved', 'pending'):
-                return existing['review_status']
-            # 被驳回的重新提交：状态改回本次判定结果
+
+        if resubmit_id is not None:
+            # 重新提交：续接到指定的被驳回记录，仅原提交人可续接
+            cursor.execute(
+                '''SELECT id, category_id, review_status, submitted_by
+                   FROM category_assets WHERE id = %s''',
+                (resubmit_id,)
+            )
+            existing = cursor.fetchone()
+            if (not existing or existing['category_id'] != category_id
+                    or existing['review_status'] != 'rejected'
+                    or existing['submitted_by'] != user_id):
+                return None
             cursor.execute(
                 '''UPDATE category_assets
-                   SET review_status = %s, submitted_by = %s, created_at = NOW()
-                   WHERE category_id = %s AND assets_id = %s''',
-                (review_status, user_id, category_id, asset_id)
+                   SET assets_id = %s, review_status = %s, submitted_by = %s, created_at = NOW()
+                   WHERE id = %s''',
+                (asset_id, review_status, user_id, resubmit_id)
             )
+            category_assets_id = resubmit_id
         else:
+            # 查是否已有关联行（同一素材重复提交到同一分类）
             cursor.execute(
-                '''INSERT INTO category_assets
-                   (assets_id, category_id, submitted_by, review_status, created_at)
-                   VALUES (%s, %s, %s, %s, NOW())''',
-                (asset_id, category_id, user_id, review_status)
+                'SELECT id, review_status FROM category_assets WHERE category_id = %s AND assets_id = %s',
+                (category_id, asset_id)
             )
-        # 记录提交事件
+            existing = cursor.fetchone()
+            if existing:
+                # 已通过或待审核的直接返回现状，不重复提交
+                if existing['review_status'] in ('approved', 'pending'):
+                    return existing['review_status']
+                # 被驳回的重新提交同一份素材：状态改回本次判定结果
+                cursor.execute(
+                    '''UPDATE category_assets
+                       SET review_status = %s, submitted_by = %s, created_at = NOW()
+                       WHERE id = %s''',
+                    (review_status, user_id, existing['id'])
+                )
+                category_assets_id = existing['id']
+            else:
+                cursor.execute(
+                    '''INSERT INTO category_assets
+                       (assets_id, category_id, submitted_by, review_status, created_at)
+                       VALUES (%s, %s, %s, %s, NOW())''',
+                    (asset_id, category_id, user_id, review_status)
+                )
+                category_assets_id = cursor.lastrowid
+
+        # 记录提交事件，assets_id 记录本次提交对应的具体素材版本
         cursor.execute(
             '''INSERT INTO category_asset_reviews
-               (category_id, assets_id, action, reviewer_id, created_at)
+               (category_assets_id, assets_id, action, reviewer_id, created_at)
                VALUES (%s, %s, 'submit', %s, NOW())''',
-            (category_id, asset_id, user_id)
+            (category_assets_id, asset_id, user_id)
         )
         conn.commit()
         return review_status
 
 
-def list_pending_assets(project_id: int, user_id: int) -> list[dict] | None:
-    """列出项目下待审核素材，仅 owner/admin 可查。无权限返回 None。
+def list_pending_assets(user_id: int) -> list[dict]:
+    """列出该用户有权限审核的所有待审核素材（跨所有项目）。
+    仅返回用户在其中担任 owner/admin 的项目的待审核素材。
     附带该素材在此分类历史上被驳回的次数 reject_count。"""
-    from . import member_repo
-    if member_repo.get_member_role(project_id, user_id) not in ('owner', 'admin'):
-        return None
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            '''SELECT ca.category_id, ca.assets_id, ca.submitted_by, ca.created_at,
-                      pc.name AS category_name, a.location, a.asset_type,
+            '''SELECT ca.id, ca.category_id, ca.assets_id, ca.submitted_by, ca.created_at,
+                      pc.name AS category_name,
+                      p.id AS project_id, p.name AS project_name,
+                      a.location, a.asset_type,
+                      u.user_name AS submitted_by_name,
                       (SELECT COUNT(*) FROM category_asset_reviews r
-                       WHERE r.category_id = ca.category_id AND r.assets_id = ca.assets_id
+                       WHERE r.category_assets_id = ca.id
                          AND r.action = 'reject') AS reject_count
                FROM category_assets ca
                JOIN project_category pc ON pc.id = ca.category_id
+               JOIN projects p ON p.id = pc.project_id
+               JOIN project_members pm ON pm.project_id = p.id
                LEFT JOIN assets a ON a.id = ca.assets_id
-               WHERE pc.project_id = %s AND ca.review_status = 'pending'
+               LEFT JOIN sys_user u ON u.id = ca.submitted_by
+               WHERE ca.review_status = 'pending'
+                 AND pm.user_id = %s
+                 AND pm.role IN ('owner', 'admin')
+                 AND p.del_flag = 0
+                 AND pc.del_flag = 0
                ORDER BY ca.created_at DESC''',
-            (project_id,)
+            (user_id,)
         )
         rows = cursor.fetchall()
     for r in rows:
@@ -330,32 +367,39 @@ def review_asset(category_id: int, asset_id: int, user_id: int, approve: bool, c
         row = cursor.fetchone()
         if not row or row['role'] not in ('owner', 'admin'):
             return False
+        cursor.execute(
+            'SELECT id FROM category_assets WHERE category_id = %s AND assets_id = %s',
+            (category_id, asset_id)
+        )
+        ca = cursor.fetchone()
+        if not ca:
+            return False
         new_status = 'approved' if approve else 'rejected'
         cursor.execute(
             '''UPDATE category_assets SET review_status = %s, reviewed_by = %s
-               WHERE category_id = %s AND assets_id = %s AND review_status = 'pending' ''',
-            (new_status, user_id, category_id, asset_id)
+               WHERE id = %s AND review_status = 'pending' ''',
+            (new_status, user_id, ca['id'])
         )
         if cursor.rowcount == 0:
             return False
         cursor.execute(
             '''INSERT INTO category_asset_reviews
-               (category_id, assets_id, action, comment, reviewer_id, created_at)
+               (category_assets_id, assets_id, action, comment, reviewer_id, created_at)
                VALUES (%s, %s, %s, %s, %s, NOW())''',
-            (category_id, asset_id, 'approve' if approve else 'reject', comment, user_id)
+            (ca['id'], asset_id, 'approve' if approve else 'reject', comment, user_id)
         )
         conn.commit()
         return True
 
 
 def get_asset_review_timeline(category_id: int, asset_id: int, user_id: int) -> list[dict] | None:
-    """查某素材在某分类的审核时间线。owner/admin 或提交人本人可查，否则 None。"""
+    """查某素材在某分类的审核时间线。owner/admin 或提交人本人可查，否则 None。
+    每条 submit 记录附带对应的资产 location/asset_type。"""
     from . import member_repo
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        # 反查项目 id 与提交人，用于权限判断
         cursor.execute(
-            '''SELECT pc.project_id, ca.submitted_by
+            '''SELECT ca.id, pc.project_id, ca.submitted_by
                FROM project_category pc
                JOIN category_assets ca ON ca.category_id = pc.id
                WHERE pc.id = %s AND ca.assets_id = %s''',
@@ -368,12 +412,16 @@ def get_asset_review_timeline(category_id: int, asset_id: int, user_id: int) -> 
         if role not in ('owner', 'admin') and info['submitted_by'] != user_id:
             return None
         cursor.execute(
-            '''SELECT r.action, r.comment, r.reviewer_id, r.created_at, u.user_name AS reviewer_name
+            '''SELECT r.action, r.comment, r.reviewer_id, r.created_at,
+                      u.user_name AS reviewer_name,
+                      r.assets_id,
+                      a.location, a.asset_type
                FROM category_asset_reviews r
                LEFT JOIN sys_user u ON u.id = r.reviewer_id
-               WHERE r.category_id = %s AND r.assets_id = %s
+               LEFT JOIN assets a ON a.id = r.assets_id
+               WHERE r.category_assets_id = %s
                ORDER BY r.created_at ASC, r.id ASC''',
-            (category_id, asset_id)
+            (info['id'],)
         )
         rows = cursor.fetchall()
     for r in rows:
@@ -382,23 +430,26 @@ def get_asset_review_timeline(category_id: int, asset_id: int, user_id: int) -> 
     return rows
 
 
-def list_my_submissions(project_id: int, user_id: int) -> list[dict]:
-    """列出当前用户在项目下提交的素材及其当前状态与被驳回次数。
+def list_my_submissions(user_id: int) -> list[dict]:
+    """列出当前用户在所有项目下提交的素材及其当前状态与被驳回次数。
     用于成员查看自己的提交进度（含被驳回的）。"""
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            '''SELECT ca.category_id, ca.assets_id, ca.review_status, ca.created_at,
-                      pc.name AS category_name, a.location, a.asset_type,
+            '''SELECT ca.id, ca.category_id, ca.assets_id, ca.review_status, ca.created_at,
+                      pc.name AS category_name,
+                      p.id AS project_id, p.name AS project_name,
+                      a.location, a.asset_type,
                       (SELECT COUNT(*) FROM category_asset_reviews r
-                       WHERE r.category_id = ca.category_id AND r.assets_id = ca.assets_id
+                       WHERE r.category_assets_id = ca.id
                          AND r.action = 'reject') AS reject_count
                FROM category_assets ca
                JOIN project_category pc ON pc.id = ca.category_id
+               JOIN projects p ON p.id = pc.project_id
                LEFT JOIN assets a ON a.id = ca.assets_id
-               WHERE pc.project_id = %s AND ca.submitted_by = %s AND pc.del_flag = 0
+               WHERE ca.submitted_by = %s AND pc.del_flag = 0 AND p.del_flag = 0
                ORDER BY ca.created_at DESC''',
-            (project_id, user_id)
+            (user_id,)
         )
         rows = cursor.fetchall()
     for r in rows:

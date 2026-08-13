@@ -157,7 +157,7 @@ onUnmounted(() => {
 .custom-image-viewer {
   position: fixed;
   inset: 0;
-  z-index: 2500;
+  z-index: 9000;
   background: rgba(0, 0, 0, 0.85);
   backdrop-filter: blur(8px);
   display: flex;

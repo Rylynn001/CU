@@ -40,7 +40,7 @@ const favoriteTag = ref<0 | 1 | 2 | 3 | 4>(1)
 const FAVORITE_COLORS: { tag: 1 | 2 | 3 | 4; color: string; label: string }[] = [
   { tag: 1, color: '#f43f5e', label: '红' },
   { tag: 2, color: '#eab308', label: '黄' },
-  { tag: 3, color: '#22c55e', label: '绿' },
+  { tag: 3, color: 'rgba(255,255,255,0.82)', label: '绿' },
   { tag: 4, color: '#3b82f6', label: '蓝' },
 ]
 const currentPage = ref(1)
@@ -870,7 +870,7 @@ onUnmounted(() => {
 }
 .orb-1 {
   width: 500px; height: 500px;
-  background: radial-gradient(circle, rgba(166,231,226,0.12) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(255,255,255,0.12) 0%, transparent 70%);
   top: -140px; left: 40px;
 }
 .orb-2 {
@@ -971,7 +971,7 @@ onUnmounted(() => {
 .mini-ring {
   width: 20px; height: 20px;
   border-radius: 50%;
-  border: 1.5px solid rgba(166,231,226,0.42);
+  border: 1.5px solid rgba(255,255,255,0.42);
   border-top-color: transparent;
   animation: spin 0.8s linear infinite;
 }
@@ -1275,7 +1275,7 @@ onUnmounted(() => {
 .ring {
   position: absolute;
   border-radius: 50%;
-  border: 1.5px solid rgba(166,231,226,0.42);
+  border: 1.5px solid rgba(255,255,255,0.42);
   animation: breathe 3s ease-in-out infinite;
 }
 .r1 { width: 100%; height: 100%; animation-delay: 0s; }
@@ -1298,7 +1298,7 @@ onUnmounted(() => {
 .empty-orb {
   width: 60px; height: 60px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(166,231,226,0.12) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(255,255,255,0.12) 0%, transparent 70%);
   border: 1px solid rgba(255,255,255,0.13);
   animation: breathe 4s ease-in-out infinite;
 }

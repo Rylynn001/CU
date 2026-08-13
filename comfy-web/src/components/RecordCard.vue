@@ -126,7 +126,7 @@ function formatTime(ts: number): string {
   box-shadow: var(--shadow-soft);
 }
 .record-card.generating {
-  border-color: rgba(166, 231, 226, 0.3);
+  border-color: rgba(255,255,255, 0.3);
 }
 .record-card.error {
   border-color: rgba(248, 113, 113, 0.28);
@@ -244,12 +244,12 @@ function formatTime(ts: number): string {
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  border: 2px solid rgba(166, 231, 226, 0.5);
+  border: 2px solid rgba(255,255,255, 0.5);
   flex-shrink: 0;
   animation: breathe-ring 2s ease-in-out infinite;
 }
 @keyframes breathe-ring {
-  0%, 100% { border-color: rgba(166, 231, 226, 0.42); transform: scale(1); }
+  0%, 100% { border-color: rgba(255,255,255, 0.42); transform: scale(1); }
   50% { border-color: rgba(255, 255, 255, 0.72); transform: scale(1.08); }
 }
 .generating-content {

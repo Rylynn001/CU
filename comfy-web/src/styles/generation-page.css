@@ -19,8 +19,8 @@
 }
 
 .panel-body.panel-drag-over {
-  background: rgba(166, 231, 226, 0.08);
-  outline: 1px dashed rgba(166, 231, 226, 0.45);
+  background: rgba(255,255,255, 0.08);
+  outline: 1px dashed rgba(255,255,255, 0.45);
   outline-offset: -4px;
   border-radius: var(--radius-md);
   transition: background 0.15s ease, outline-color 0.15s ease;
@@ -38,7 +38,7 @@
 }
 .orb-1 {
   width: 520px; height: 520px;
-  background: radial-gradient(circle, rgba(166, 231, 226, 0.11) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(255,255,255, 0.11) 0%, transparent 70%);
   top: -160px; left: 32px;
 }
 .orb-2 {
@@ -205,9 +205,9 @@
 
 .api-tip {
   font-size: 12px;
-  color: rgba(166, 231, 226, 0.7);
+  color: rgba(255,255,255, 0.7);
   padding: 10px 14px;
-  border: 1px dashed rgba(166, 231, 226, 0.22);
+  border: 1px dashed rgba(255,255,255, 0.22);
   border-radius: var(--radius-md);
   text-align: center;
   letter-spacing: 0;
@@ -301,7 +301,7 @@
 .generate-btn:disabled { opacity: 0.45; cursor: not-allowed; animation: none; }
 .generate-btn.loading { animation: breathe 2s ease-in-out infinite; }
 .generate-btn.submitted {
-  background: linear-gradient(135deg, #10b981, #86efac, #10b981);
+  background: linear-gradient(135deg, rgba(255,255,255,0.14), rgba(255,255,255,0.82), rgba(255,255,255,0.82));
   background-size: 200% auto;
   animation: shimmer 1s linear infinite;
 }
@@ -595,8 +595,8 @@ img.input-panel-thumb { cursor: zoom-in; }
 .empty-orb {
   width: 60px; height: 60px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(166, 231, 226, 0.14) 0%, transparent 70%);
-  border: 1px solid rgba(166, 231, 226, 0.16);
+  background: radial-gradient(circle, rgba(255,255,255, 0.14) 0%, transparent 70%);
+  border: 1px solid rgba(255,255,255, 0.16);
   animation: breathe 4s ease-in-out infinite;
 }
 .empty-text {

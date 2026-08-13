@@ -547,8 +547,8 @@ watch(() => props.items, (newItems, oldItems) => {
 
 /* 溯源命中高亮 */
 .cf-card.cf-highlight {
-  border-color: rgba(166, 231, 226, 0.9);
-  box-shadow: 0 0 0 2px rgba(166, 231, 226, 0.6), 0 12px 40px rgba(0, 0, 0, 0.4);
+  border-color: rgba(255,255,255, 0.9);
+  box-shadow: 0 0 0 2px rgba(255,255,255, 0.6), 0 12px 40px rgba(0, 0, 0, 0.4);
 }
 
 .cf-card.cf-selected {
@@ -617,9 +617,9 @@ watch(() => props.items, (newItems, oldItems) => {
   transform: translateX(-50%);
   padding: 4px 12px;
   border-radius: 999px;
-  border: 1px solid rgba(166, 231, 226, 0.5);
+  border: 1px solid rgba(255,255,255, 0.5);
   background: rgba(10, 14, 20, 0.88);
-  color: #a6e7e2;
+  color: rgba(255,255,255,0.82);
   font-size: 11px;
   cursor: pointer;
   backdrop-filter: blur(6px);
@@ -628,8 +628,8 @@ watch(() => props.items, (newItems, oldItems) => {
   transition: all 0.2s;
 }
 .cf-exit-trace:hover {
-  background: rgba(166, 231, 226, 0.18);
-  border-color: rgba(166, 231, 226, 0.8);
+  background: rgba(255,255,255, 0.18);
+  border-color: rgba(255,255,255, 0.8);
 }
 /* 占位符卡片 */
 .cf-card.cf-placeholder {
@@ -639,16 +639,16 @@ watch(() => props.items, (newItems, oldItems) => {
   cursor: pointer;
 }
 .cf-card.cf-placeholder:hover {
-  border-color: rgba(166, 231, 226, 0.5);
-  background: rgba(166, 231, 226, 0.05);
+  border-color: rgba(255,255,255, 0.5);
+  background: rgba(255,255,255, 0.05);
 }
 .cf-card.cf-placeholder.cf-drop-target {
   border-style: solid;
-  border-color: rgba(166, 231, 226, 1);
-  background: rgba(166, 231, 226, 0.16);
+  border-color: rgba(255,255,255, 1);
+  background: rgba(255,255,255, 0.16);
   box-shadow:
-    0 0 0 3px rgba(166, 231, 226, 0.34),
-    0 0 32px rgba(166, 231, 226, 0.34),
+    0 0 0 3px rgba(255,255,255, 0.34),
+    0 0 32px rgba(255,255,255, 0.34),
     0 12px 40px rgba(0, 0, 0, 0.4);
 }
 .cf-card.cf-placeholder.cf-drop-target .cf-gen-inner {
@@ -669,12 +669,12 @@ watch(() => props.items, (newItems, oldItems) => {
 }
 .cf-card.cf-placeholder.cf-generating {
   border-style: solid;
-  border-color: rgba(166, 231, 226, 0.75);
-  background: rgba(166, 231, 226, 0.1);
-  box-shadow: 0 0 0 2px rgba(166, 231, 226, 0.18), 0 0 28px rgba(166, 231, 226, 0.2);
+  border-color: rgba(255,255,255, 0.75);
+  background: rgba(255,255,255, 0.1);
+  box-shadow: 0 0 0 2px rgba(255,255,255, 0.18), 0 0 28px rgba(255,255,255, 0.2);
 }
 .cf-card.cf-placeholder.cf-generating .cf-gen-inner {
-  color: rgba(166, 231, 226, 0.9);
+  color: rgba(255,255,255, 0.9);
   animation: cf-generating-pulse 1.6s ease-in-out infinite;
 }
 .cf-card.cf-placeholder.cf-failed {

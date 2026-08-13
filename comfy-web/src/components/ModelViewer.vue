@@ -1162,7 +1162,7 @@ onBeforeUnmount(destroyScene)
 <style scoped>
 .mv-overlay {
   position: fixed; inset: 0; z-index: 9999;
-  background: #0d0d1a; display: flex;
+  background: #0d0d0f; display: flex;
 }
 .mv-fade-enter-active, .mv-fade-leave-active { transition: opacity 0.2s; }
 .mv-fade-enter-from, .mv-fade-leave-to { opacity: 0; }
@@ -1173,14 +1173,14 @@ onBeforeUnmount(destroyScene)
 .mv-tree {
   width: 200px; flex-shrink: 0;
   display: flex; flex-direction: column;
-  background: #0a0a18;
+  background: #0a0a0c;
   border-right: 1px solid rgba(255,255,255,0.06);
   overflow-y: auto; height: 100vh;
 }
 .tree-header {
   display: flex; align-items: center; justify-content: space-between;
   padding: 12px 10px 8px; border-bottom: 1px solid rgba(255,255,255,0.06);
-  position: sticky; top: 0; background: #0a0a18; z-index: 1;
+  position: sticky; top: 0; background: #0a0a0c; z-index: 1;
 }
 .tree-title { font-size: 12px; color: rgba(255,255,255,0.5); font-weight: 500; letter-spacing: 1px; }
 .close-btn {
@@ -1196,7 +1196,7 @@ onBeforeUnmount(destroyScene)
   border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.04);
   color: rgba(255,255,255,0.6); cursor: pointer; transition: all 0.15s;
 }
-.add-btn:hover { border-color: rgba(108,99,255,0.5); color: #fff; background: rgba(108,99,255,0.12); }
+.add-btn:hover { border-color: rgba(255,255,255,0.5); color: #fff; background: rgba(255,255,255,0.12); }
 
 .tree-section-label {
   font-size: 10px; color: rgba(255,255,255,0.25);
@@ -1209,7 +1209,7 @@ onBeforeUnmount(destroyScene)
   transition: all 0.15s;
 }
 .tree-item:hover { background: rgba(255,255,255,0.03); }
-.tree-item.selected { background: rgba(108,99,255,0.08); border-left-color: #6c63ff; }
+.tree-item.selected { background: rgba(255,255,255,0.08); border-left-color: rgba(255,255,255,0.82); }
 
 .tree-item-top {
   display: flex; align-items: center; gap: 5px; min-height: 22px;
@@ -1218,7 +1218,7 @@ onBeforeUnmount(destroyScene)
 .tree-name { font-size: 12px; color: rgba(255,255,255,0.7); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .active-dot {
   width: 6px; height: 6px; border-radius: 50%;
-  background: #a78bfa; flex-shrink: 0;
+  background: rgba(255,255,255,0.14); flex-shrink: 0;
 }
 .tree-del {
   background: none; border: none; color: rgba(255,255,255,0.2);
@@ -1251,7 +1251,7 @@ onBeforeUnmount(destroyScene)
   cursor: col-resize; transition: background 0.15s;
   z-index: 10;
 }
-.divider-v:hover, .divider-v:active { background: rgba(108,99,255,0.6); }
+.divider-v:hover, .divider-v:active { background: rgba(255,255,255,0.6); }
 
 .divider-h {
   height: 4px; flex-shrink: 0; width: 100%;
@@ -1259,7 +1259,7 @@ onBeforeUnmount(destroyScene)
   cursor: row-resize; transition: background 0.15s;
   z-index: 10;
 }
-.divider-h:hover, .divider-h:active { background: rgba(108,99,255,0.6); }
+.divider-h:hover, .divider-h:active { background: rgba(255,255,255,0.6); }
 
 .pane {
   position: relative; overflow: hidden; flex-shrink: 0;
@@ -1280,7 +1280,7 @@ onBeforeUnmount(destroyScene)
 .mv-toolbar {
   position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
   display: flex; gap: 6px;
-  background: rgba(13,13,26,0.8); border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(13,13,15,0.8); border: 1px solid rgba(255,255,255,0.08);
   border-radius: 8px; padding: 4px 8px; backdrop-filter: blur(8px);
 }
 .tb-btn {
@@ -1289,7 +1289,7 @@ onBeforeUnmount(destroyScene)
   color: rgba(255,255,255,0.55); font-size: 12px; cursor: pointer; transition: all 0.15s;
 }
 .tb-btn:hover { color: #fff; background: rgba(255,255,255,0.08); }
-.tb-btn.active { background: rgba(108,99,255,0.25); border-color: rgba(108,99,255,0.6); color: #fff; }
+.tb-btn.active { background: rgba(255,255,255,0.25); border-color: rgba(255,255,255,0.6); color: #fff; }
 .tb-btn.desel { border-color: rgba(248,113,113,0.4); color: rgba(248,113,113,0.7); }
 .tb-btn.desel:hover { background: rgba(248,113,113,0.1); color: #f87171; }
 
@@ -1303,13 +1303,13 @@ onBeforeUnmount(destroyScene)
 .mv-props {
   width: 200px; flex-shrink: 0; height: 100vh; box-sizing: border-box;
   display: flex; flex-direction: column;
-  background: #0a0a18; border-left: 1px solid rgba(255,255,255,0.06);
+  background: #0a0a0c; border-left: 1px solid rgba(255,255,255,0.06);
   padding: 0 10px 12px; overflow-y: auto;
 }
 .props-header {
   font-size: 11px; color: rgba(255,255,255,0.35); letter-spacing: 1px;
   padding: 14px 2px 10px; border-bottom: 1px solid rgba(255,255,255,0.06);
-  margin-bottom: 12px; position: sticky; top: 0; background: #0a0a18; z-index: 1;
+  margin-bottom: 12px; position: sticky; top: 0; background: #0a0a0c; z-index: 1;
 }
 .props-empty { font-size: 11px; color: rgba(255,255,255,0.2); padding: 8px 2px; }
 .props-name { font-size: 13px; color: rgba(255,255,255,0.8); font-weight: 500; margin-bottom: 10px; }
@@ -1330,7 +1330,7 @@ onBeforeUnmount(destroyScene)
 }
 .props-row input::-webkit-outer-spin-button,
 .props-row input::-webkit-inner-spin-button { -webkit-appearance: none; }
-.props-row input:focus { border-color: rgba(108,99,255,0.5); }
+.props-row input:focus { border-color: rgba(255,255,255,0.5); }
 
 .props-thumb {
   width: 100%; border-radius: 6px; display: block; margin-bottom: 10px; background: #111;
@@ -1338,15 +1338,15 @@ onBeforeUnmount(destroyScene)
 
 .set-active-btn {
   width: 100%; padding: 5px; border-radius: 6px; font-size: 11px;
-  border: 1px solid rgba(108,99,255,0.3); background: rgba(108,99,255,0.06);
-  color: rgba(108,99,255,0.8); cursor: pointer; transition: all 0.15s; margin-top: 4px;
+  border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.8); cursor: pointer; transition: all 0.15s; margin-top: 4px;
 }
-.set-active-btn.on { background: rgba(108,99,255,0.2); color: #a78bfa; border-color: rgba(108,99,255,0.6); }
-.set-active-btn:hover:not(.on) { background: rgba(108,99,255,0.12); color: #fff; }
+.set-active-btn.on { background: rgba(255,255,255,0.2); color: rgba(255,255,255,0.82); border-color: rgba(255,255,255,0.6); }
+.set-active-btn:hover:not(.on) { background: rgba(255,255,255,0.12); color: #fff; }
 
 .capture-btn {
   margin-top: auto; padding: 10px; border-radius: 9px; border: none;
-  background: linear-gradient(135deg, #6c63ff, #a78bfa);
+  background: linear-gradient(135deg, rgba(255,255,255,0.14), rgba(255,255,255,0.82));
   color: #fff; font-size: 13px; font-weight: 500;
   cursor: pointer; transition: all 0.2s; flex-shrink: 0;
 }
@@ -1368,7 +1368,7 @@ onBeforeUnmount(destroyScene)
 }
 
 .fov-slider {
-  flex: 1; height: 3px; accent-color: #6c63ff; cursor: pointer; min-width: 0;
+  flex: 1; height: 3px; accent-color: rgba(255,255,255,0.82); cursor: pointer; min-width: 0;
 }
 .fov-num {
   width: 38px; flex-shrink: 0;
@@ -1381,13 +1381,13 @@ onBeforeUnmount(destroyScene)
 .fov-num::-webkit-inner-spin-button { -webkit-appearance: none; }
 
 .bone-block {
-  border-left: 2px solid rgba(108,99,255,0.2);
+  border-left: 2px solid rgba(255,255,255,0.2);
   padding-left: 6px; margin-bottom: 10px;
   cursor: pointer; border-radius: 0 4px 4px 0;
   transition: background 0.15s;
 }
 .bone-block:hover {
-  background: rgba(108,99,255,0.08);
+  background: rgba(255,255,255,0.08);
 }
 .bone-block.bone-selected {
   border-left-color: #ff4400;
@@ -1408,7 +1408,7 @@ onBeforeUnmount(destroyScene)
   width: 26px; flex-shrink: 0; text-align: right;
 }
 .bone-slider {
-  flex: 1; height: 3px; accent-color: #6c63ff; cursor: pointer; min-width: 0;
+  flex: 1; height: 3px; accent-color: rgba(255,255,255,0.82); cursor: pointer; min-width: 0;
 }
 .bone-num {
   width: 38px; flex-shrink: 0;

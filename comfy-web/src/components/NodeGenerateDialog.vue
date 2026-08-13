@@ -373,14 +373,14 @@ async function handleGenerate() {
   cursor: pointer;
   transition: border-color 0.2s;
 }
-.ngd-ref.selected { border-color: var(--color-primary, #a6e7e2); }
+.ngd-ref.selected { border-color: var(--color-primary, rgba(255,255,255,0.82)); }
 .ngd-ref-img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .ngd-ref-check {
   position: absolute;
   top: 2px; right: 2px;
   width: 18px; height: 18px;
   border-radius: 50%;
-  background: var(--color-primary, #a6e7e2);
+  background: var(--color-primary, rgba(255,255,255,0.14));
   color: #000;
   font-size: 12px;
   display: flex;

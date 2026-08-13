@@ -5,25 +5,42 @@ import {
   listMembers, addMember, setMemberRole, removeMember,
   listCandidateUsers,
   listPendingAssets, reviewAsset,
-  fetchReviewTimeline, listMySubmissions,
+  fetchReviewTimeline, listMySubmissions, addAssetToCategory,
   type ProjectMember, type PendingAsset, type MemberRole, type CandidateUser,
   type ReviewEvent, type MySubmission,
 } from '../api/apiService'
+import AssetPicker from './AssetPicker.vue'
 
-const props = defineProps<{
+type TeamDialogTab = 'members' | 'pending' | 'mine'
+
+const props = withDefaults(defineProps<{
   visible: boolean
-  projectId: number
-  projectName: string
-  currentRole: MemberRole      // 当前用户在该项目的角色
+  projectId?: number
+  projectName?: string
+  currentRole?: MemberRole      // 当前用户在该项目的角色
   currentUserId: number
-}>()
+  initialTab?: TeamDialogTab
+  hideTabs?: boolean
+}>(), {
+  initialTab: 'members',
+  hideTabs: false,
+})
 
 const emit = defineEmits<{
   close: []
   reviewed: []                 // 审核通过后通知父组件刷新分类资产
 }>()
 
-const activeTab = ref<'members' | 'pending' | 'mine'>('members')
+const activeTab = ref<TeamDialogTab>('members')
+const dialogTitle = computed(() => {
+  if (!props.hideTabs) return props.projectName ? `${props.projectName} · 团队` : '团队协作'
+  const title: Record<TeamDialogTab, string> = {
+    members: '团队成员',
+    pending: '待审核',
+    mine: '我的提交',
+  }
+  return props.projectName ? `${props.projectName} · ${title[activeTab.value]}` : title[activeTab.value]
+})
 
 // 是否有管理权限（拉人、设角色、审核）
 const canManage = () => props.currentRole === 'owner' || props.currentRole === 'admin'
@@ -33,6 +50,7 @@ const members = ref<ProjectMember[]>([])
 const membersLoading = ref(false)
 
 async function loadMembers() {
+  if (!props.projectId) return
   membersLoading.value = true
   try {
     members.value = await listMembers(props.projectId, props.currentUserId)
@@ -58,6 +76,7 @@ const filteredCandidates = computed(() => {
 })
 
 async function openAddPanel() {
+  if (!props.projectId) return
   showAddPanel.value = true
   searchKeyword.value = ''
   candidatesLoading.value = true
@@ -71,6 +90,7 @@ async function openAddPanel() {
 }
 
 async function handleAddCandidate(u: CandidateUser) {
+  if (!props.projectId) return
   addingId.value = u.id
   try {
     await addMember(props.projectId, props.currentUserId, u.user_name || '', 'member')
@@ -85,6 +105,7 @@ async function handleAddCandidate(u: CandidateUser) {
 }
 
 async function handleSetRole(m: ProjectMember, role: MemberRole) {
+  if (!props.projectId) return
   if (m.role === role) return
   try {
     await setMemberRole(props.projectId, props.currentUserId, m.user_id, role)
@@ -96,6 +117,7 @@ async function handleSetRole(m: ProjectMember, role: MemberRole) {
 }
 
 async function handleRemove(m: ProjectMember) {
+  if (!props.projectId) return
   try {
     await removeMember(props.projectId, props.currentUserId, m.user_id)
     members.value = members.value.filter(x => x.user_id !== m.user_id)
@@ -112,7 +134,7 @@ const pendingLoading = ref(false)
 async function loadPending() {
   pendingLoading.value = true
   try {
-    pending.value = await listPendingAssets(props.projectId, props.currentUserId)
+    pending.value = await listPendingAssets(props.currentUserId)
   } catch {
     ElMessage.error('加载待审核失败')
   } finally {
@@ -154,7 +176,7 @@ const mineLoading = ref(false)
 async function loadMySubmissions() {
   mineLoading.value = true
   try {
-    mySubmissions.value = await listMySubmissions(props.projectId, props.currentUserId)
+    mySubmissions.value = await listMySubmissions(props.currentUserId)
   } catch {
     ElMessage.error('加载我的提交失败')
   } finally {
@@ -163,6 +185,35 @@ async function loadMySubmissions() {
 }
 
 const statusLabel: Record<string, string> = { pending: '待审核', approved: '已通过', rejected: '已驳回' }
+
+// ── 重新提交（被驳回的记录选新素材续接） ──────────────────────────────────
+const showResubmitPicker = ref(false)
+const resubmitTarget = ref<MySubmission | null>(null)
+const resubmitting = ref(false)
+
+function openResubmit(item: MySubmission) {
+  resubmitTarget.value = item
+  showResubmitPicker.value = true
+}
+
+async function handleResubmitSelect(assets: Array<{ id: number }>) {
+  const target = resubmitTarget.value
+  showResubmitPicker.value = false
+  if (!target || assets.length === 0) return
+  resubmitting.value = true
+  try {
+    const { review_status } = await addAssetToCategory(
+      target.category_id, assets[0].id, props.currentUserId, target.id
+    )
+    ElMessage.success(review_status === 'pending' ? '已重新提交，等待管理员审核' : '已重新提交')
+    await loadMySubmissions()
+  } catch (e: any) {
+    ElMessage.error(e.message || '重新提交失败')
+  } finally {
+    resubmitting.value = false
+    resubmitTarget.value = null
+  }
+}
 
 // ── 审核时间线（点开某条提交查看完整过程） ──────────────────────────────────
 const showTimeline = ref(false)
@@ -184,7 +235,24 @@ async function openTimeline(categoryId: number, assetsId: number) {
 
 const actionLabel: Record<string, string> = { submit: '提交', approve: '通过', reject: '驳回' }
 
-function switchTab(tab: 'members' | 'pending' | 'mine') {
+function getTimelineMediaUrl(location: string) {
+  return `/api/api-proxy/output/${location.split(/[/\\]/).pop()}`
+}
+function isTimelineVideo(location: string) {
+  return ['mp4', 'mov', 'avi', 'webm'].includes(location.split('.').pop()?.toLowerCase() || '')
+}
+
+const showTimelinePreview = ref(false)
+const timelinePreviewUrl = ref('')
+const timelinePreviewIsVideo = ref(false)
+
+function previewTimelineAsset(location: string) {
+  timelinePreviewUrl.value = getTimelineMediaUrl(location)
+  timelinePreviewIsVideo.value = isTimelineVideo(location)
+  showTimelinePreview.value = true
+}
+
+function switchTab(tab: TeamDialogTab) {
   activeTab.value = tab
   if (tab === 'members' && members.value.length === 0) loadMembers()
   if (tab === 'pending' && pending.value.length === 0) loadPending()
@@ -206,11 +274,12 @@ function handleClose() {
 
 watch(() => props.visible, (v) => {
   if (v) {
-    activeTab.value = 'members'
+    activeTab.value = props.initialTab
     showAddPanel.value = false
     members.value = []
     pending.value = []
-    loadMembers()
+    mySubmissions.value = []
+    switchTab(activeTab.value)
   }
 })
 
@@ -223,12 +292,12 @@ const roleLabel: Record<MemberRole, string> = { owner: '所有者', admin: '管�
       <div v-if="visible" class="dialog-overlay" @click="handleClose">
         <div class="dialog-content" @click.stop>
           <div class="dialog-header">
-            <span class="dialog-title">{{ projectName }} · 团队</span>
+            <span class="dialog-title">{{ dialogTitle }}</span>
             <button class="dialog-close" @click="handleClose">✕</button>
           </div>
 
           <!-- tab 切换 -->
-          <div class="tab-bar">
+          <div v-if="!hideTabs" class="tab-bar">
             <button class="tab" :class="{ active: activeTab === 'members' }" @click="switchTab('members')">成员</button>
             <button v-if="canManage()" class="tab" :class="{ active: activeTab === 'pending' }" @click="switchTab('pending')">待审核</button>
             <button class="tab" :class="{ active: activeTab === 'mine' }" @click="switchTab('mine')">我的提交</button>
@@ -254,10 +323,15 @@ const roleLabel: Record<MemberRole, string> = { owner: '所有者', admin: '管�
                     </template>
                     <template v-else>
                       <template v-if="canManage()">
-                        <select class="role-select" :value="m.role" @change="handleSetRole(m, ($event.target as HTMLSelectElement).value as MemberRole)">
-                          <option value="member">成员</option>
-                          <option value="admin">管理员</option>
-                        </select>
+                        <el-select
+                          class="role-select"
+                          :model-value="m.role"
+                          popper-class="role-select-popper"
+                          @change="handleSetRole(m, $event as MemberRole)"
+                        >
+                          <el-option label="成员" value="member" />
+                          <el-option label="管理员" value="admin" />
+                        </el-select>
                         <button class="member-del" @click="handleRemove(m)" title="移除">✕</button>
                       </template>
                       <span v-else class="role-badge">{{ roleLabel[m.role] }}</span>
@@ -305,8 +379,8 @@ const roleLabel: Record<MemberRole, string> = { owner: '所有者', admin: '管�
                       <img v-else :src="getMediaUrl(item.location)" />
                     </div>
                     <div class="pending-info">
-                      <span class="pending-cat">分类：{{ item.category_name }}</span>
-                      <span class="pending-meta">提交人 ID：{{ item.submitted_by }}</span>
+                      <span class="pending-cat">{{ item.project_name }} · {{ item.category_name }}</span>
+                      <span class="pending-meta">提交人：{{ item.submitted_by_name || `用户${item.submitted_by}` }}</span>
                       <button
                         v-if="item.reject_count > 0"
                         class="reject-count-badge"
@@ -344,19 +418,25 @@ const roleLabel: Record<MemberRole, string> = { owner: '所有者', admin: '管�
                 <p class="empty-hint">你还没有提交过素材</p>
               </div>
               <div v-else class="pending-list">
-                <div v-for="item in mySubmissions" :key="`${item.category_id}-${item.assets_id}`" class="pending-item">
+                <div v-for="item in mySubmissions" :key="item.id" class="pending-item">
                   <div class="pending-top">
                     <div class="pending-thumb">
                       <video v-if="isVideoLoc(item.location)" :src="getMediaUrl(item.location)" preload="metadata" />
                       <img v-else :src="getMediaUrl(item.location)" />
                     </div>
                     <div class="pending-info">
-                      <span class="pending-cat">分类：{{ item.category_name }}</span>
+                      <span class="pending-cat">{{ item.project_name }} · {{ item.category_name }}</span>
                       <span class="status-badge" :class="item.review_status">{{ statusLabel[item.review_status] }}</span>
                       <span v-if="item.reject_count > 0" class="pending-meta">被驳回 {{ item.reject_count }} 次</span>
                     </div>
                   </div>
                   <div class="pending-actions">
+                    <button
+                      v-if="item.review_status === 'rejected'"
+                      class="review-btn approve"
+                      :disabled="resubmitting"
+                      @click="openResubmit(item)"
+                    >重新提交</button>
                     <button class="review-btn detail" @click="openTimeline(item.category_id, item.assets_id)">查看审核记录</button>
                   </div>
                 </div>
@@ -367,6 +447,14 @@ const roleLabel: Record<MemberRole, string> = { owner: '所有者', admin: '管�
       </div>
     </Transition>
   </Teleport>
+
+  <!-- 重新提交：选新素材续接被驳回的记录 -->
+  <AssetPicker
+    v-model:visible="showResubmitPicker"
+    :max-select="1"
+    :allow-video="resubmitTarget?.asset_type === 'video'"
+    @select="handleResubmitSelect"
+  />
 
   <!-- 审核记录时间线弹窗 -->
   <Teleport to="body">
@@ -391,10 +479,28 @@ const roleLabel: Record<MemberRole, string> = { owner: '所有者', admin: '管�
                     <span class="timeline-time">{{ ev.created_at }}</span>
                   </div>
                   <div v-if="ev.comment" class="timeline-comment">{{ ev.comment }}</div>
+                  <div v-if="ev.action === 'submit' && ev.location" class="timeline-thumb-wrap" @click.stop="previewTimelineAsset(ev.location)">
+                    <video v-if="isTimelineVideo(ev.location)" :src="getTimelineMediaUrl(ev.location)" class="timeline-thumb" preload="metadata" />
+                    <img v-else :src="getTimelineMediaUrl(ev.location)" class="timeline-thumb" />
+                    <div class="timeline-thumb-zoom">⤢</div>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
+
+  <!-- 时间线资产放大预览 -->
+  <Teleport to="body">
+    <Transition name="team-dialog">
+      <div v-if="showTimelinePreview" class="dialog-overlay" style="z-index:9000" @click="showTimelinePreview = false">
+        <div class="timeline-preview-modal" @click.stop>
+          <button class="dialog-close" style="position:absolute;top:12px;right:12px" @click="showTimelinePreview = false">✕</button>
+          <video v-if="timelinePreviewIsVideo" :src="timelinePreviewUrl" class="timeline-preview-media" controls autoplay />
+          <img v-else :src="timelinePreviewUrl" class="timeline-preview-media" />
         </div>
       </div>
     </Transition>
@@ -464,7 +570,7 @@ const roleLabel: Record<MemberRole, string> = { owner: '所有者', admin: '管�
   transition: all 0.2s;
 }
 .tab:hover { color: rgba(255, 255, 255, 0.7); }
-.tab.active { color: rgba(255, 255, 255, 0.95); border-bottom-color: rgba(108, 99, 255, 0.8); }
+.tab.active { color: rgba(255, 255, 255, 0.95); border-bottom-color: rgba(255,255,255, 0.8); }
 
 .dialog-body {
   flex: 1;
@@ -477,14 +583,41 @@ const roleLabel: Record<MemberRole, string> = { owner: '所有者', admin: '管�
 
 /* 角色下拉（成员列表用） */
 .role-select {
-  background: rgba(40,40,48,0.98);
-  border: 1px solid rgba(255,255,255,0.14);
-  border-radius: 8px;
+  width: 84px;
+  flex-shrink: 0;
+}
+.role-select :deep(.el-select__wrapper) {
+  min-height: 30px;
+  padding: 4px 10px;
+  background: rgba(255,255,255,0.05) !important;
+  border-color: rgba(255,255,255,0.14) !important;
+  border-radius: 8px !important;
+}
+.role-select :deep(.el-select__selected-item) {
   color: rgba(255,255,255,0.85);
   font-size: 12px;
-  padding: 6px 8px;
-  cursor: pointer;
-  outline: none;
+}
+:global(.role-select-popper.el-popper) {
+  z-index: 4100 !important;
+  background: #202126 !important;
+  border: 1px solid rgba(255,255,255,0.14) !important;
+  border-radius: 8px !important;
+  box-shadow: 0 12px 30px rgba(0,0,0,0.45) !important;
+}
+:global(.role-select-popper .el-select-dropdown__item) {
+  height: 32px;
+  line-height: 32px;
+  color: rgba(255,255,255,0.72) !important;
+  font-size: 12px !important;
+}
+:global(.role-select-popper .el-select-dropdown__item.is-hovering),
+:global(.role-select-popper .el-select-dropdown__item.is-selected) {
+  background: rgba(255,255,255,0.1) !important;
+  color: #fff !important;
+}
+:global(.role-select-popper .el-popper__arrow::before) {
+  background: #202126 !important;
+  border-color: rgba(255,255,255,0.14) !important;
 }
 
 /* 添加成员按钮 */
@@ -532,7 +665,7 @@ const roleLabel: Record<MemberRole, string> = { owner: '所有者', admin: '管�
   padding: 8px 12px;
   outline: none;
 }
-.search-input:focus { border-color: rgba(108,99,255,0.6); }
+.search-input:focus { border-color: rgba(255,255,255,0.6); }
 
 .candidate-list { display: flex; flex-direction: column; gap: 6px; }
 .candidate-item {
@@ -548,15 +681,15 @@ const roleLabel: Record<MemberRole, string> = { owner: '所有者', admin: '管�
 .candidate-add {
   padding: 5px 16px;
   border-radius: 8px;
-  border: 1px solid rgba(108,99,255,0.6);
-  background: rgba(108,99,255,0.3);
+  border: 1px solid rgba(255,255,255,0.6);
+  background: rgba(255,255,255,0.3);
   color: rgba(255,255,255,0.95);
   font-size: 12px;
   cursor: pointer;
   flex-shrink: 0;
   transition: all 0.2s;
 }
-.candidate-add:hover:not(:disabled) { background: rgba(108,99,255,0.45); }
+.candidate-add:hover:not(:disabled) { background: rgba(255,255,255,0.45); }
 .candidate-add:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* 成员列表 */
@@ -627,8 +760,8 @@ const roleLabel: Record<MemberRole, string> = { owner: '所有者', admin: '管�
   transition: all 0.2s;
 }
 .review-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.review-btn.approve { background: rgba(34,197,94,0.18); border-color: rgba(34,197,94,0.4); color: #4ade80; }
-.review-btn.approve:hover:not(:disabled) { background: rgba(34,197,94,0.3); }
+.review-btn.approve { background: rgba(34,197,94,0.15); border-color: rgba(34,197,94,0.35); color: #4ade80; }
+.review-btn.approve:hover:not(:disabled) { background: rgba(34,197,94,0.28); }
 .review-btn.reject { background: rgba(244,63,94,0.15); border-color: rgba(244,63,94,0.35); color: #fb7185; }
 .review-btn.reject:hover:not(:disabled) { background: rgba(244,63,94,0.28); }
 .review-btn.detail { background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.14); color: rgba(255,255,255,0.7); }
@@ -648,7 +781,7 @@ const roleLabel: Record<MemberRole, string> = { owner: '所有者', admin: '管�
   outline: none;
   font-family: inherit;
 }
-.review-comment:focus { border-color: rgba(108,99,255,0.6); }
+.review-comment:focus { border-color: rgba(255,255,255,0.6); }
 
 /* 驳回次数徽标（可点开时间线） */
 .reject-count-badge {
@@ -672,7 +805,7 @@ const roleLabel: Record<MemberRole, string> = { owner: '所有者', admin: '管�
   border-radius: 10px;
 }
 .status-badge.pending { background: rgba(234,179,8,0.15); color: #eab308; }
-.status-badge.approved { background: rgba(34,197,94,0.15); color: #4ade80; }
+.status-badge.approved { background: rgba(255,255,255,0.15); color: rgba(255,255,255,0.82); }
 .status-badge.rejected { background: rgba(244,63,94,0.15); color: #fb7185; }
 
 /* 时间线弹窗 */
@@ -703,8 +836,8 @@ const roleLabel: Record<MemberRole, string> = { owner: '所有者', admin: '管�
   background: rgba(255,255,255,0.08);
   color: rgba(255,255,255,0.7);
 }
-.timeline-action.submit { background: rgba(96,165,250,0.15); color: #60a5fa; }
-.timeline-action.approve { background: rgba(34,197,94,0.15); color: #4ade80; }
+.timeline-action.submit { background: rgba(96,165,250,0.15); color: rgba(255,255,255,0.82); }
+.timeline-action.approve { background: rgba(255,255,255,0.15); color: rgba(255,255,255,0.82); }
 .timeline-action.reject { background: rgba(244,63,94,0.15); color: #fb7185; }
 .timeline-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .timeline-meta {
@@ -733,7 +866,7 @@ const roleLabel: Record<MemberRole, string> = { owner: '所有者', admin: '管�
   width: 24px; height: 24px;
   border-radius: 50%;
   border: 2px solid rgba(255,255,255,0.14);
-  border-top-color: rgba(108,99,255,0.9);
+  border-top-color: rgba(255,255,255,0.9);
   animation: spin 0.8s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -742,4 +875,51 @@ const roleLabel: Record<MemberRole, string> = { owner: '所有者', admin: '管�
 .team-dialog-enter-active .dialog-content, .team-dialog-leave-active .dialog-content { transition: transform 0.25s ease, opacity 0.25s ease; }
 .team-dialog-enter-from, .team-dialog-leave-to { opacity: 0; }
 .team-dialog-enter-from .dialog-content, .team-dialog-leave-to .dialog-content { transform: scale(0.9) translateY(20px); opacity: 0; }
+
+/* 时间线缩略图 */
+.timeline-thumb-wrap {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  border-radius: 6px;
+  overflow: hidden;
+  cursor: pointer;
+  flex-shrink: 0;
+  margin-top: 4px;
+}
+.timeline-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.timeline-thumb-zoom {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,0.45);
+  color: rgba(255,255,255,0.9);
+  font-size: 18px;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.timeline-thumb-wrap:hover .timeline-thumb-zoom { opacity: 1; }
+
+/* 时间线资产全屏预览 */
+.timeline-preview-modal {
+  position: relative;
+  max-width: 90vw;
+  max-height: 90vh;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.timeline-preview-media {
+  display: block;
+  max-width: 90vw;
+  max-height: 90vh;
+  object-fit: contain;
+  border-radius: 10px;
+}
 </style>

@@ -43,10 +43,10 @@ const typeColors = computed(() => {
       }
     case 'info':
       return {
-        border: 'rgba(108, 99, 255, 0.3)',
-        bg: 'rgba(108, 99, 255, 0.15)',
-        hover: 'rgba(108, 99, 255, 0.25)',
-        text: '#a78bfa',
+        border: 'rgba(255,255,255, 0.3)',
+        bg: 'rgba(255,255,255, 0.15)',
+        hover: 'rgba(255,255,255, 0.25)',
+        text: 'rgba(255,255,255,0.82)',
       }
     default:
       return {
@@ -164,9 +164,9 @@ const typeColors = computed(() => {
 }
 
 .dialog-icon.info {
-  background: rgba(108, 99, 255, 0.1);
-  border: 2px solid rgba(108, 99, 255, 0.3);
-  color: #a78bfa;
+  background: rgba(255,255,255, 0.1);
+  border: 2px solid rgba(255,255,255, 0.3);
+  color: rgba(255,255,255,0.82);
 }
 
 @keyframes icon-pulse {
@@ -268,8 +268,8 @@ const typeColors = computed(() => {
 }
 
 .confirm-btn.info:hover:not(:disabled) {
-  background: rgba(108, 99, 255, 0.25) !important;
-  border-color: rgba(108, 99, 255, 0.5) !important;
+  background: rgba(255,255,255, 0.25) !important;
+  border-color: rgba(255,255,255, 0.5) !important;
 }
 
 .loading-spinner {

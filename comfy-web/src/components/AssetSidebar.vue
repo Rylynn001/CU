@@ -1,13 +1,18 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { ElMessage, ElDialog, ElInput } from 'element-plus'
-import { favoriteAsset, fetchHistoryByAsset } from '../api/apiService'
+import {
+  favoriteAsset, fetchHistoryByAsset,
+  listPendingAssets, listMySubmissions, reviewAsset, addAssetToCategory, fetchReviewTimeline,
+  type PendingAsset, type MySubmission, type ReviewEvent,
+} from '../api/apiService'
 import FavoriteHeart from './FavoriteHeart.vue'
 import VideoPlayer from './VideoPlayer.vue'
 import ImageViewer from './ImageViewer.vue'
 import ProjectManager from './ProjectManager.vue'
 import ConfirmDialog from './ConfirmDialog.vue'
 import ProjectTeamDialog from './ProjectTeamDialog.vue'
+import AssetPicker from './AssetPicker.vue'
 import type { MemberRole } from '../api/apiService'
 
 interface Asset {
@@ -78,15 +83,152 @@ function handleProjectManagerClose() {
 // ── 团队弹窗 ──────────────────────────────────────────────────────────────
 const showTeamDialog = ref(false)
 const currentUserId = computed(() => getUser()?.id ?? 0)
+type TeamDialogTab = 'members' | 'pending' | 'mine'
+const teamDialogTab = ref<TeamDialogTab>('members')
+const canReviewSelectedProject = computed(() =>
+  selectedProject.value?.role === 'owner' || selectedProject.value?.role === 'admin'
+)
 
-function openTeamDialog() {
+function openTeamDialog(tab: TeamDialogTab = 'members') {
+  // 待审核不再要求必须选择项目
+  if (tab === 'pending' || tab === 'mine') {
+    teamDialogTab.value = tab
+    showTeamDialog.value = true
+    return
+  }
+  // 成员管理仍需要选择项目
   if (!selectedProject.value) return
+  teamDialogTab.value = tab
   showTeamDialog.value = true
 }
 
 // 审核通过后刷新当前分类资产
 function handleReviewed() {
   if (selectedCategory.value) loadCategoryAssets(selectedCategory.value.id)
+  loadCollaboration()
+}
+
+type CollaborationTab = 'pending' | 'mine'
+const collaborationTab = ref<CollaborationTab>('pending')
+const pendingAssets = ref<PendingAsset[]>([])
+const mySubmissions = ref<MySubmission[]>([])
+const collaborationLoading = ref(false)
+const reviewingCollaborationKey = ref<string | null>(null)
+const collaborationReviewComments = ref<Record<string, string>>({})
+const showCollaborationTimeline = ref(false)
+const collaborationTimeline = ref<ReviewEvent[]>([])
+const collaborationTimelineLoading = ref(false)
+const showResubmitPicker = ref(false)
+const resubmitTarget = ref<MySubmission | null>(null)
+const resubmitting = ref(false)
+
+async function loadCollaboration() {
+  const user = getUser()
+  if (!user) return
+  collaborationLoading.value = true
+  try {
+    if (collaborationTab.value === 'pending') {
+      pendingAssets.value = await listPendingAssets(user.id)
+    } else {
+      mySubmissions.value = await listMySubmissions(user.id)
+    }
+  } catch {
+    ElMessage.error(collaborationTab.value === 'pending' ? '加载待审核失败' : '加载我的提交失败')
+  } finally {
+    collaborationLoading.value = false
+  }
+}
+
+function switchCollaborationTab(tab: CollaborationTab) {
+  if (collaborationTab.value === tab) return
+  collaborationTab.value = tab
+  loadCollaboration()
+}
+
+async function reviewCollaborationAsset(item: PendingAsset, approve: boolean) {
+  const user = getUser()
+  if (!user) return
+  const key = `${item.category_id}-${item.assets_id}`
+  reviewingCollaborationKey.value = key
+  try {
+    const comment = collaborationReviewComments.value[key]?.trim() || undefined
+    await reviewAsset(item.category_id, item.assets_id, user.id, approve, comment)
+    pendingAssets.value = pendingAssets.value.filter(x => `${x.category_id}-${x.assets_id}` !== key)
+    delete collaborationReviewComments.value[key]
+    ElMessage.success(approve ? '已通过' : '已驳回')
+  } catch (e: any) {
+    ElMessage.error(e.message || '操作失败')
+  } finally {
+    reviewingCollaborationKey.value = null
+  }
+}
+
+function collaborationMediaUrl(location: string | null) {
+  if (!location) return ''
+  return `/api/api-proxy/output/${location.split(/[/\\\\]/).pop()}`
+}
+
+function collaborationVideo(location: string | null) {
+  return ['mp4', 'mov', 'avi', 'webm'].includes(location?.split('.').pop()?.toLowerCase() || '')
+}
+
+async function openCollaborationTimeline(categoryId: number, assetsId: number) {
+  const user = getUser()
+  if (!user) return
+  showCollaborationTimeline.value = true
+  collaborationTimelineLoading.value = true
+  collaborationTimeline.value = []
+  try {
+    collaborationTimeline.value = await fetchReviewTimeline(categoryId, assetsId, user.id)
+  } catch {
+    ElMessage.error('加载审核记录失败')
+  } finally {
+    collaborationTimelineLoading.value = false
+  }
+}
+
+const collaborationActionLabel: Record<string, string> = {
+  submit: '提交',
+  approve: '通过',
+  reject: '驳回',
+}
+
+function openCollaborationPreview(location: string | null) {
+  if (!location) return
+  const url = collaborationMediaUrl(location)
+  if (collaborationVideo(location)) {
+    activeVideoUrl.value = url
+    activeVideoId.value = undefined
+    showVideoPlayer.value = true
+  } else {
+    previewUrl.value = url
+    showImageViewer.value = true
+  }
+}
+
+function openResubmit(item: MySubmission) {
+  resubmitTarget.value = item
+  showResubmitPicker.value = true
+}
+
+async function handleResubmitSelect(selectedAssets: Array<{ id: number }>) {
+  const user = getUser()
+  const target = resubmitTarget.value
+  showResubmitPicker.value = false
+  if (!user || !target || selectedAssets.length === 0) return
+  resubmitting.value = true
+  try {
+    const { review_status } = await addAssetToCategory(
+      target.category_id, selectedAssets[0].id, user.id, target.id
+    )
+    ElMessage.success(review_status === 'pending' ? '已重新提交，等待管理员审核' : '已重新提交')
+    await loadCollaboration()
+  } catch (e: any) {
+    ElMessage.error(e.message || '重新提交失败')
+  } finally {
+    resubmitting.value = false
+    resubmitTarget.value = null
+  }
 }
 
 // ── 我的资产 ──────────────────────────────────────────────────────────────
@@ -99,7 +241,7 @@ const favoriteTag = ref<0 | 1 | 2 | 3 | 4>(0)
 const FAVORITE_COLORS: { tag: 1 | 2 | 3 | 4; color: string; label: string }[] = [
   { tag: 1, color: '#f43f5e', label: '红' },
   { tag: 2, color: '#eab308', label: '黄' },
-  { tag: 3, color: '#22c55e', label: '绿' },
+  { tag: 3, color: 'rgba(255,255,255,0.82)', label: '绿' },
   { tag: 4, color: '#3b82f6', label: '蓝' },
 ]
 const currentPage = ref(1)
@@ -611,6 +753,7 @@ function reuseRecordParams() {
 
 onMounted(() => {
   loadAssets()
+  loadCollaboration()
   window.addEventListener('click', closeContextMenu)
   window.addEventListener('keydown', handleKeydown)
 })
@@ -634,8 +777,9 @@ onUnmounted(() => {
       </button>
     </div>
 
-    <!-- ══════ 我的资产视图 ══════ -->
-    <div v-if="activeView === 'assets'" class="view-wrap">
+    <div class="sidebar-content">
+      <!-- ══════ 我的资产视图 ══════ -->
+      <div v-if="activeView === 'assets'" class="view-wrap">
       <!-- 筛选栏 -->
       <div class="filter-row">
         <div class="chip-group">
@@ -702,10 +846,10 @@ onUnmounted(() => {
         <span v-if="loadingMore" class="no-more-text">加载中...</span>
         <span v-else class="no-more-text">已全部加载（{{ assets.length }} / {{ total }}）</span>
       </div>
-    </div>
+      </div>
 
-    <!-- ══════ 项目管理视图 ══════ -->
-    <div v-else class="view-wrap">
+      <!-- ══════ 项目管理视图 ══════ -->
+      <div v-else class="view-wrap">
       <!-- 未选择项目：项目列表 -->
       <template v-if="!selectedProject">
         <div class="proj-header">
@@ -752,7 +896,7 @@ onUnmounted(() => {
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
           </button>
           <span class="proj-title" style="flex:1">{{ selectedProject.name }}</span>
-          <button class="icon-btn" @click="openTeamDialog" title="团队协作">
+          <button class="icon-btn" @click="openTeamDialog()" title="团队协作">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
           </button>
           <button class="icon-btn" @click="showCreateCategory = true" title="新建分类">
@@ -811,6 +955,71 @@ onUnmounted(() => {
           </div>
         </div>
       </template>
+
+      </div>
+
+      <!-- ══════ 协作视图 ══════ -->
+      <div class="collaboration-panel">
+        <div class="collaboration-header">
+          <span class="collaboration-title">协作动态</span>
+          <span class="collaboration-project">全部项目</span>
+        </div>
+        <div class="collaboration-tabs">
+          <button class="collaboration-tab" :class="{ active: collaborationTab === 'pending' }" @click="switchCollaborationTab('pending')">
+            待审核
+            <span v-if="pendingAssets.length" class="collaboration-count">{{ pendingAssets.length }}</span>
+          </button>
+          <button class="collaboration-tab" :class="{ active: collaborationTab === 'mine' }" @click="switchCollaborationTab('mine')">我的提交</button>
+        </div>
+        <div class="collaboration-list">
+          <div v-if="collaborationLoading" class="center-state"><div class="mini-spin" /></div>
+          <div v-else-if="collaborationTab === 'pending' && pendingAssets.length === 0" class="center-state"><p class="empty-hint">暂无待审核素材</p></div>
+          <div v-else-if="collaborationTab === 'mine' && mySubmissions.length === 0" class="center-state"><p class="empty-hint">你还没有提交过素材</p></div>
+          <template v-else-if="collaborationTab === 'pending'">
+            <div v-for="item in pendingAssets" :key="`${item.category_id}-${item.assets_id}`" class="collaboration-item">
+              <div class="collaboration-thumb collaboration-thumb-clickable" @click="openCollaborationPreview(item.location)">
+                <video v-if="collaborationVideo(item.location)" :src="collaborationMediaUrl(item.location)" preload="metadata" />
+                <img v-else :src="collaborationMediaUrl(item.location)" />
+                <div class="collaboration-thumb-zoom">⤢</div>
+              </div>
+              <div class="collaboration-info">
+                <span class="collaboration-item-title">{{ item.project_name }} · {{ item.category_name }}</span>
+                <span class="collaboration-item-meta">提交人：{{ item.submitted_by_name || `用户${item.submitted_by}` }}</span>
+                <button class="collaboration-history-btn" @click="openCollaborationTimeline(item.category_id, item.assets_id)">已驳回 {{ item.reject_count }} 次 · 查看完整记录</button>
+              </div>
+              <textarea
+                class="collaboration-review-comment"
+                :value="collaborationReviewComments[`${item.category_id}-${item.assets_id}`] || ''"
+                @input="collaborationReviewComments[`${item.category_id}-${item.assets_id}`] = ($event.target as HTMLTextAreaElement).value"
+                placeholder="评语 / 建议（可选）"
+                rows="2"
+              />
+              <div class="collaboration-review-actions">
+                <button class="collaboration-review approve" :disabled="reviewingCollaborationKey === `${item.category_id}-${item.assets_id}`" @click="reviewCollaborationAsset(item, true)">通过</button>
+                <button class="collaboration-review reject" :disabled="reviewingCollaborationKey === `${item.category_id}-${item.assets_id}`" @click="reviewCollaborationAsset(item, false)">驳回</button>
+              </div>
+            </div>
+          </template>
+          <template v-else>
+            <div v-for="item in mySubmissions" :key="item.id" class="collaboration-item">
+              <div class="collaboration-thumb collaboration-thumb-clickable" @click="openCollaborationPreview(item.location)">
+                <video v-if="collaborationVideo(item.location)" :src="collaborationMediaUrl(item.location)" preload="metadata" />
+                <img v-else :src="collaborationMediaUrl(item.location)" />
+                <div class="collaboration-thumb-zoom">⤢</div>
+              </div>
+              <div class="collaboration-info">
+                <span class="collaboration-item-title">{{ item.project_name }} · {{ item.category_name }}</span>
+                <span class="collaboration-item-meta">{{ item.created_at || '已提交' }} · 被驳回 {{ item.reject_count }} 次</span>
+                <button class="collaboration-history-btn" @click="openCollaborationTimeline(item.category_id, item.assets_id)">查看完整审核记录</button>
+              </div>
+              <div class="collaboration-submission-actions">
+                <button v-if="item.review_status === 'rejected'" class="collaboration-resubmit" :disabled="resubmitting" @click="openResubmit(item)">重新提交</button>
+                <span class="collaboration-status" :class="item.review_status">{{ { pending: '待审核', approved: '已通过', rejected: '已驳回' }[item.review_status] }}</span>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
     </div>
 
     <!-- 新建项目弹窗 -->
@@ -1004,14 +1213,57 @@ onUnmounted(() => {
       @close="handleProjectManagerClose"
     />
 
+    <AssetPicker
+      v-model:visible="showResubmitPicker"
+      :max-select="1"
+      :allow-video="resubmitTarget?.asset_type === 'video'"
+      append-to-body
+      @select="handleResubmitSelect"
+    />
+
+    <Teleport to="body">
+      <Transition name="team-dialog">
+        <div v-if="showCollaborationTimeline" class="dialog-overlay" style="z-index: 8000" @click="showCollaborationTimeline = false">
+          <div class="timeline-content" @click.stop>
+            <div class="dialog-header">
+              <span class="dialog-title">审核完整记录</span>
+              <button class="dialog-close" @click="showCollaborationTimeline = false">✕</button>
+            </div>
+            <div class="dialog-body">
+              <div v-if="collaborationTimelineLoading" class="center-state"><div class="mini-spin" /></div>
+              <div v-else-if="collaborationTimeline.length === 0" class="center-state"><p class="empty-hint">暂无审核记录</p></div>
+              <div v-else class="timeline-list">
+                <div v-for="(event, index) in collaborationTimeline" :key="index" class="timeline-item">
+                  <span class="timeline-action" :class="event.action">{{ collaborationActionLabel[event.action] || event.action }}</span>
+                  <div class="timeline-body">
+                    <div class="timeline-meta">
+                      <span>{{ event.reviewer_name || `用户${event.reviewer_id ?? ''}` }}</span>
+                      <span class="timeline-time">{{ event.created_at || '' }}</span>
+                    </div>
+                    <div v-if="event.comment" class="timeline-comment">{{ event.comment }}</div>
+                    <div v-if="event.action === 'submit' && event.location" class="timeline-thumb-wrap" @click="openCollaborationPreview(event.location)">
+                      <video v-if="collaborationVideo(event.location)" :src="collaborationMediaUrl(event.location)" class="timeline-thumb" preload="metadata" />
+                      <img v-else :src="collaborationMediaUrl(event.location)" class="timeline-thumb" />
+                      <div class="timeline-thumb-zoom">⤢</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
     <!-- 团队协作弹窗 -->
     <ProjectTeamDialog
-      v-if="selectedProject"
       :visible="showTeamDialog"
-      :project-id="selectedProject.id"
-      :project-name="selectedProject.name"
-      :current-role="selectedProject.role || 'member'"
+      :project-id="selectedProject?.id"
+      :project-name="selectedProject?.name"
+      :current-role="selectedProject?.role || 'member'"
       :current-user-id="currentUserId"
+      :initial-tab="teamDialogTab"
+      hide-tabs
       @close="showTeamDialog = false"
       @reviewed="handleReviewed"
     />
@@ -1048,14 +1300,286 @@ onUnmounted(() => {
   overflow: hidden;
 }
 
-.view-wrap {
+.sidebar-content {
   flex: 1;
+  height: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.sidebar-content::-webkit-scrollbar { width: 4px; }
+.sidebar-content::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+
+.view-wrap {
+  flex: 1 1 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
 
+.collaboration-panel {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 8px 10px 10px;
+  border-top: 1px solid var(--color-border);
+  background: rgba(7, 9, 14, 0.36);
+}
+.collaboration-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 7px;
+}
+.collaboration-title {
+  color: var(--color-faint);
+  font-size: 11px;
+}
+.collaboration-project {
+  min-width: 0;
+  overflow: hidden;
+  color: rgba(255,255,255,0.26);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.collaboration-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  margin-bottom: 6px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: rgba(255,255,255,0.055);
+}
+.collaboration-tab {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-faint);
+  font-size: 11px;
+  cursor: pointer;
+  transition: color 0.2s, background 0.2s;
+}
+.collaboration-tab:hover { color: var(--color-muted); }
+.collaboration-tab.active {
+  color: var(--color-text);
+  background: rgba(255, 255, 255, 0.11);
+}
+.collaboration-count {
+  min-width: 16px;
+  padding: 1px 4px;
+  border-radius: 9px;
+  background: rgba(234,179,8,0.18);
+  color: #eab308;
+  font-size: 10px;
+  line-height: 14px;
+}
+.collaboration-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+.collaboration-list::-webkit-scrollbar { width: 4px; }
+.collaboration-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+.collaboration-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 7px;
+  margin-bottom: 5px;
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 8px;
+  background: rgba(255,255,255,0.03);
+}
+.collaboration-thumb {
+  width: 42px;
+  height: 42px;
+  flex-shrink: 0;
+  overflow: hidden;
+  border-radius: 6px;
+  background: rgba(0,0,0,0.3);
+}
+.collaboration-thumb img, .collaboration-thumb video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.collaboration-info { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 3px; }
+.collaboration-item-title { overflow: hidden; color: rgba(255,255,255,0.82); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.collaboration-item-meta { color: rgba(255,255,255,0.35); font-size: 10px; }
+.collaboration-history-btn {
+  align-self: flex-start;
+  padding: 2px 6px;
+  border: 1px solid rgba(244,63,94,0.3);
+  border-radius: 5px;
+  background: rgba(244,63,94,0.1);
+  color: #fb7185;
+  font-size: 10px;
+  cursor: pointer;
+}
+.collaboration-history-btn:hover { background: rgba(244,63,94,0.18); }
+.collaboration-review-comment {
+  order: 3;
+  flex: 0 0 100%;
+  box-sizing: border-box;
+  min-height: 32px;
+  padding: 5px 7px;
+  resize: vertical;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 6px;
+  outline: none;
+  background: rgba(255,255,255,0.04);
+  color: rgba(255,255,255,0.82);
+  font: inherit;
+  font-size: 10px;
+}
+.collaboration-review-comment:focus { border-color: rgba(255,255,255,0.42); }
+.collaboration-review-comment::placeholder { color: rgba(255,255,255,0.3); }
+.collaboration-review-actions { display: flex; flex-direction: row; gap: 4px; flex-shrink: 0; }
+.collaboration-review {
+  min-width: 36px;
+  padding: 3px 5px;
+  border-radius: 5px;
+  border: 1px solid transparent;
+  font-size: 10px;
+  cursor: pointer;
+}
+.collaboration-review:disabled { opacity: 0.5; cursor: not-allowed; }
+.collaboration-review.approve { color: #4ade80; background: rgba(34,197,94,0.15); border-color: rgba(34,197,94,0.35); }
+.collaboration-review.approve:hover:not(:disabled) { background: rgba(34,197,94,0.28); }
+.collaboration-review.reject { color: #fb7185; background: rgba(244,63,94,0.12); border-color: rgba(244,63,94,0.28); }
+.collaboration-submission-actions { display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
+.collaboration-status {
+  flex-shrink: 0;
+  padding: 3px 6px;
+  border-radius: 8px;
+  font-size: 10px;
+}
+.collaboration-status.pending { color: #eab308; background: rgba(234,179,8,0.15); }
+.collaboration-status.approved { color: rgba(255,255,255,0.82); background: rgba(255,255,255,0.15); }
+.collaboration-status.rejected { color: #fb7185; background: rgba(244,63,94,0.15); }
+.collaboration-resubmit {
+  padding: 3px 6px;
+  border: 1px solid rgba(255,255,255,0.3);
+  border-radius: 5px;
+  background: rgba(255,255,255,0.14);
+  color: rgba(255,255,255,0.82);
+  font-size: 10px;
+  cursor: pointer;
+}
+.collaboration-resubmit:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 8000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(0,0,0,0.75);
+  backdrop-filter: blur(8px);
+}
+.timeline-content {
+  width: min(90%, 460px);
+  max-height: 72vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 14px;
+  background: rgba(25,25,30,0.98);
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+}
+.dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  padding: 16px 18px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+.dialog-title { color: rgba(255,255,255,0.9); font-size: 14px; font-weight: 500; }
+.dialog-close {
+  width: 26px;
+  height: 26px;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 50%;
+  background: transparent;
+  color: rgba(255,255,255,0.55);
+  cursor: pointer;
+}
+.dialog-body { min-height: 180px; padding: 16px 18px; overflow-y: auto; }
+.timeline-list { display: flex; flex-direction: column; gap: 0; }
+.timeline-item { display: flex; gap: 10px; padding-bottom: 16px; }
+.timeline-action {
+  flex-shrink: 0;
+  align-self: flex-start;
+  padding: 2px 9px;
+  border-radius: 9px;
+  background: rgba(255,255,255,0.08);
+  color: rgba(255,255,255,0.7);
+  font-size: 11px;
+}
+.timeline-action.submit { background: rgba(96,165,250,0.15); color: #60a5fa; }
+.timeline-action.approve { background: rgba(34,197,94,0.15); color: #4ade80; }
+.timeline-action.reject { background: rgba(244,63,94,0.15); color: #fb7185; }
+.timeline-body { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 4px; }
+.timeline-meta { display: flex; justify-content: space-between; gap: 8px; color: rgba(255,255,255,0.5); font-size: 11px; }
+.timeline-time { flex-shrink: 0; color: rgba(255,255,255,0.3); font-size: 10px; }
+.timeline-comment { padding: 6px 8px; border-radius: 6px; background: rgba(255,255,255,0.04); color: rgba(255,255,255,0.72); font-size: 12px; white-space: pre-wrap; word-break: break-word; }
+.timeline-thumb-wrap {
+  position: relative;
+  margin-top: 6px;
+  width: 72px;
+  height: 72px;
+  border-radius: 6px;
+  overflow: hidden;
+  cursor: zoom-in;
+  background: rgba(0,0,0,0.3);
+  flex-shrink: 0;
+}
+.timeline-thumb { width: 100%; height: 100%; object-fit: cover; display: block; }
+.timeline-thumb-wrap .timeline-thumb-zoom {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,0.4);
+  color: rgba(255,255,255,0.85);
+  font-size: 16px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.timeline-thumb-wrap:hover .timeline-thumb-zoom { opacity: 1; }
+.collaboration-thumb-clickable { cursor: zoom-in; position: relative; }
+.collaboration-thumb-zoom {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,0.35);
+  color: rgba(255,255,255,0.8);
+  font-size: 16px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.collaboration-thumb-clickable:hover .collaboration-thumb-zoom { opacity: 1; }
+.team-dialog-enter-active, .team-dialog-leave-active { transition: opacity 0.2s ease; }
+.team-dialog-enter-from, .team-dialog-leave-to { opacity: 0; }
 /* ── 顶部 tab ── */
 .sidebar-tabs {
   display: flex;
@@ -1453,7 +1977,7 @@ onUnmounted(() => {
   width: 24px; height: 24px;
   border-radius: 50%;
   border: 2px solid rgba(255,255,255,0.14);
-  border-top-color: var(--color-primary);
+  border-top-color: rgba(255,255,255,0.72);
   animation: spin 0.8s linear infinite;
 }
 
@@ -1611,10 +2135,10 @@ onUnmounted(() => {
 .modal-body::-webkit-scrollbar { width: 6px; }
 .modal-body::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.03); }
 .modal-body::-webkit-scrollbar-thumb {
-  background: rgba(108, 99, 255, 0.3);
+  background: rgba(255,255,255, 0.3);
   border-radius: 3px;
 }
-.modal-body::-webkit-scrollbar-thumb:hover { background: rgba(108, 99, 255, 0.5); }
+.modal-body::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255, 0.5); }
 
 .detail-section {
   display: flex;
@@ -1625,7 +2149,7 @@ onUnmounted(() => {
 .section-title {
   font-size: 12px;
   font-weight: 500;
-  color: rgba(167, 139, 250, 0.8);
+  color: rgba(255,255,255, 0.8);
   text-transform: uppercase;
   letter-spacing: 1.2px;
 }
@@ -1680,9 +2204,9 @@ onUnmounted(() => {
   display: inline-flex;
   padding: 8px 16px;
   border-radius: 8px;
-  background: rgba(108, 99, 255, 0.12);
-  border: 1px solid rgba(108, 99, 255, 0.25);
-  color: rgba(167, 139, 250, 0.9);
+  background: rgba(255,255,255, 0.12);
+  border: 1px solid rgba(255,255,255, 0.25);
+  color: rgba(255,255,255, 0.9);
   font-size: 13px;
   font-weight: 500;
 }
@@ -1716,7 +2240,7 @@ onUnmounted(() => {
 .output-item {
   border-radius: 12px;
   overflow: hidden;
-  border: 1px solid rgba(108, 99, 255, 0.2);
+  border: 1px solid rgba(255,255,255, 0.2);
   background: rgba(0, 0, 0, 0.4);
   aspect-ratio: 16 / 9;
 }
@@ -1764,8 +2288,8 @@ onUnmounted(() => {
 }
 
 .reuse-btn {
-  background: linear-gradient(135deg, rgba(108, 99, 255, 0.25), rgba(167, 139, 250, 0.25));
-  border-color: rgba(108, 99, 255, 0.4);
+  background: linear-gradient(135deg, rgba(255,255,255, 0.25), rgba(255,255,255, 0.25));
+  border-color: rgba(255,255,255, 0.4);
   color: rgba(255, 255, 255, 0.95);
   position: relative;
   overflow: hidden;
@@ -1775,7 +2299,7 @@ onUnmounted(() => {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(135deg, rgba(108, 99, 255, 0.15), rgba(167, 139, 250, 0.15));
+  background: linear-gradient(135deg, rgba(255,255,255, 0.15), rgba(255,255,255, 0.15));
   opacity: 0;
   transition: opacity 0.25s;
 }
@@ -1785,9 +2309,9 @@ onUnmounted(() => {
 }
 
 .reuse-btn:hover {
-  border-color: rgba(108, 99, 255, 0.6);
+  border-color: rgba(255,255,255, 0.6);
   transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(108, 99, 255, 0.25);
+  box-shadow: 0 8px 24px rgba(255,255,255, 0.25);
 }
 
 .reuse-btn:active {
@@ -1859,5 +2383,12 @@ onUnmounted(() => {
 .reuse-btn:hover {
   border-color: rgba(255,255,255,0.32);
   box-shadow: 0 8px 24px rgba(0,0,0,0.28);
+}
+
+@media (max-width: 900px) {
+  .asset-sidebar {
+    flex: none;
+    height: 400px;
+  }
 }
 </style>

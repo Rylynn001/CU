@@ -379,7 +379,7 @@ defineExpose({ getFile })
   transition: all 0.15s;
 }
 .tool-btn:hover { background: rgba(255,255,255,0.08); color: white; }
-.tool-btn.active { background: rgba(108,99,255,0.4); border-color: rgba(108,99,255,0.7); color: white; }
+.tool-btn.active { background: rgba(255,255,255,0.4); border-color: rgba(255,255,255,0.7); color: white; }
 
 .divider-v {
   width: 1px;
@@ -418,7 +418,7 @@ defineExpose({ getFile })
 }
 .size-slider {
   width: 80px;
-  accent-color: #6c63ff;
+  accent-color: rgba(255,255,255,0.82);
 }
 
 .action-btn {
@@ -435,13 +435,13 @@ defineExpose({ getFile })
 }
 .action-btn.cancel:hover { background: rgba(255,255,255,0.14); }
 .action-btn.confirm {
-  background: linear-gradient(135deg, #6c63ff, #a78bfa);
+  background: linear-gradient(135deg, rgba(255,255,255,0.14), rgba(255,255,255,0.82));
   color: white;
 }
 .action-btn.confirm:hover { opacity: 0.9; }
 
 .action-btn.generate {
-  background: linear-gradient(135deg, #6c63ff, #a78bfa, #6c63ff);
+  background: linear-gradient(135deg, rgba(255,255,255,0.14), rgba(255,255,255,0.82), rgba(255,255,255,0.82));
   background-size: 200% auto;
   color: white;
   animation: shimmer 3s linear infinite;

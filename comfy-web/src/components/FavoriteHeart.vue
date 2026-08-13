@@ -15,7 +15,7 @@ const COLORS: { tag: 0 | 1 | 2 | 3 | 4; color: string; label: string }[] = [
   { tag: 0, color: 'rgba(255,255,255,0.55)', label: '取消收藏' },
   { tag: 1, color: '#f43f5e', label: '红' },
   { tag: 2, color: '#eab308', label: '黄' },
-  { tag: 3, color: '#22c55e', label: '绿' },
+  { tag: 3, color: 'rgba(255,255,255,0.82)', label: '绿' },
   { tag: 4, color: '#3b82f6', label: '蓝' },
 ]
 
@@ -159,7 +159,7 @@ onBeforeUnmount(() => { if (closeTimer) clearTimeout(closeTimer) })
   gap: 6px;
   padding: 7px 9px;
   border-radius: 999px;
-  background: rgba(24,22,32,0.92);
+  background: rgba(24,24,27,0.92);
   border: 1px solid rgba(255,255,255,0.12);
   backdrop-filter: blur(10px);
   box-shadow: 0 10px 28px rgba(0,0,0,0.4);
