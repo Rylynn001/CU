@@ -314,12 +314,28 @@ def add_asset_to_category(
         return review_status
 
 
-def list_pending_assets(user_id: int) -> list[dict]:
+def list_pending_assets(user_id: int, page: int = 1, page_size: int = 50) -> tuple[list[dict], int]:
     """列出该用户有权限审核的所有待审核素材（跨所有项目）。
     仅返回用户在其中担任 owner/admin 的项目的待审核素材。
     附带该素材在此分类历史上被驳回的次数 reject_count。"""
+    page = max(1, page)
+    offset = (page - 1) * page_size
     with get_db_connection() as conn:
         cursor = conn.cursor()
+        cursor.execute(
+            '''SELECT COUNT(*) AS cnt
+               FROM category_assets ca
+               JOIN project_category pc ON pc.id = ca.category_id
+               JOIN projects p ON p.id = pc.project_id
+               JOIN project_members pm ON pm.project_id = p.id
+               WHERE ca.review_status = 'pending'
+                 AND pm.user_id = %s
+                 AND pm.role IN ('owner', 'admin')
+                 AND p.del_flag = 0
+                 AND pc.del_flag = 0''',
+            (user_id,)
+        )
+        total = cursor.fetchone()['cnt']
         cursor.execute(
             '''SELECT ca.id, ca.category_id, ca.assets_id, ca.submitted_by, ca.created_at,
                       pc.name AS category_name,
@@ -340,14 +356,15 @@ def list_pending_assets(user_id: int) -> list[dict]:
                  AND pm.role IN ('owner', 'admin')
                  AND p.del_flag = 0
                  AND pc.del_flag = 0
-               ORDER BY ca.created_at DESC''',
-            (user_id,)
+               ORDER BY ca.created_at DESC, ca.id DESC
+               LIMIT %s OFFSET %s''',
+            (user_id, page_size, offset)
         )
         rows = cursor.fetchall()
     for r in rows:
         if r.get('created_at'):
             r['created_at'] = r['created_at'].strftime('%Y-%m-%d %H:%M:%S')
-    return rows
+    return rows, int(total)
 
 
 def review_asset(category_id: int, asset_id: int, user_id: int, approve: bool, comment: str | None = None) -> bool:
@@ -430,11 +447,23 @@ def get_asset_review_timeline(category_id: int, asset_id: int, user_id: int) -> 
     return rows
 
 
-def list_my_submissions(user_id: int) -> list[dict]:
+def list_my_submissions(user_id: int, page: int = 1, page_size: int = 50) -> tuple[list[dict], int, int]:
     """列出当前用户在所有项目下提交的素材及其当前状态与被驳回次数。
     用于成员查看自己的提交进度（含被驳回的）。"""
+    page = max(1, page)
+    offset = (page - 1) * page_size
     with get_db_connection() as conn:
         cursor = conn.cursor()
+        cursor.execute(
+            '''SELECT COUNT(*) AS cnt,
+                      COALESCE(SUM(CASE WHEN ca.review_status = 'rejected' THEN 1 ELSE 0 END), 0) AS rejected_count
+               FROM category_assets ca
+               JOIN project_category pc ON pc.id = ca.category_id
+               JOIN projects p ON p.id = pc.project_id
+               WHERE ca.submitted_by = %s AND pc.del_flag = 0 AND p.del_flag = 0''',
+            (user_id,)
+        )
+        counts = cursor.fetchone()
         cursor.execute(
             '''SELECT ca.id, ca.category_id, ca.assets_id, ca.review_status, ca.created_at,
                       pc.name AS category_name,
@@ -448,14 +477,15 @@ def list_my_submissions(user_id: int) -> list[dict]:
                JOIN projects p ON p.id = pc.project_id
                LEFT JOIN assets a ON a.id = ca.assets_id
                WHERE ca.submitted_by = %s AND pc.del_flag = 0 AND p.del_flag = 0
-               ORDER BY ca.created_at DESC''',
-            (user_id,)
+               ORDER BY ca.created_at DESC, ca.id DESC
+               LIMIT %s OFFSET %s''',
+            (user_id, page_size, offset)
         )
         rows = cursor.fetchall()
     for r in rows:
         if r.get('created_at'):
             r['created_at'] = r['created_at'].strftime('%Y-%m-%d %H:%M:%S')
-    return rows
+    return rows, int(counts['cnt']), int(counts['rejected_count'])
 
 
 def remove_asset_from_category(category_id: int, asset_id: int) -> bool:

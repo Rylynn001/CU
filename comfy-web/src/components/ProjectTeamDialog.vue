@@ -130,11 +130,19 @@ async function handleRemove(m: ProjectMember) {
 // ── 待审核 ──────────────────────────────────────────────────────────────
 const pending = ref<PendingAsset[]>([])
 const pendingLoading = ref(false)
+const pendingPage = ref(1)
+const pendingTotal = ref(0)
+const COLLABORATION_PAGE_SIZE = 50
+const collaborationLoadingMore = ref(false)
+const pendingHasMore = computed(() => pending.value.length < pendingTotal.value)
 
 async function loadPending() {
   pendingLoading.value = true
   try {
-    pending.value = await listPendingAssets(props.currentUserId)
+    const result = await listPendingAssets(props.currentUserId, 1, COLLABORATION_PAGE_SIZE)
+    pending.value = result.assets
+    pendingTotal.value = result.total
+    pendingPage.value = 1
   } catch {
     ElMessage.error('加载待审核失败')
   } finally {
@@ -159,6 +167,7 @@ async function handleReview(item: PendingAsset, approve: boolean) {
     pending.value = pending.value.filter(
       x => !(x.category_id === item.category_id && x.assets_id === item.assets_id)
     )
+    pendingTotal.value = Math.max(0, pendingTotal.value - 1)
     delete reviewComments.value[key]
     ElMessage.success(approve ? '已通过' : '已驳回')
     if (approve) emit('reviewed')
@@ -172,11 +181,17 @@ async function handleReview(item: PendingAsset, approve: boolean) {
 // ── 我的提交（所有成员可查自己的提交进度） ──────────────────────────────────
 const mySubmissions = ref<MySubmission[]>([])
 const mineLoading = ref(false)
+const mySubmissionsPage = ref(1)
+const mySubmissionsTotal = ref(0)
+const mySubmissionsHasMore = computed(() => mySubmissions.value.length < mySubmissionsTotal.value)
 
 async function loadMySubmissions() {
   mineLoading.value = true
   try {
-    mySubmissions.value = await listMySubmissions(props.currentUserId)
+    const result = await listMySubmissions(props.currentUserId, 1, COLLABORATION_PAGE_SIZE)
+    mySubmissions.value = result.submissions
+    mySubmissionsTotal.value = result.total
+    mySubmissionsPage.value = 1
   } catch {
     ElMessage.error('加载我的提交失败')
   } finally {
@@ -259,6 +274,40 @@ function switchTab(tab: TeamDialogTab) {
   if (tab === 'mine') loadMySubmissions()
 }
 
+async function loadMoreCollaboration() {
+  if (collaborationLoadingMore.value) return
+  const hasMore = activeTab.value === 'pending' ? pendingHasMore.value : mySubmissionsHasMore.value
+  if ((activeTab.value !== 'pending' && activeTab.value !== 'mine') || !hasMore) return
+
+  collaborationLoadingMore.value = true
+  try {
+    if (activeTab.value === 'pending') {
+      const nextPage = pendingPage.value + 1
+      const result = await listPendingAssets(props.currentUserId, nextPage, COLLABORATION_PAGE_SIZE)
+      const existing = new Set(pending.value.map(item => item.id))
+      pending.value.push(...result.assets.filter(item => !existing.has(item.id)))
+      pendingTotal.value = result.total
+      pendingPage.value = nextPage
+    } else {
+      const nextPage = mySubmissionsPage.value + 1
+      const result = await listMySubmissions(props.currentUserId, nextPage, COLLABORATION_PAGE_SIZE)
+      const existing = new Set(mySubmissions.value.map(item => item.id))
+      mySubmissions.value.push(...result.submissions.filter(item => !existing.has(item.id)))
+      mySubmissionsTotal.value = result.total
+      mySubmissionsPage.value = nextPage
+    }
+  } catch {
+    ElMessage.error('加载更多失败')
+  } finally {
+    collaborationLoadingMore.value = false
+  }
+}
+
+function handleDialogBodyScroll(event: Event) {
+  const el = event.currentTarget as HTMLElement
+  if (el.scrollTop + el.clientHeight >= el.scrollHeight - 120) loadMoreCollaboration()
+}
+
 function getMediaUrl(location: string | null) {
   if (!location) return ''
   return `/api/api-proxy/output/${location.split(/[/\\]/).pop()}`
@@ -278,7 +327,11 @@ watch(() => props.visible, (v) => {
     showAddPanel.value = false
     members.value = []
     pending.value = []
+    pendingTotal.value = 0
+    pendingPage.value = 1
     mySubmissions.value = []
+    mySubmissionsTotal.value = 0
+    mySubmissionsPage.value = 1
     switchTab(activeTab.value)
   }
 })
@@ -303,7 +356,7 @@ const roleLabel: Record<MemberRole, string> = { owner: '所有者', admin: '管�
             <button class="tab" :class="{ active: activeTab === 'mine' }" @click="switchTab('mine')">我的提交</button>
           </div>
 
-          <div class="dialog-body">
+          <div class="dialog-body" @scroll="handleDialogBodyScroll">
             <!-- ── 成员管理 ── -->
             <template v-if="activeTab === 'members'">
               <!-- 成员列表视图 -->
@@ -442,6 +495,7 @@ const roleLabel: Record<MemberRole, string> = { owner: '所有者', admin: '管�
                 </div>
               </div>
             </template>
+            <div v-if="collaborationLoadingMore" class="collaboration-loading-more"><div class="mini-spin" /></div>
           </div>
         </div>
       </div>
@@ -725,6 +779,7 @@ const roleLabel: Record<MemberRole, string> = { owner: '所有者', admin: '管�
 
 /* 待审核 */
 .pending-list { display: flex; flex-direction: column; gap: 8px; }
+.collaboration-loading-more { display: flex; justify-content: center; padding: 10px 0; }
 .pending-item {
   display: flex;
   flex-direction: column;

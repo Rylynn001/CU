@@ -109,10 +109,19 @@ function handleReviewed() {
 }
 
 type CollaborationTab = 'pending' | 'mine'
+const COLLABORATION_PAGE_SIZE = 50
+const COLLABORATION_POLL_INTERVAL = 30_000
 const collaborationTab = ref<CollaborationTab>('pending')
 const pendingAssets = ref<PendingAsset[]>([])
+const pendingTotal = ref(0)
+const pendingPage = ref(1)
 const mySubmissions = ref<MySubmission[]>([])
+const mySubmissionsTotal = ref(0)
+const rejectedSubmissionsTotal = ref(0)
+const mySubmissionsPage = ref(1)
 const collaborationLoading = ref(false)
+const collaborationRefreshing = ref(false)
+const collaborationLoadingMore = ref(false)
 const reviewingCollaborationKey = ref<string | null>(null)
 const collaborationReviewComments = ref<Record<string, string>>({})
 const showCollaborationTimeline = ref(false)
@@ -121,28 +130,107 @@ const collaborationTimelineLoading = ref(false)
 const showResubmitPicker = ref(false)
 const resubmitTarget = ref<MySubmission | null>(null)
 const resubmitting = ref(false)
+const pendingHasMore = computed(() => pendingAssets.value.length < pendingTotal.value)
+const mySubmissionsHasMore = computed(() => mySubmissions.value.length < mySubmissionsTotal.value)
+let collaborationPollTimer: number | undefined
 
-async function loadCollaboration() {
+function mergeCollaborationFirstPage<T>(
+  current: T[], fresh: T[], keyOf: (item: T) => string | number, total: number
+) {
+  const freshKeys = new Set(fresh.map(keyOf))
+  return [...fresh, ...current.filter(item => !freshKeys.has(keyOf(item)))]
+    .slice(0, Math.min(total, Math.max(current.length, fresh.length)))
+}
+
+async function refreshCollaboration(silent = false, preserveLoaded = false) {
   const user = getUser()
-  if (!user) return
-  collaborationLoading.value = true
+  if (!user || collaborationRefreshing.value || collaborationLoadingMore.value) return
+  collaborationRefreshing.value = true
+  if (!silent) collaborationLoading.value = true
   try {
-    if (collaborationTab.value === 'pending') {
-      pendingAssets.value = await listPendingAssets(user.id)
+    const [pendingResult, submissionsResult] = await Promise.all([
+      listPendingAssets(user.id, 1, COLLABORATION_PAGE_SIZE),
+      listMySubmissions(user.id, 1, COLLABORATION_PAGE_SIZE),
+    ])
+    if (preserveLoaded) {
+      pendingAssets.value = pendingPage.value === 1
+        ? pendingResult.assets
+        : mergeCollaborationFirstPage(
+          pendingAssets.value,
+          pendingResult.assets,
+          item => `${item.category_id}-${item.assets_id}`,
+          pendingResult.total,
+        )
+      mySubmissions.value = mySubmissionsPage.value === 1
+        ? submissionsResult.submissions
+        : mergeCollaborationFirstPage(
+          mySubmissions.value,
+          submissionsResult.submissions,
+          item => item.id,
+          submissionsResult.total,
+        )
+      pendingPage.value = Math.max(1, Math.ceil(pendingAssets.value.length / COLLABORATION_PAGE_SIZE))
+      mySubmissionsPage.value = Math.max(1, Math.ceil(mySubmissions.value.length / COLLABORATION_PAGE_SIZE))
     } else {
-      mySubmissions.value = await listMySubmissions(user.id)
+      pendingAssets.value = pendingResult.assets
+      pendingPage.value = 1
+      mySubmissions.value = submissionsResult.submissions
+      mySubmissionsPage.value = 1
     }
+    pendingTotal.value = pendingResult.total
+    mySubmissionsTotal.value = submissionsResult.total
+    rejectedSubmissionsTotal.value = submissionsResult.rejectedTotal
   } catch {
-    ElMessage.error(collaborationTab.value === 'pending' ? '加载待审核失败' : '加载我的提交失败')
+    if (!silent) ElMessage.error('加载协作动态失败')
   } finally {
-    collaborationLoading.value = false
+    if (!silent) collaborationLoading.value = false
+    collaborationRefreshing.value = false
   }
+}
+
+function loadCollaboration() {
+  return refreshCollaboration(false, false)
 }
 
 function switchCollaborationTab(tab: CollaborationTab) {
   if (collaborationTab.value === tab) return
   collaborationTab.value = tab
-  loadCollaboration()
+}
+
+async function loadMoreCollaboration() {
+  const user = getUser()
+  if (!user || collaborationRefreshing.value || collaborationLoadingMore.value) return
+  const hasMore = collaborationTab.value === 'pending' ? pendingHasMore.value : mySubmissionsHasMore.value
+  if (!hasMore) return
+
+  collaborationLoadingMore.value = true
+  try {
+    if (collaborationTab.value === 'pending') {
+      const nextPage = pendingPage.value + 1
+      const result = await listPendingAssets(user.id, nextPage, COLLABORATION_PAGE_SIZE)
+      const existing = new Set(pendingAssets.value.map(item => `${item.category_id}-${item.assets_id}`))
+      pendingAssets.value.push(...result.assets.filter(item => !existing.has(`${item.category_id}-${item.assets_id}`)))
+      pendingTotal.value = result.total
+      pendingPage.value = nextPage
+    } else {
+      const nextPage = mySubmissionsPage.value + 1
+      const result = await listMySubmissions(user.id, nextPage, COLLABORATION_PAGE_SIZE)
+      const existing = new Set(mySubmissions.value.map(item => item.id))
+      mySubmissions.value.push(...result.submissions.filter(item => !existing.has(item.id)))
+      mySubmissionsTotal.value = result.total
+      rejectedSubmissionsTotal.value = result.rejectedTotal
+      mySubmissionsPage.value = nextPage
+    }
+  } catch {
+    ElMessage.error('加载更多失败')
+  } finally {
+    collaborationLoadingMore.value = false
+  }
+}
+
+function handleCollaborationScroll(event: Event) {
+  const el = event.currentTarget as HTMLElement
+  if (el.scrollTop + el.clientHeight >= el.scrollHeight - 120) loadMoreCollaboration()
 }
 
 async function reviewCollaborationAsset(item: PendingAsset, approve: boolean) {
@@ -154,6 +242,7 @@ async function reviewCollaborationAsset(item: PendingAsset, approve: boolean) {
     const comment = collaborationReviewComments.value[key]?.trim() || undefined
     await reviewAsset(item.category_id, item.assets_id, user.id, approve, comment)
     pendingAssets.value = pendingAssets.value.filter(x => `${x.category_id}-${x.assets_id}` !== key)
+    pendingTotal.value = Math.max(0, pendingTotal.value - 1)
     delete collaborationReviewComments.value[key]
     ElMessage.success(approve ? '已通过' : '已驳回')
   } catch (e: any) {
@@ -754,10 +843,14 @@ function reuseRecordParams() {
 onMounted(() => {
   loadAssets()
   loadCollaboration()
+  collaborationPollTimer = window.setInterval(() => {
+    if (!document.hidden) refreshCollaboration(true, true)
+  }, COLLABORATION_POLL_INTERVAL)
   window.addEventListener('click', closeContextMenu)
   window.addEventListener('keydown', handleKeydown)
 })
 onUnmounted(() => {
+  if (collaborationPollTimer !== undefined) window.clearInterval(collaborationPollTimer)
   window.removeEventListener('click', closeContextMenu)
   window.removeEventListener('keydown', handleKeydown)
 })
@@ -967,11 +1060,14 @@ onUnmounted(() => {
         <div class="collaboration-tabs">
           <button class="collaboration-tab" :class="{ active: collaborationTab === 'pending' }" @click="switchCollaborationTab('pending')">
             待审核
-            <span v-if="pendingAssets.length" class="collaboration-count">{{ pendingAssets.length }}</span>
+            <span v-if="pendingTotal" class="collaboration-count">{{ pendingTotal }}</span>
           </button>
-          <button class="collaboration-tab" :class="{ active: collaborationTab === 'mine' }" @click="switchCollaborationTab('mine')">我的提交</button>
+          <button class="collaboration-tab" :class="{ active: collaborationTab === 'mine' }" @click="switchCollaborationTab('mine')">
+            我的提交
+            <span v-if="rejectedSubmissionsTotal" class="collaboration-count rejected">{{ rejectedSubmissionsTotal }}</span>
+          </button>
         </div>
-        <div class="collaboration-list">
+        <div class="collaboration-list" @scroll="handleCollaborationScroll">
           <div v-if="collaborationLoading" class="center-state"><div class="mini-spin" /></div>
           <div v-else-if="collaborationTab === 'pending' && pendingAssets.length === 0" class="center-state"><p class="empty-hint">暂无待审核素材</p></div>
           <div v-else-if="collaborationTab === 'mine' && mySubmissions.length === 0" class="center-state"><p class="empty-hint">你还没有提交过素材</p></div>
@@ -1018,6 +1114,7 @@ onUnmounted(() => {
               </div>
             </div>
           </template>
+          <div v-if="collaborationLoadingMore" class="collaboration-loading-more"><div class="mini-spin" /></div>
         </div>
       </div>
     </div>
@@ -1387,6 +1484,10 @@ onUnmounted(() => {
   font-size: 10px;
   line-height: 14px;
 }
+.collaboration-count.rejected {
+  background: rgba(244,63,94,0.18);
+  color: #fb7185;
+}
 .collaboration-list {
   flex: 1;
   min-height: 0;
@@ -1395,6 +1496,7 @@ onUnmounted(() => {
 }
 .collaboration-list::-webkit-scrollbar { width: 4px; }
 .collaboration-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+.collaboration-loading-more { display: flex; justify-content: center; padding: 8px 0; }
 .collaboration-item {
   display: flex;
   align-items: flex-start;

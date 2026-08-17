@@ -721,8 +721,15 @@ async def list_pending_assets(request: web.Request):
     user_id = request.rel_url.query.get('user_id')
     if not user_id:
         raise web.HTTPBadRequest(reason='user_id is required')
-    assets = asset_repo.list_pending_assets(int(user_id))
-    return web.json_response({'assets': assets})
+    try:
+        page = max(1, int(request.rel_url.query.get('page', 1)))
+        page_size = min(100, max(1, int(request.rel_url.query.get('page_size', 50))))
+    except ValueError:
+        raise web.HTTPBadRequest(reason='page 和 page_size 必须为整数')
+    assets, total = asset_repo.list_pending_assets(int(user_id), page, page_size)
+    return web.json_response({
+        'assets': assets, 'total': total, 'page': page, 'page_size': page_size
+    })
 
 
 @routes.post('/api-proxy/categories/{category_id}/assets/{asset_id}/review')
@@ -762,8 +769,19 @@ async def list_my_submissions(request: web.Request):
     user_id = request.rel_url.query.get('user_id')
     if not user_id:
         raise web.HTTPBadRequest(reason='user_id is required')
-    subs = asset_repo.list_my_submissions(int(user_id))
-    return web.json_response({'submissions': subs})
+    try:
+        page = max(1, int(request.rel_url.query.get('page', 1)))
+        page_size = min(100, max(1, int(request.rel_url.query.get('page_size', 50))))
+    except ValueError:
+        raise web.HTTPBadRequest(reason='page 和 page_size 必须为整数')
+    subs, total, rejected_total = asset_repo.list_my_submissions(int(user_id), page, page_size)
+    return web.json_response({
+        'submissions': subs,
+        'total': total,
+        'rejected_total': rejected_total,
+        'page': page,
+        'page_size': page_size,
+    })
 
 
 # ── /api-proxy/node-boards ────────────────────────────────────────────────

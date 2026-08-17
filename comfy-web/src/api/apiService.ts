@@ -541,11 +541,13 @@ export async function removeMember(projectId: number, userId: number, targetUser
 }
 
 // 获取用户有权限审核的所有待审核素材（跨所有项目）
-export async function listPendingAssets(userId: number): Promise<PendingAsset[]> {
-  const res = await fetch(`${BASE}/pending-assets?user_id=${userId}`)
+export async function listPendingAssets(
+  userId: number, page = 1, pageSize = 50
+): Promise<{ assets: PendingAsset[]; total: number }> {
+  const res = await fetch(`${BASE}/pending-assets?user_id=${userId}&page=${page}&page_size=${pageSize}`)
   if (!res.ok) throw new Error(`list pending failed: ${res.status}`)
   const data = await res.json()
-  return data.assets || []
+  return { assets: data.assets || [], total: data.total ?? 0 }
 }
 
 // 审核素材（通过 / 拒绝），可附评语
@@ -569,9 +571,15 @@ export async function fetchReviewTimeline(categoryId: number, assetId: number, u
 }
 
 // 查当前用户在所有项目下的提交（含被驳回的）
-export async function listMySubmissions(userId: number): Promise<MySubmission[]> {
-  const res = await fetch(`${BASE}/my-submissions?user_id=${userId}`)
+export async function listMySubmissions(
+  userId: number, page = 1, pageSize = 50
+): Promise<{ submissions: MySubmission[]; total: number; rejectedTotal: number }> {
+  const res = await fetch(`${BASE}/my-submissions?user_id=${userId}&page=${page}&page_size=${pageSize}`)
   if (!res.ok) throw new Error(`list my submissions failed: ${res.status}`)
   const data = await res.json()
-  return data.submissions || []
+  return {
+    submissions: data.submissions || [],
+    total: data.total ?? 0,
+    rejectedTotal: data.rejected_total ?? 0,
+  }
 }
