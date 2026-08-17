@@ -321,7 +321,7 @@ function handleClose() {
   emit('close')
 }
 
-watch(() => props.visible, (v) => {
+watch(() => [props.visible, props.projectId, props.initialTab] as const, ([v]) => {
   if (v) {
     activeTab.value = props.initialTab
     showAddPanel.value = false

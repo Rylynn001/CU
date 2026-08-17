@@ -310,7 +310,7 @@ async function confirmCreateProject() {
     })
     if (!res.ok) throw new Error('创建失败')
     const data = await res.json()
-    projects.value.push({ id: data.id, name: data.name, category_count: (data.categories || []).length, categories: data.categories || [] })
+    projects.value.push({ id: data.id, name: data.name, role: data.role || 'owner', category_count: (data.categories || []).length, categories: data.categories || [] })
     ElMessage.success('项目已创建')
     showCreateProject.value = false
     newProjectName.value = ''

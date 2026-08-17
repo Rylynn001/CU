@@ -492,7 +492,12 @@ async def create_project(request: web.Request):
         raise web.HTTPBadRequest(reason='user_id and name are required')
     try:
         result = asset_repo.create_project(name, int(user_id))
-        return web.json_response({'id': result['id'], 'name': name, 'categories': result['categories']})
+        return web.json_response({
+            'id': result['id'],
+            'name': name,
+            'role': 'owner',
+            'categories': result['categories'],
+        })
     except Exception as e:
         logger.error(f'[api-proxy] 创建项目失败: {e}')
         raise web.HTTPInternalServerError(reason=str(e))

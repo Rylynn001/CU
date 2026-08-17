@@ -161,7 +161,7 @@ def create_project(name: str, user_id: int) -> dict:
     with get_db_connection() as conn:
         objs = ['人物','场景','道具']
         cursor = conn.cursor()
-        cursor.execute('INSERT INTO projects (name, user_id) VALUES (%s, %s)', (name, user_id))
+        cursor.execute('INSERT INTO projects (name) VALUES (%s)', (name,))
         lastrowid = cursor.lastrowid
         # 创建者即项目 owner
         cursor.execute(
