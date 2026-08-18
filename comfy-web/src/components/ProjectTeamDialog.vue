@@ -61,32 +61,69 @@ async function loadMembers() {
   }
 }
 
-// ── 添加成员（候选用户选人） ──────────────────────────────────────────────
+// ── 添加成员(候选用户选人) ──────────────────────────────────────────────
 const showAddPanel = ref(false)
 const candidates = ref<CandidateUser[]>([])
 const candidatesLoading = ref(false)
 const searchKeyword = ref('')
 const addingId = ref<number | null>(null)
+const candidatesPage = ref(1)
+const candidatesTotal = ref(0)
+const candidatesPageSize = 50
+const candidatesLoadingMore = ref(false)
+const candidatesHasMore = computed(() => candidates.value.length < candidatesTotal.value)
+const candidateListRef = ref<HTMLElement | null>(null)
 
-// 按关键字模糊过滤候选用户
-const filteredCandidates = computed(() => {
-  const kw = searchKeyword.value.trim().toLowerCase()
-  if (!kw) return candidates.value
-  return candidates.value.filter(u => (u.user_name || '').toLowerCase().includes(kw))
-})
+// 搜索候选用户(重置列表)
+async function searchCandidates() {
+  if (!props.projectId) return
+  candidatesLoading.value = true
+  candidates.value = []
+  candidatesPage.value = 1
+  try {
+    const result = await listCandidateUsers(props.projectId, props.currentUserId, searchKeyword.value, 1, candidatesPageSize)
+    candidates.value = result.users
+    candidatesTotal.value = result.total
+    candidatesPage.value = result.page
+  } catch {
+    ElMessage.error('搜索用户失败')
+  } finally {
+    candidatesLoading.value = false
+  }
+}
+
+// 加载更多候选用户
+async function loadMoreCandidates() {
+  if (candidatesLoadingMore.value || !candidatesHasMore.value || !props.projectId) return
+  candidatesLoadingMore.value = true
+  try {
+    const nextPage = candidatesPage.value + 1
+    const result = await listCandidateUsers(props.projectId, props.currentUserId, searchKeyword.value, nextPage, candidatesPageSize)
+    const existing = new Set(candidates.value.map(u => u.id))
+    candidates.value.push(...result.users.filter(u => !existing.has(u.id)))
+    candidatesTotal.value = result.total
+    candidatesPage.value = nextPage
+  } catch {
+    ElMessage.error('加载更多失败')
+  } finally {
+    candidatesLoadingMore.value = false
+  }
+}
+
+// 监听滚动事件
+function handleCandidateScroll(e: Event) {
+  const target = e.target as HTMLElement
+  const scrollBottom = target.scrollHeight - target.scrollTop - target.clientHeight
+  if (scrollBottom < 100 && candidatesHasMore.value && !candidatesLoadingMore.value) {
+    loadMoreCandidates()
+  }
+}
 
 async function openAddPanel() {
   if (!props.projectId) return
   showAddPanel.value = true
   searchKeyword.value = ''
-  candidatesLoading.value = true
-  try {
-    candidates.value = await listCandidateUsers(props.projectId, props.currentUserId)
-  } catch {
-    ElMessage.error('加载用户失败')
-  } finally {
-    candidatesLoading.value = false
-  }
+  await searchCandidates()
 }
 
 async function handleAddCandidate(u: CandidateUser) {
@@ -96,6 +133,7 @@ async function handleAddCandidate(u: CandidateUser) {
     await addMember(props.projectId, props.currentUserId, u.user_name || '', 'member')
     ElMessage.success('已添加成员')
     candidates.value = candidates.value.filter(x => x.id !== u.id)
+    candidatesTotal.value = Math.max(0, candidatesTotal.value - 1)
     await loadMembers()
   } catch (e: any) {
     ElMessage.error(e.message || '添加失败')
@@ -369,7 +407,7 @@ const roleLabel: Record<MemberRole, string> = { owner: '所有者', admin: '管�
                 <div v-if="membersLoading" class="center-state"><div class="mini-spin" /></div>
                 <div v-else class="member-list">
                   <div v-for="m in members" :key="m.user_id" class="member-item">
-                    <span class="member-name">{{ m.user_name || `用户${m.user_id}` }}</span>
+                    <span class="member-name">{{ m.real_name || `用户${m.user_id}` }}</span>
                     <!-- owner 不可改 -->
                     <template v-if="m.role === 'owner'">
                       <span class="role-badge owner">{{ roleLabel.owner }}</span>
@@ -400,19 +438,25 @@ const roleLabel: Record<MemberRole, string> = { owner: '所有者', admin: '管�
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
                     返回
                   </button>
-                  <input class="search-input" v-model="searchKeyword" placeholder="搜索用户名" autofocus />
+                  <div class="search-box">
+                    <input class="search-input" v-model="searchKeyword" @keyup.enter="searchCandidates" placeholder="搜索真实姓名" />
+                    <button class="search-btn" @click="searchCandidates">搜索</button>
+                  </div>
                 </div>
 
                 <div v-if="candidatesLoading" class="center-state"><div class="mini-spin" /></div>
-                <div v-else-if="filteredCandidates.length === 0" class="center-state">
-                  <p class="empty-hint">{{ candidates.length === 0 ? '没有可添加的用户' : '无匹配用户' }}</p>
+                <div v-else-if="candidates.length === 0" class="center-state">
+                  <p class="empty-hint">{{ searchKeyword.trim() ? '无匹配用户' : '没有可添加的用户' }}</p>
                 </div>
-                <div v-else class="candidate-list">
-                  <div v-for="u in filteredCandidates" :key="u.id" class="candidate-item">
-                    <span class="candidate-name">{{ u.user_name || `用户${u.id}` }}</span>
+                <div v-else ref="candidateListRef" class="candidate-list" @scroll="handleCandidateScroll">
+                  <div v-for="u in candidates" :key="u.id" class="candidate-item">
+                    <span class="candidate-name">{{ u.real_name || `用户${u.id}` }}</span>
                     <button class="candidate-add" :disabled="addingId === u.id" @click="handleAddCandidate(u)">
                       {{ addingId === u.id ? '添加中' : '添加' }}
                     </button>
+                  </div>
+                  <div v-if="candidatesLoadingMore" class="loading-more">
+                    <div class="mini-spin" />
                   </div>
                 </div>
               </template>
@@ -709,6 +753,11 @@ const roleLabel: Record<MemberRole, string> = { owner: '所有者', admin: '管�
   transition: all 0.2s;
 }
 .back-link:hover { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.9); }
+.search-box {
+  display: flex;
+  gap: 8px;
+  flex: 1;
+}
 .search-input {
   flex: 1;
   background: rgba(255,255,255,0.06);
@@ -720,8 +769,26 @@ const roleLabel: Record<MemberRole, string> = { owner: '所有者', admin: '管�
   outline: none;
 }
 .search-input:focus { border-color: rgba(255,255,255,0.6); }
+.search-btn {
+  padding: 8px 20px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.6);
+  background: rgba(255,255,255,0.3);
+  color: rgba(255,255,255,0.95);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+.search-btn:hover { background: rgba(255,255,255,0.45); }
 
-.candidate-list { display: flex; flex-direction: column; gap: 6px; }
+.candidate-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+  max-height: 400px;
+}
 .candidate-item {
   display: flex;
   align-items: center;
@@ -745,6 +812,12 @@ const roleLabel: Record<MemberRole, string> = { owner: '所有者', admin: '管�
 }
 .candidate-add:hover:not(:disabled) { background: rgba(255,255,255,0.45); }
 .candidate-add:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.loading-more {
+  display: flex;
+  justify-content: center;
+  padding: 12px 0;
+}
 
 /* 成员列表 */
 .member-list { display: flex; flex-direction: column; gap: 6px; }

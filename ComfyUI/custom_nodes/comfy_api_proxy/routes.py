@@ -650,8 +650,17 @@ async def list_candidate_users(request: web.Request):
     # 仅 owner/admin 可拉人，故也仅他们可查候选用户
     if member_repo.get_member_role(project_id, int(user_id)) not in ('owner', 'admin'):
         raise web.HTTPForbidden(reason='无权限')
-    users = member_repo.list_candidate_users(project_id)
-    return web.json_response({'users': users})
+
+    # 获取分页和搜索参数
+    keyword = request.rel_url.query.get('keyword', '')
+    try:
+        page = max(1, int(request.rel_url.query.get('page', 1)))
+        page_size = min(100, max(1, int(request.rel_url.query.get('page_size', 50))))
+    except ValueError:
+        raise web.HTTPBadRequest(reason='page 和 page_size 必须为整数')
+
+    users, total = member_repo.list_candidate_users(project_id, keyword, page, page_size)
+    return web.json_response({'users': users, 'total': total, 'page': page, 'page_size': page_size})
 
 
 @routes.post('/api-proxy/projects/{project_id}/members')

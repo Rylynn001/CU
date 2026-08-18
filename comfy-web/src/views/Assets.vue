@@ -1,12 +1,11 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElDialog, ElInput } from 'element-plus'
-import VideoPlayer from '../components/VideoPlayer.vue'
-import ImageViewer from '../components/ImageViewer.vue'
+import MediaViewer from '../components/MediaViewer.vue'
 import AssetGrid from '../components/AssetGrid.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import ProjectTeamDialog from '../components/ProjectTeamDialog.vue'
-import { favoriteAsset } from '../api/apiService'
+import { favoriteAsset, fetchReviewTimeline } from '../api/apiService'
 import type { MemberRole } from '../api/apiService'
 
 interface Asset {
@@ -40,7 +39,7 @@ const favoriteTag = ref<0 | 1 | 2 | 3 | 4>(1)
 const FAVORITE_COLORS: { tag: 1 | 2 | 3 | 4; color: string; label: string }[] = [
   { tag: 1, color: '#f43f5e', label: '红' },
   { tag: 2, color: '#eab308', label: '黄' },
-  { tag: 3, color: 'rgba(255,255,255,0.82)', label: '绿' },
+  { tag: 3, color: '#22c55e', label: '绿' },
   { tag: 4, color: '#3b82f6', label: '蓝' },
 ]
 const currentPage = ref(1)
@@ -70,6 +69,9 @@ const showImageViewer = ref(false)
 const previewUrl = ref('')
 const currentAssetIndex = ref(0)
 const currentAssetList = ref<Asset[]>([])
+const mediaSubmitter = ref<string | null>(null)
+const mediaApprovedAt = ref<string | null>(null)
+let mediaInfoRequestId = 0
 
 function previewImage(asset: Asset, list: Asset[]) {
   if (isVideo(asset)) return
@@ -77,11 +79,43 @@ function previewImage(asset: Asset, list: Asset[]) {
   const idx = list.findIndex(a => a.id === asset.id)
   currentAssetIndex.value = idx >= 0 ? idx : 0
   previewUrl.value = getMediaUrl(asset.location)
+  prepareProjectMediaInfo(asset.id)
+  showVideoPlayer.value = false
   showImageViewer.value = true
 }
 
-function closeImageViewer() {
+function closeMediaViewer() {
   showImageViewer.value = false
+  showVideoPlayer.value = false
+}
+
+function prepareProjectMediaInfo(assetId: number) {
+  mediaInfoRequestId++
+  mediaSubmitter.value = null
+  mediaApprovedAt.value = null
+  if (activeView.value === 'project' && selectedCategory.value) {
+    loadProjectMediaInfo(selectedCategory.value.id, assetId)
+  }
+}
+
+async function loadProjectMediaInfo(categoryId: number, assetId: number) {
+  const user = getUser()
+  if (!user) return
+  const requestId = ++mediaInfoRequestId
+  try {
+    const events = await fetchReviewTimeline(categoryId, assetId, user.id)
+    if (requestId !== mediaInfoRequestId || currentAssetList.value[currentAssetIndex.value]?.id !== assetId) return
+    const assetEvents = events.filter(event => event.assets_id === assetId)
+    const approvedEvent = [...assetEvents].reverse().find(event => event.action === 'approve')
+    const submittedEvent = [...assetEvents].reverse().find(event => (
+      event.action === 'submit'
+      && (!approvedEvent?.created_at || !event.created_at || event.created_at <= approvedEvent.created_at)
+    ))
+    mediaSubmitter.value = submittedEvent?.reviewer_name || null
+    mediaApprovedAt.value = approvedEvent?.created_at || null
+  } catch {
+    // 审核信息读取失败不影响素材预览。
+  }
 }
 
 // 图片滚轮缩放
@@ -100,6 +134,7 @@ function goToPrev() {
     previewUrl.value = getMediaUrl(asset.location)
     showImageViewer.value = true
   }
+  prepareProjectMediaInfo(asset.id)
 }
 
 // 切换到下一个资产（图片或视频）
@@ -117,23 +152,7 @@ function goToNext() {
     previewUrl.value = getMediaUrl(asset.location)
     showImageViewer.value = true
   }
-}
-
-// 键盘事件监听
-function handleKeydown(e: KeyboardEvent) {
-  if (!showImageViewer.value && !showVideoPlayer.value) return
-
-  if (e.key === 'ArrowLeft') {
-    e.preventDefault()
-    goToPrev()
-  } else if (e.key === 'ArrowRight') {
-    e.preventDefault()
-    goToNext()
-  } else if (e.key === 'Escape') {
-    e.preventDefault()
-    showImageViewer.value = false
-    showVideoPlayer.value = false
-  }
+  prepareProjectMediaInfo(asset.id)
 }
 
 // ── 视频播放器 ────────────────────────────────────────────────────────────
@@ -145,6 +164,8 @@ function openVideo(asset: Asset, list: Asset[]) {
   const idx = list.findIndex(a => a.id === asset.id)
   currentAssetIndex.value = idx >= 0 ? idx : 0
   activeVideo.value = asset
+  prepareProjectMediaInfo(asset.id)
+  showImageViewer.value = false
   showVideoPlayer.value = true
 }
 
@@ -537,12 +558,10 @@ function handleWindowScroll() {
 
 onMounted(() => {
   loadAssets()
-  window.addEventListener('keydown', handleKeydown)
   window.addEventListener('scroll', handleWindowScroll, { passive: true })
 })
 
 onUnmounted(() => {
-  window.removeEventListener('keydown', handleKeydown)
   window.removeEventListener('scroll', handleWindowScroll)
 })
 </script>
@@ -802,24 +821,16 @@ onUnmounted(() => {
       </template>
     </el-dialog>
 
-    <ImageViewer
-      :visible="showImageViewer"
-      :src="previewUrl"
+    <MediaViewer
+      :visible="showImageViewer || showVideoPlayer"
+      :src="showVideoPlayer && activeVideo ? getMediaUrl(activeVideo.location) : previewUrl"
+      :type="showVideoPlayer ? 'video' : 'image'"
+      :asset-id="showVideoPlayer ? activeVideo?.id : undefined"
       :show-nav="currentAssetList.length > 1"
       :index-text="currentAssetList.length > 1 ? `${currentAssetIndex + 1} / ${currentAssetList.length}` : ''"
-      @close="closeImageViewer"
-      @prev="goToPrev"
-      @next="goToNext"
-    />
-
-    <!-- Video Player -->
-    <VideoPlayer
-      v-if="activeVideo"
-      :visible="showVideoPlayer"
-      :src="getMediaUrl(activeVideo.location)"
-      :asset-id="activeVideo.id"
-      :show-nav="currentAssetList.length > 1"
-      @close="showVideoPlayer = false"
+      :submitter="mediaSubmitter"
+      :approved-at="mediaApprovedAt"
+      @close="closeMediaViewer"
       @prev="goToPrev"
       @next="goToNext"
     />

@@ -7,8 +7,7 @@ import {
   type PendingAsset, type MySubmission, type ReviewEvent,
 } from '../api/apiService'
 import FavoriteHeart from './FavoriteHeart.vue'
-import VideoPlayer from './VideoPlayer.vue'
-import ImageViewer from './ImageViewer.vue'
+import MediaViewer from './MediaViewer.vue'
 import ProjectManager from './ProjectManager.vue'
 import ConfirmDialog from './ConfirmDialog.vue'
 import ProjectTeamDialog from './ProjectTeamDialog.vue'
@@ -193,8 +192,8 @@ function loadCollaboration() {
 }
 
 function switchCollaborationTab(tab: CollaborationTab) {
-  if (collaborationTab.value === tab) return
   collaborationTab.value = tab
+  loadCollaboration()
 }
 
 async function loadMoreCollaboration() {
@@ -282,17 +281,21 @@ const collaborationActionLabel: Record<string, string> = {
   reject: '驳回',
 }
 
-function openCollaborationPreview(location: string | null) {
+function openCollaborationPreview(
+  location: string | null,
+  categoryId?: number,
+  assetId?: number,
+  submitter?: string | null,
+) {
   if (!location) return
-  const url = collaborationMediaUrl(location)
-  if (collaborationVideo(location)) {
-    activeVideoUrl.value = url
-    activeVideoId.value = undefined
-    showVideoPlayer.value = true
-  } else {
-    previewUrl.value = url
-    showImageViewer.value = true
-  }
+  openMediaViewer(
+    collaborationMediaUrl(location),
+    collaborationVideo(location) ? 'video' : 'image',
+    assetId,
+  )
+  mediaCanNavigate.value = false
+  mediaSubmitter.value = submitter || null
+  if (categoryId && assetId) loadProjectMediaInfo(categoryId, assetId, submitter)
 }
 
 function openResubmit(item: MySubmission) {
@@ -330,7 +333,7 @@ const favoriteTag = ref<0 | 1 | 2 | 3 | 4>(0)
 const FAVORITE_COLORS: { tag: 1 | 2 | 3 | 4; color: string; label: string }[] = [
   { tag: 1, color: '#f43f5e', label: '红' },
   { tag: 2, color: '#eab308', label: '黄' },
-  { tag: 3, color: 'rgba(255,255,255,0.82)', label: '绿' },
+  { tag: 3, color: '#22c55e', label: '绿' },
   { tag: 4, color: '#3b82f6', label: '蓝' },
 ]
 const currentPage = ref(1)
@@ -698,12 +701,15 @@ async function setFavorite(asset: Asset, tag: 0 | 1 | 2 | 3 | 4) {
 }
 
 // ── 左键：查看图片 / 播放视频 ────────────────────────────────────────────
-const showImageViewer = ref(false)
-const previewUrl = ref('')
-const showVideoPlayer = ref(false)
-const activeVideoUrl = ref('')
-const activeVideoId = ref<number | undefined>(undefined)
+const showMediaViewer = ref(false)
+const activeMediaUrl = ref('')
+const activeMediaType = ref<'image' | 'video'>('image')
+const activeMediaId = ref<number | undefined>(undefined)
+const mediaCanNavigate = ref(false)
+const mediaSubmitter = ref<string | null>(null)
+const mediaApprovedAt = ref<string | null>(null)
 const currentAssetIndex = ref(0)
+let mediaInfoRequestId = 0
 
 // 获取当前视图的资产列表
 const currentAssetList = computed(() => {
@@ -713,14 +719,40 @@ const currentAssetList = computed(() => {
 function handleAssetClick(asset: Asset) {
   const index = currentAssetList.value.findIndex(a => a.id === asset.id)
   if (index !== -1) currentAssetIndex.value = index
+  mediaCanNavigate.value = currentAssetList.value.length > 1
+  openMediaViewer(getMediaUrl(asset.location), isVideo(asset) ? 'video' : 'image', asset.id)
+  if (activeView.value === 'project' && selectedCategory.value) {
+    loadProjectMediaInfo(selectedCategory.value.id, asset.id)
+  }
+}
 
-  if (isVideo(asset)) {
-    activeVideoUrl.value = getMediaUrl(asset.location)
-    activeVideoId.value = asset.id
-    showVideoPlayer.value = true
-  } else {
-    previewUrl.value = getMediaUrl(asset.location)
-    showImageViewer.value = true
+function openMediaViewer(url: string, type: 'image' | 'video', assetId?: number) {
+  mediaInfoRequestId++
+  activeMediaUrl.value = url
+  activeMediaType.value = type
+  activeMediaId.value = assetId
+  mediaSubmitter.value = null
+  mediaApprovedAt.value = null
+  showMediaViewer.value = true
+}
+
+async function loadProjectMediaInfo(categoryId: number, assetId: number, fallbackSubmitter?: string | null) {
+  const user = getUser()
+  if (!user) return
+  const requestId = ++mediaInfoRequestId
+  try {
+    const events = await fetchReviewTimeline(categoryId, assetId, user.id)
+    if (requestId !== mediaInfoRequestId || activeMediaId.value !== assetId) return
+    const assetEvents = events.filter(event => event.assets_id === assetId)
+    const approvedEvent = [...assetEvents].reverse().find(event => event.action === 'approve')
+    const submittedEvent = [...assetEvents].reverse().find(event => (
+      event.action === 'submit'
+      && (!approvedEvent?.created_at || !event.created_at || event.created_at <= approvedEvent.created_at)
+    ))
+    mediaSubmitter.value = submittedEvent?.reviewer_name || fallbackSubmitter || null
+    mediaApprovedAt.value = approvedEvent?.created_at || null
+  } catch {
+    mediaSubmitter.value = fallbackSubmitter || null
   }
 }
 
@@ -729,16 +761,10 @@ function goToPrev() {
   if (currentAssetList.value.length === 0) return
   currentAssetIndex.value = (currentAssetIndex.value - 1 + currentAssetList.value.length) % currentAssetList.value.length
   const asset = currentAssetList.value[currentAssetIndex.value]
-
-  if (isVideo(asset)) {
-    showImageViewer.value = false
-    activeVideoUrl.value = getMediaUrl(asset.location)
-    activeVideoId.value = asset.id
-    showVideoPlayer.value = true
-  } else {
-    showVideoPlayer.value = false
-    previewUrl.value = getMediaUrl(asset.location)
-    showImageViewer.value = true
+  openMediaViewer(getMediaUrl(asset.location), isVideo(asset) ? 'video' : 'image', asset.id)
+  mediaCanNavigate.value = currentAssetList.value.length > 1
+  if (activeView.value === 'project' && selectedCategory.value) {
+    loadProjectMediaInfo(selectedCategory.value.id, asset.id)
   }
 }
 
@@ -747,33 +773,10 @@ function goToNext() {
   if (currentAssetList.value.length === 0) return
   currentAssetIndex.value = (currentAssetIndex.value + 1) % currentAssetList.value.length
   const asset = currentAssetList.value[currentAssetIndex.value]
-
-  if (isVideo(asset)) {
-    showImageViewer.value = false
-    activeVideoUrl.value = getMediaUrl(asset.location)
-    activeVideoId.value = asset.id
-    showVideoPlayer.value = true
-  } else {
-    showVideoPlayer.value = false
-    previewUrl.value = getMediaUrl(asset.location)
-    showImageViewer.value = true
-  }
-}
-
-// 键盘事件监听
-function handleKeydown(e: KeyboardEvent) {
-  if (!showImageViewer.value && !showVideoPlayer.value) return
-
-  if (e.key === 'ArrowLeft') {
-    e.preventDefault()
-    goToPrev()
-  } else if (e.key === 'ArrowRight') {
-    e.preventDefault()
-    goToNext()
-  } else if (e.key === 'Escape') {
-    e.preventDefault()
-    showImageViewer.value = false
-    showVideoPlayer.value = false
+  openMediaViewer(getMediaUrl(asset.location), isVideo(asset) ? 'video' : 'image', asset.id)
+  mediaCanNavigate.value = currentAssetList.value.length > 1
+  if (activeView.value === 'project' && selectedCategory.value) {
+    loadProjectMediaInfo(selectedCategory.value.id, asset.id)
   }
 }
 
@@ -847,12 +850,10 @@ onMounted(() => {
     if (!document.hidden) refreshCollaboration(true, true)
   }, COLLABORATION_POLL_INTERVAL)
   window.addEventListener('click', closeContextMenu)
-  window.addEventListener('keydown', handleKeydown)
 })
 onUnmounted(() => {
   if (collaborationPollTimer !== undefined) window.clearInterval(collaborationPollTimer)
   window.removeEventListener('click', closeContextMenu)
-  window.removeEventListener('keydown', handleKeydown)
 })
 </script>
 
@@ -1073,7 +1074,7 @@ onUnmounted(() => {
           <div v-else-if="collaborationTab === 'mine' && mySubmissions.length === 0" class="center-state"><p class="empty-hint">你还没有提交过素材</p></div>
           <template v-else-if="collaborationTab === 'pending'">
             <div v-for="item in pendingAssets" :key="`${item.category_id}-${item.assets_id}`" class="collaboration-item">
-              <div class="collaboration-thumb collaboration-thumb-clickable" @click="openCollaborationPreview(item.location)">
+              <div class="collaboration-thumb collaboration-thumb-clickable" @click="openCollaborationPreview(item.location, undefined, item.assets_id, item.submitted_by_name || `用户${item.submitted_by}`)">
                 <video v-if="collaborationVideo(item.location)" :src="collaborationMediaUrl(item.location)" preload="metadata" />
                 <img v-else :src="collaborationMediaUrl(item.location)" />
                 <div class="collaboration-thumb-zoom">⤢</div>
@@ -1098,7 +1099,7 @@ onUnmounted(() => {
           </template>
           <template v-else>
             <div v-for="item in mySubmissions" :key="item.id" class="collaboration-item">
-              <div class="collaboration-thumb collaboration-thumb-clickable" @click="openCollaborationPreview(item.location)">
+              <div class="collaboration-thumb collaboration-thumb-clickable" @click="openCollaborationPreview(item.location, item.review_status === 'approved' ? item.category_id : undefined, item.assets_id, getUser()?.username || getUser()?.name || `用户${currentUserId}`)">
                 <video v-if="collaborationVideo(item.location)" :src="collaborationMediaUrl(item.location)" preload="metadata" />
                 <img v-else :src="collaborationMediaUrl(item.location)" />
                 <div class="collaboration-thumb-zoom">⤢</div>
@@ -1137,19 +1138,19 @@ onUnmounted(() => {
       </template>
     </el-dialog>
 
-    <!-- 图片查看器 -->
-    <ImageViewer
-      :visible="showImageViewer"
-      :src="previewUrl"
-      :show-nav="currentAssetList.length > 1"
-      :index-text="currentAssetList.length > 1 ? `${currentAssetIndex + 1} / ${currentAssetList.length}` : ''"
-      @close="showImageViewer = false"
+    <MediaViewer
+      :visible="showMediaViewer"
+      :src="activeMediaUrl"
+      :type="activeMediaType"
+      :asset-id="activeMediaId"
+      :show-nav="mediaCanNavigate"
+      :index-text="mediaCanNavigate ? `${currentAssetIndex + 1} / ${currentAssetList.length}` : ''"
+      :submitter="mediaSubmitter"
+      :approved-at="mediaApprovedAt"
+      @close="showMediaViewer = false"
       @prev="goToPrev"
       @next="goToNext"
     />
-
-    <!-- 视频播放器 -->
-    <VideoPlayer :visible="showVideoPlayer" :src="activeVideoUrl" :asset-id="activeVideoId" @close="showVideoPlayer = false" @prev="goToPrev" @next="goToNext" :show-nav="currentAssetList.length > 1" />
 
     <!-- 右键菜单：添加到素材 / 查看生成记录 -->
     <Teleport to="body">

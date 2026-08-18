@@ -3,8 +3,7 @@ import { computed, ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import AssetSidebar from '../components/AssetSidebar.vue'
-import ImageViewer from '../components/ImageViewer.vue'
-import VideoPlayer from '../components/VideoPlayer.vue'
+import MediaViewer from '../components/MediaViewer.vue'
 import MediaCoverflow, { type CoverflowItem } from '../components/MediaCoverflow.vue'
 import NodeGenSidePanel from '../components/NodeGenSidePanel.vue'
 import { type SourceAsset, type GeneratedAsset } from '../components/NodeGenerateDialog.vue'
@@ -907,13 +906,20 @@ const activeVideoId = ref<number | undefined>(undefined)
 
 function openPreview(item: CoverflowItem) {
   if (item.isVideo) {
+    showImageViewer.value = false
     activeVideoUrl.value = item.url
     activeVideoId.value = item.id
     showVideoPlayer.value = true
   } else {
+    showVideoPlayer.value = false
     previewUrl.value = item.url
     showImageViewer.value = true
   }
+}
+
+function closeMediaViewer() {
+  showImageViewer.value = false
+  showVideoPlayer.value = false
 }
 
 // ── 面板高度拖拽 ────────────────────────────────────────────────────────
@@ -1104,8 +1110,13 @@ function stopResize() {
       </svg>
     </Teleport>
 
-    <ImageViewer :visible="showImageViewer" :src="previewUrl" @close="showImageViewer = false" />
-    <VideoPlayer :visible="showVideoPlayer" :src="activeVideoUrl" :asset-id="activeVideoId" @close="showVideoPlayer = false" />
+    <MediaViewer
+      :visible="showImageViewer || showVideoPlayer"
+      :src="showVideoPlayer ? activeVideoUrl : previewUrl"
+      :type="showVideoPlayer ? 'video' : 'image'"
+      :asset-id="showVideoPlayer ? activeVideoId : undefined"
+      @close="closeMediaViewer"
+    />
   </div>
 </template>
 

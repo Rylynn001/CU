@@ -17,7 +17,7 @@ import ImageEditor from '../components/ImageEditor.vue'
 import ModelViewer from '../components/ModelViewer.vue'
 import FavoriteHeart from '../components/FavoriteHeart.vue'
 import ProjectManager from '../components/ProjectManager.vue'
-import ImageViewer from '../components/ImageViewer.vue'
+import MediaViewer from '../components/MediaViewer.vue'
 import RecordContextMenu from '../components/RecordContextMenu.vue'
 // 本地 ComfyUI 接口：获取模型列表、采样器信息、提交任务、上传图片
 import { getModels, getKSamplerInfo, submitPrompt, uploadImage, type PromptParams } from '../api/comfyui'
@@ -92,22 +92,6 @@ function goToPrevImage() {
 function goToNextImage() {
   if (previewImageList.value.length === 0) return
   currentPreviewIndex.value = (currentPreviewIndex.value + 1) % previewImageList.value.length
-}
-
-// 键盘事件监听
-function handleImageKeydown(e: KeyboardEvent) {
-  if (!showImageViewer.value) return
-
-  if (e.key === 'ArrowLeft') {
-    e.preventDefault()
-    goToPrevImage()
-  } else if (e.key === 'ArrowRight') {
-    e.preventDefault()
-    goToNextImage()
-  } else if (e.key === 'Escape') {
-    e.preventDefault()
-    showImageViewer.value = false
-  }
 }
 
 // ── 生成记录类型 ──────────────────────────────────────────
@@ -727,7 +711,6 @@ onMounted(async () => {
   }
 
   // 注册键盘事件监听
-  window.addEventListener('keydown', handleImageKeydown)
   // 全局拖拽监听：拖拽任意资产时页面变暗
   window.addEventListener('dragstart', handleGlobalDragStart)
   window.addEventListener('dragend', handleGlobalDragEnd)
@@ -830,7 +813,6 @@ function handleReuseParams(record: any, fromStorage = false) {
 
 onUnmounted(() => {
   // 移除键盘事件监听
-  window.removeEventListener('keydown', handleImageKeydown)
   window.removeEventListener('dragstart', handleGlobalDragStart)
   window.removeEventListener('dragend', handleGlobalDragEnd)
 })
@@ -1201,9 +1183,10 @@ onUnmounted(() => {
       <AssetSidebar v-show="!showRecordEditor" @select="handleAssetSelect" @reuse-params="handleReuseParams" />
     </div>
 
-    <ImageViewer
+    <MediaViewer
       :visible="showImageViewer"
       :src="currentPreviewUrl"
+      type="image"
       :show-nav="previewImageList.length > 1"
       :index-text="previewImageList.length > 1 ? `${currentPreviewIndex + 1} / ${previewImageList.length}` : ''"
       @close="showImageViewer = false"

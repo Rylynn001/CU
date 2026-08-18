@@ -15,7 +15,7 @@ const COLORS: { tag: 0 | 1 | 2 | 3 | 4; color: string; label: string }[] = [
   { tag: 0, color: 'rgba(255,255,255,0.55)', label: '取消收藏' },
   { tag: 1, color: '#f43f5e', label: '红' },
   { tag: 2, color: '#eab308', label: '黄' },
-  { tag: 3, color: 'rgba(255,255,255,0.82)', label: '绿' },
+  { tag: 3, color: '#22c55e', label: '绿' },
   { tag: 4, color: '#3b82f6', label: '蓝' },
 ]
 

@@ -419,6 +419,7 @@ export interface ProjectMember {
   user_id: number
   role: MemberRole
   user_name: string | null
+  real_name: string | null
 }
 
 // 待审核素材
@@ -493,14 +494,28 @@ export async function listMembers(projectId: number, userId: number): Promise<Pr
 export interface CandidateUser {
   id: number
   user_name: string
+  real_name: string
 }
 
 // 获取可添加的候选用户列表（owner/admin 可操作）
-export async function listCandidateUsers(projectId: number, userId: number): Promise<CandidateUser[]> {
-  const res = await fetch(`${BASE}/projects/${projectId}/candidate-users?user_id=${userId}`)
+export async function listCandidateUsers(
+  projectId: number,
+  userId: number,
+  keyword: string = '',
+  page: number = 1,
+  pageSize: number = 50
+): Promise<{ users: CandidateUser[]; total: number; page: number; page_size: number }> {
+  const params = new URLSearchParams({
+    user_id: String(userId),
+    page: String(page),
+    page_size: String(pageSize),
+  })
+  if (keyword.trim()) {
+    params.append('keyword', keyword.trim())
+  }
+  const res = await fetch(`${BASE}/projects/${projectId}/candidate-users?${params}`)
   if (!res.ok) throw new Error(`list candidate users failed: ${res.status}`)
-  const data = await res.json()
-  return data.users || []
+  return res.json()
 }
 
 // 邀请成员（owner/admin 可操作），按用户名添加

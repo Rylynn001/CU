@@ -786,7 +786,7 @@
     <svg class="spin" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
   </div>
 
-  <VideoPlayer :visible="playerVisible" :src="playerSrc" @close="playerVisible = false" />
+  <MediaViewer :visible="playerVisible" :src="playerSrc" type="video" @close="playerVisible = false" />
 </template>
 
 <script setup lang="ts">
@@ -794,7 +794,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { pollTaskUntilDone, uploadInputImage, getApiModels, apiImg2VideoGenerate } from '../api/apiService'
-import VideoPlayer from '../components/VideoPlayer.vue'
+import MediaViewer from '../components/MediaViewer.vue'
 import { addSbPendingTask, removeSbPendingTask, resumeSbPendingTasks } from '../composables/useSbTaskPersist'
 import { getCurrentUserId } from '../utils/user'
 

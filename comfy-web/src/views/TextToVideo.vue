@@ -7,8 +7,8 @@ import { ElInput, ElSelect, ElOption } from 'element-plus'
 import { UploadFilled } from '@element-plus/icons-vue'
 // 璧勪骇閫夋嫨鍣ㄥ脊绐?
 import AssetSidebar from '../components/AssetSidebar.vue'
-// 视频播放器弹窗
-import VideoPlayer from '../components/VideoPlayer.vue'
+// 统一媒体查看器
+import MediaViewer from '../components/MediaViewer.vue'
 // 鍘嗗彶璁板綍闈㈡澘
 import HistoryPanel from '../components/HistoryPanel.vue'
 // 鍥剧墖缂栬緫鍣紙鍥剧敓瑙嗛鏃跺彲浠ユ秱鎶瑰弬鑰冨浘锛?
@@ -16,7 +16,6 @@ import ImageEditor from '../components/ImageEditor.vue'
 import ModelViewer from '../components/ModelViewer.vue'
 import FavoriteHeart from '../components/FavoriteHeart.vue'
 import ProjectManager from '../components/ProjectManager.vue'
-import ImageViewer from '../components/ImageViewer.vue'
 import RecordContextMenu from '../components/RecordContextMenu.vue'
 // 鍚庣 API 鎺ュ彛
 import { getApiModels, retryHistory, favoriteAsset, type ApiModel } from '../api/apiService'
@@ -257,6 +256,7 @@ function previewImage(url: string, imageList?: string[]) {
     previewImageList.value = [url]
     currentPreviewIndex.value = 0
   }
+  showVideoPlayer.value = false
   showImageViewer.value = true
 }
 
@@ -274,21 +274,6 @@ function goToNextImage() {
   currentPreviewIndex.value = (currentPreviewIndex.value + 1) % previewImageList.value.length
 }
 
-function handleImageKeydown(e: KeyboardEvent) {
-  if (!showImageViewer.value) return
-
-  if (e.key === 'ArrowLeft') {
-    e.preventDefault()
-    goToPrevImage()
-  } else if (e.key === 'ArrowRight') {
-    e.preventDefault()
-    goToNextImage()
-  } else if (e.key === 'Escape') {
-    e.preventDefault()
-    showImageViewer.value = false
-  }
-}
-
 // 鈹€鈹€ 瑙嗛鎾斁鍣ㄥ脊绐?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 // 鎺у埗瑙嗛鎾斁鍣ㄥ脊绐楃殑鏄剧ず
 const showVideoPlayer = ref(false)
@@ -301,7 +286,13 @@ const activeVideoDbId = ref<number | undefined>(undefined)
 function openVideo(url: string, dbId?: number) {
   activeVideoUrl.value = url
   activeVideoDbId.value = dbId
+  showImageViewer.value = false
   showVideoPlayer.value = true
+}
+
+function closeMediaViewer() {
+  showImageViewer.value = false
+  showVideoPlayer.value = false
 }
 
 // 鈹€鈹€ 鍥剧墖缂栬緫鍣紙杈撳叆绱犳潗锛?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
@@ -638,7 +629,6 @@ onMounted(async () => {
   }
 
   // 娉ㄥ唽閿洏浜嬩欢鐩戝惉
-  window.addEventListener('keydown', handleImageKeydown)
   // 全局拖拽监听：拖拽任意资产时页面变暗
   window.addEventListener('dragstart', handleGlobalDragStart)
   window.addEventListener('dragend', handleGlobalDragEnd)
@@ -707,7 +697,6 @@ function handleReuseParams(record: any, fromStorage = false) {
 
 onUnmounted(() => {
   // 绉婚櫎閿洏浜嬩欢鐩戝惉
-  window.removeEventListener('keydown', handleImageKeydown)
   window.removeEventListener('dragstart', handleGlobalDragStart)
   window.removeEventListener('dragend', handleGlobalDragEnd)
 })
@@ -996,12 +985,14 @@ onUnmounted(() => {
     <!-- 历史记录右键菜单 -->
     <RecordContextMenu ref="recordMenu" @select="handleAssetSelect" @reuse-params="handleReuseParams" />
 
-    <ImageViewer
-      :visible="showImageViewer"
-      :src="currentPreviewUrl"
-      :show-nav="previewImageList.length > 1"
-      :index-text="previewImageList.length > 1 ? `${currentPreviewIndex + 1} / ${previewImageList.length}` : ''"
-      @close="showImageViewer = false"
+    <MediaViewer
+      :visible="showImageViewer || showVideoPlayer"
+      :src="showVideoPlayer ? activeVideoUrl : currentPreviewUrl"
+      :type="showVideoPlayer ? 'video' : 'image'"
+      :asset-id="showVideoPlayer ? activeVideoDbId : undefined"
+      :show-nav="showImageViewer && previewImageList.length > 1"
+      :index-text="showImageViewer && previewImageList.length > 1 ? `${currentPreviewIndex + 1} / ${previewImageList.length}` : ''"
+      @close="closeMediaViewer"
       @prev="goToPrevImage"
       @next="goToNextImage"
     />
@@ -1016,14 +1007,6 @@ onUnmounted(() => {
     />
 
     <!-- 鍘嗗彶璁板綍鍥剧墖缂栬緫鍣紙宸插唴鑱斿埌渚ц竟鏍忥級 -->
-
-    <!-- Video Player 寮圭獥 -->
-    <VideoPlayer
-      :visible="showVideoPlayer"
-      :src="activeVideoUrl"
-      :asset-id="activeVideoDbId"
-      @close="showVideoPlayer = false"
-    />
 
     <!-- 3D 妯″瀷瑙嗚鎴浘 -->
     <ModelViewer v-model:visible="showModelViewer" @capture="handleModelCapture" />
