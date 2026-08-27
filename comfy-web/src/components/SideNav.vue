@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessageBox } from 'element-plus'
+import { ElMessageBox, ElMessage } from 'element-plus'
 import { Brush, Film, FolderOpened, House, MagicStick, Moon, Picture, SwitchButton, VideoCamera } from '@element-plus/icons-vue'
 
 const props = defineProps<{
@@ -50,6 +50,33 @@ async function handleLogout() {
     // 用户取消
   }
 }
+
+// Gecko 初始化
+const geckoInitializing = ref(false)
+const geckoStatus = ref<{ success: boolean; username: string | null } | null>(null)
+
+async function initGecko() {
+  geckoInitializing.value = true
+  try {
+    const res = await fetch('/api/api-proxy/gecko/init', { method: 'POST' })
+    const data = await res.json()
+    geckoStatus.value = {
+      success: data.success,
+      username: data.username || null
+    }
+    if (data.success) {
+      ElMessage.success(`Gecko 初始化成功，用户：${data.username}`)
+    } else {
+      ElMessage.error(data.message || '请先登录Gecko')
+    }
+  } catch (e: any) {
+    ElMessage.error('初始化失败')
+    geckoStatus.value = { success: false, username: null }
+  } finally {
+    geckoInitializing.value = false
+  }
+}
+
 </script>
 
 <template>
@@ -70,6 +97,28 @@ async function handleLogout() {
           <el-icon class="nav-icon" aria-hidden="true"><component :is="item.icon" /></el-icon>
           <span class="nav-label">{{ item.label }}</span>
         </RouterLink>
+      </li>
+
+      <!-- Gecko 初始化 -->
+      <li>
+        <button
+          type="button"
+          class="nav-item gecko-item"
+          :class="{ 'gecko-success': geckoStatus?.success, 'gecko-error': geckoStatus && !geckoStatus.success }"
+          :disabled="geckoInitializing"
+          @click="initGecko"
+        >
+          <el-icon v-if="!geckoInitializing" class="nav-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"/>
+              <polyline points="12 6 12 12 16 14"/>
+            </svg>
+          </el-icon>
+          <span v-else class="nav-icon">
+            <span class="mini-spin-nav" />
+          </span>
+          <span class="nav-label">{{ geckoStatus?.success ? `Gecko: ${geckoStatus.username}` : 'Gecko初始化' }}</span>
+        </button>
       </li>
     </ul>
 
@@ -257,4 +306,55 @@ async function handleLogout() {
   transform: translateX(0);
   transition-delay: 0.1s;
 }
+
+/* Gecko 初始化样式 */
+.gecko-item {
+  margin-top: 8px;
+  border: 1px solid rgba(96,165,250,0.3);
+  background: rgba(96,165,250,0.08);
+  color: #60a5fa;
+}
+
+.gecko-item:hover:not(:disabled),
+.gecko-item:focus-visible:not(:disabled) {
+  background: rgba(96,165,250,0.15);
+  border-color: rgba(96,165,250,0.5);
+}
+
+.gecko-item:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.gecko-item.gecko-success {
+  border-color: rgba(34,197,94,0.4);
+  background: rgba(34,197,94,0.12);
+  color: #4ade80;
+}
+
+.gecko-item.gecko-error {
+  border-color: rgba(244,63,94,0.4);
+  background: rgba(244,63,94,0.12);
+  color: #fb7185;
+}
+
+.mini-spin-nav {
+  display: block;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid rgba(96,165,250,0.3);
+  border-top-color: #60a5fa;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.7; transform: scale(0.95); }
+}
+
 </style>

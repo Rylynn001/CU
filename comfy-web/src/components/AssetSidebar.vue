@@ -12,6 +12,7 @@ import ProjectManager from './ProjectManager.vue'
 import ConfirmDialog from './ConfirmDialog.vue'
 import ProjectTeamDialog from './ProjectTeamDialog.vue'
 import AssetPicker from './AssetPicker.vue'
+import ProjectDetailDialog from './ProjectDetailDialog.vue'
 import type { MemberRole } from '../api/apiService'
 
 interface Asset {
@@ -105,6 +106,20 @@ function openTeamDialog(tab: TeamDialogTab = 'members') {
 function handleReviewed() {
   if (selectedCategory.value) loadCategoryAssets(selectedCategory.value.id)
   loadCollaboration()
+}
+
+// ── 项目详情弹窗 ──────────────────────────────────────────────────────────
+const showProjectDetail = ref(false)
+const currentProjectId = ref<number | null>(null)
+
+function openProjectDetail(projectId: number) {
+  currentProjectId.value = projectId
+  showProjectDetail.value = true
+}
+
+function closeProjectDetail() {
+  showProjectDetail.value = false
+  currentProjectId.value = null
 }
 
 type CollaborationTab = 'pending' | 'mine'
@@ -975,6 +990,13 @@ onUnmounted(() => {
                 <span class="proj-item-meta">{{ p.category_count }} 个分类</span>
               </template>
             </div>
+            <button class="info-btn" @click.stop="openProjectDetail(p.id)" title="详情">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <circle cx="12" cy="12" r="10"/>
+                <line x1="12" y1="16" x2="12" y2="12"/>
+                <line x1="12" y1="8" x2="12.01" y2="8"/>
+              </svg>
+            </button>
             <button class="del-btn" @click.stop="confirmDeleteProject(p)" title="删除">
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
@@ -1380,6 +1402,13 @@ onUnmounted(() => {
       @confirm="handleDeleteConfirm"
       @cancel="handleDeleteCancel"
     />
+
+    <!-- 项目详情弹窗 -->
+    <ProjectDetailDialog
+      :visible="showProjectDetail"
+      :project-id="currentProjectId"
+      @close="closeProjectDetail"
+    />
   </div>
 </template>
 
@@ -1724,6 +1753,17 @@ onUnmounted(() => {
   flex-shrink: 0;
   flex-wrap: wrap;
 }
+
+
+/* ── 筛选栏 ── */
+.filter-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 12px 8px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
 .chip-group {
   display: flex;
   gap: 2px;
@@ -1994,7 +2034,7 @@ onUnmounted(() => {
   font-size: 11px;
   color: rgba(255,255,255,0.25);
 }
-.del-btn {
+.del-btn, .info-btn {
   width: 20px; height: 20px;
   border-radius: 4px;
   border: none;
@@ -2006,8 +2046,9 @@ onUnmounted(() => {
   opacity: 0;
   transition: all 0.2s;
 }
-.proj-item:hover .del-btn { opacity: 1; }
+.proj-item:hover .del-btn, .proj-item:hover .info-btn { opacity: 1; }
 .del-btn:hover { background: rgba(244,63,94,0.15); color: #f43f5e; }
+.info-btn:hover { background: rgba(56,189,248,0.15); color: #38bdf8; }
 
 /* ── 分类 chips ── */
 .cat-chips {

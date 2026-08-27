@@ -117,6 +117,60 @@ def get_user_projects(user_id: int) -> list[dict]:
         ]
 
 
+def get_project_detail(project_id: int, user_id: int) -> dict | None:
+    """获取项目详情，包含统计数据。仅项目成员可查。"""
+    from . import member_repo
+    role = member_repo.get_member_role(project_id, user_id)
+    if role is None:
+        return None
+
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        # 获取项目基本信息
+        cursor.execute('SELECT id, name FROM projects WHERE id = %s AND del_flag = 0', (project_id,))
+        project = cursor.fetchone()
+        if not project:
+            return None
+
+        # 获取成员列表（分角色）
+        members = member_repo.list_members(project_id)
+        owner = [m for m in members if m['role'] == 'owner']
+        admins = [m for m in members if m['role'] == 'admin']
+        regular_members = [m for m in members if m['role'] == 'member']
+
+        # 统计分类数量
+        cursor.execute(
+            'SELECT COUNT(*) AS cnt FROM project_category WHERE project_id = %s AND del_flag = 0',
+            (project_id,)
+        )
+        category_count = cursor.fetchone()['cnt']
+
+        # 统计资产数量（按审核状态）
+        cursor.execute(
+            '''SELECT ca.review_status, COUNT(*) AS cnt
+               FROM category_assets ca
+               JOIN project_category pc ON pc.id = ca.category_id
+               WHERE pc.project_id = %s AND pc.del_flag = 0
+               GROUP BY ca.review_status''',
+            (project_id,)
+        )
+        asset_stats = {row['review_status']: row['cnt'] for row in cursor.fetchall()}
+
+        return {
+            'id': project['id'],
+            'name': project['name'],
+            'role': role,
+            'owner': owner[0] if owner else None,
+            'admins': admins,
+            'members': regular_members,
+            'total_members': len(members),
+            'category_count': category_count,
+            'approved_count': asset_stats.get('approved', 0),
+            'pending_count': asset_stats.get('pending', 0),
+            'rejected_count': asset_stats.get('rejected', 0),
+        }
+
+
 def get_project_categories(project_id: int, user_id: int) -> list[dict] | None:
     """获取项目下分类列表（含各分类 approved 资产数量）。
 

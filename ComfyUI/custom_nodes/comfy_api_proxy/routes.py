@@ -469,6 +469,19 @@ async def get_projects(request: web.Request):
         raise web.HTTPInternalServerError(reason=str(e))
 
 
+@routes.get('/api-proxy/projects/{project_id}')
+async def get_project_detail(request: web.Request):
+    from .repositories import asset_repo
+    project_id = int(request.match_info['project_id'])
+    user_id = request.rel_url.query.get('user_id')
+    if not user_id:
+        raise web.HTTPBadRequest(reason='user_id is required')
+    detail = asset_repo.get_project_detail(project_id, int(user_id))
+    if detail is None:
+        raise web.HTTPForbidden(reason='非项目成员或项目不存在')
+    return web.json_response(detail)
+
+
 @routes.get('/api-proxy/projects/{project_id}/categories')
 async def get_project_categories(request: web.Request):
     from .repositories import asset_repo
@@ -893,5 +906,33 @@ async def delete_node_board(request: web.Request):
     if not ok:
         raise web.HTTPNotFound(reason='工作区不存在或无权限')
     return web.json_response({'ok': True})
+
+
+# ── /api-proxy/gecko/init ─────────────────────────────────────────────────
+
+@routes.post('/api-proxy/gecko/init')
+async def gecko_init(request: web.Request):
+    from .utils.http_client import post
+    from requests.exceptions import RequestException
+
+    try:
+        result = post('https://192.168.0.25/api/python-v2/init')
+        message = result.get('message', '')
+        data = result.get('data')
+
+        return web.json_response({
+            'success': message == '成功',
+            'message': message,
+            'username': data if isinstance(data, str) else None
+        })
+    except RequestException as e:
+        logger.error(f'[gecko] 初始化失败: {e}')
+        return web.json_response({
+            'success': False,
+            'message': '请先登录Gecko'
+        }, status=200)
+    except Exception as e:
+        logger.error(f'[gecko] 初始化异常: {e}')
+        raise web.HTTPInternalServerError(reason=str(e))
 
 
