@@ -64,13 +64,13 @@ async def gecko_init(request: web.Request):
             'department': department,
         })
     except RequestException as e:
-        logger.error(f'[gecko] 初始化失败: {e}')
+        logger.error(f'[gecko] 初始化失败: {e}', exc_info=True)
         print(f'[Gecko Init] 初始化失败: {e}')
         return web.json_response({
             'success': False,
-            'message': '请先登录Gecko'
+            'message': f'请先登录Gecko（{e}）'
         }, status=200)
     except Exception as e:
-        logger.error(f'[gecko] 初始化异常: {e}')
+        logger.error(f'[gecko] 初始化异常: {e}', exc_info=True)
         print(f'[Gecko Init] 初始化异常: {e}')
         raise web.HTTPInternalServerError(reason=str(e))

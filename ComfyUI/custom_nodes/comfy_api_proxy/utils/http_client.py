@@ -105,7 +105,7 @@ class HttpClient:
                 continue
 
         raise RequestException(
-            f"请求失败，已重试 {self.max_retries} 次: {url}"
+            f"请求失败，已重试 {self.max_retries} 次: {url}, 原因: {last_exception}"
         ) from last_exception
 
 
