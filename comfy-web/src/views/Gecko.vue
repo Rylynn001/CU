@@ -14,6 +14,40 @@ interface GeckoTask {
   [key: string]: any
 }
 
+const taskFieldLabels: Record<string, string> = {
+  task_id: '任务ID',
+  project_id: '项目ID',
+  project_name: '项目名称',
+  porject_name: '项目名称',
+  task_name: '任务名称',
+  workflow_name: '工作流名称',
+  status: '状态',
+  state: '状态',
+  progress: '进度',
+  type: '类型',
+  priority: '优先级',
+  message: '信息',
+  result: '结果',
+  error: '错误信息',
+  error_message: '错误信息',
+  user_id: '用户ID',
+  user_name: '用户名',
+  username: '用户名',
+  created_at: '创建时间',
+  create_time: '创建时间',
+  updated_at: '更新时间',
+  update_time: '更新时间',
+  start_time: '开始时间',
+  end_time: '结束时间',
+  submit_time: '提交时间',
+  finish_time: '完成时间',
+  duration: '耗时',
+}
+
+function getTaskFieldLabel(key: string) {
+  return taskFieldLabels[key] || key
+}
+
 // ── 账号信息（原 Gecko 初始化）──────────────────────────────────────────
 const account = ref<GeckoAccount | null>(null)
 const accountDialogVisible = ref(false)
@@ -88,8 +122,8 @@ onMounted(() => {
       </button>
     </div>
 
-    <el-table :data="tasks" v-loading="tasksLoading" style="width: 100%">
-      <el-table-column v-for="key in Object.keys(tasks[0] || {})" :key="key" :prop="key" :label="key" min-width="140" show-overflow-tooltip />
+    <el-table class="gecko-task-table" :data="tasks" v-loading="tasksLoading" style="width: 100%">
+      <el-table-column v-for="key in Object.keys(tasks[0] || {})" :key="key" :prop="key" :label="getTaskFieldLabel(key)" min-width="140" show-overflow-tooltip />
     </el-table>
 
     <div v-if="!tasksLoading && tasks.length === 0" class="empty-text">暂无任务数据</div>
@@ -170,6 +204,38 @@ onMounted(() => {
   border-color: rgba(255, 255, 255, 0.24);
 }
 .refresh-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.gecko-task-table {
+  --el-table-bg-color: rgba(9, 12, 18, 0.44);
+  --el-table-tr-bg-color: rgba(9, 12, 18, 0.34);
+  --el-table-header-bg-color: rgba(255, 255, 255, 0.08);
+  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.08);
+  --el-table-current-row-bg-color: rgba(255, 255, 255, 0.1);
+  --el-table-text-color: rgba(255, 255, 255, 0.78);
+  --el-table-header-text-color: rgba(255, 255, 255, 0.9);
+  --el-table-border-color: rgba(255, 255, 255, 0.1);
+  background: transparent;
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.gecko-task-table :deep(.el-table__inner-wrapper::before) {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.gecko-task-table :deep(.el-table__body tr:hover > td.el-table__cell) {
+  background-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+.gecko-task-table :deep(th.el-table__cell) {
+  background-color: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.gecko-task-table :deep(td.el-table__cell) {
+  background-color: rgba(9, 12, 18, 0.34);
+  color: rgba(255, 255, 255, 0.78);
+  border-bottom-color: rgba(255, 255, 255, 0.1);
+}
 
 .empty-text {
   text-align: center;
