@@ -51,35 +51,6 @@ async function handleLogout() {
   }
 }
 
-// Gecko 初始化
-const geckoInitializing = ref(false)
-const geckoStatus = ref<{ success: boolean; name: string | null; id: string | null; department: string | null; ip: string | null } | null>(null)
-const geckoDialogVisible = ref(false)
-const geckoDialogMessage = ref('')
-
-async function initGecko() {
-  geckoInitializing.value = true
-  try {
-    const res = await fetch('/api/api-proxy/gecko/init', { method: 'POST' })
-    const data = await res.json()
-    geckoStatus.value = {
-      success: data.success,
-      name: data.name || null,
-      id: data.id || null,
-      department: data.department || null,
-      ip: data.ip || null
-    }
-    geckoDialogMessage.value = data.success ? '' : (data.message || '请先登录Gecko')
-    geckoDialogVisible.value = true
-  } catch (e: any) {
-    geckoStatus.value = { success: false, name: null, id: null, department: null, ip: null }
-    geckoDialogMessage.value = '初始化失败'
-    geckoDialogVisible.value = true
-  } finally {
-    geckoInitializing.value = false
-  }
-}
-
 </script>
 
 <template>
@@ -102,56 +73,23 @@ async function initGecko() {
         </RouterLink>
       </li>
 
-      <!-- Gecko 初始化 -->
+      <!-- Gecko -->
       <li>
         <button
           type="button"
           class="nav-item gecko-item"
-          :class="{ 'gecko-success': geckoStatus?.success, 'gecko-error': geckoStatus && !geckoStatus.success }"
-          :disabled="geckoInitializing"
-          @click="initGecko"
+          @click="router.push('/gecko')"
         >
-          <el-icon v-if="!geckoInitializing" class="nav-icon" aria-hidden="true">
+          <el-icon class="nav-icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="12" cy="12" r="10"/>
               <polyline points="12 6 12 12 16 14"/>
             </svg>
           </el-icon>
-          <span v-else class="nav-icon">
-            <span class="mini-spin-nav" />
-          </span>
-          <span class="nav-label">{{ geckoStatus?.success ? `Gecko: ${geckoStatus.name}` : 'Gecko初始化' }}</span>
+          <span class="nav-label">Gecko</span>
         </button>
       </li>
     </ul>
-
-    <el-dialog
-      v-model="geckoDialogVisible"
-      title="Gecko 初始化结果"
-      width="360px"
-      align-center
-      :close-on-click-modal="false"
-      :close-on-press-escape="false"
-      :show-close="true"
-    >
-      <template v-if="geckoStatus?.success">
-        <p class="gecko-dialog-warning">
-          请仔细核对以下信息是否与您本人一致。如信息有误，请先检查当前登录的 Gecko 客户端账户是否为您本人的账户；若账户确认无误但信息仍不一致，请联系管理员处理。
-        </p>
-        <div class="gecko-dialog-info">
-          <p><span class="gecko-info-label">姓名：</span><span class="gecko-info-value">{{ geckoStatus.name }}</span></p>
-          <p><span class="gecko-info-label">部门：</span><span class="gecko-info-value">{{ geckoStatus.department }}</span></p>
-          <p><span class="gecko-info-label">ID：</span><span class="gecko-info-value">{{ geckoStatus.id }}</span></p>
-          <p><span class="gecko-info-label">IP：</span><span class="gecko-info-value">{{ geckoStatus.ip }}</span></p>
-        </div>
-      </template>
-      <template v-else>
-        <p class="gecko-dialog-warning">{{ geckoDialogMessage }}</p>
-      </template>
-      <template #footer>
-        <button class="dlg-btn confirm" @click="geckoDialogVisible = false">我已确认</button>
-      </template>
-    </el-dialog>
 
     <div class="nav-footer">
       <button
@@ -338,7 +276,7 @@ async function initGecko() {
   transition-delay: 0.1s;
 }
 
-/* Gecko 初始化样式 */
+/* Gecko 样式 */
 .gecko-item {
   margin-top: 8px;
   border: 1px solid rgba(96,165,250,0.3);
@@ -352,82 +290,9 @@ async function initGecko() {
   border-color: rgba(96,165,250,0.5);
 }
 
-.gecko-item:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.gecko-item.gecko-success {
-  border-color: rgba(34,197,94,0.4);
-  background: rgba(34,197,94,0.12);
-  color: #4ade80;
-}
-
-.gecko-item.gecko-error {
-  border-color: rgba(244,63,94,0.4);
-  background: rgba(244,63,94,0.12);
-  color: #fb7185;
-}
-
-.mini-spin-nav {
-  display: block;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  border: 2px solid rgba(96,165,250,0.3);
-  border-top-color: #60a5fa;
-  animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
 @keyframes pulse-dot {
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: 0.7; transform: scale(0.95); }
 }
-
-.gecko-dialog-warning {
-  color: #f56c6c;
-  font-size: 13px;
-  line-height: 1.6;
-  margin: 0 0 12px;
-}
-
-.gecko-dialog-info {
-  color: #ffffff;
-  font-size: 13px;
-  line-height: 1.8;
-}
-
-.gecko-dialog-info p {
-  margin: 0;
-}
-
-.gecko-info-label {
-  color: rgba(255, 255, 255, 0.6);
-}
-
-.gecko-info-value {
-  color: #ffffff;
-}
-
-.dlg-btn {
-  padding: 7px 20px;
-  border-radius: 8px;
-  font-size: 13px;
-  cursor: pointer;
-  transition: all 0.2s;
-  border: 1px solid transparent;
-}
-
-.dlg-btn.confirm {
-  background: rgba(255,255,255,0.12);
-  border-color: rgba(255,255,255,0.24);
-  color: rgba(255,255,255,0.95);
-}
-
-.dlg-btn.confirm:hover:not(:disabled) { background: rgba(255,255,255,0.18); }
 
 </style>

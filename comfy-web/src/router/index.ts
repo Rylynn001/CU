@@ -10,6 +10,7 @@ const router = createRouter({
     { path: '/node-panel', name: 'NodePanel', component: () => import('../views/NodePanel.vue') },
     { path: '/models', name: 'ModelManager', component: () => import('../views/ModelManager.vue') },
     { path: '/assets', name: 'Assets', component: () => import('../views/Assets.vue') },
+    { path: '/gecko', name: 'Gecko', component: () => import('../views/Gecko.vue') },
     { path: '/drama', name: 'DramaList', component: () => import('../views/DramaList.vue') },
     { path: '/drama/:id', name: 'DramaDetail', component: () => import('../views/DramaDetail.vue') },
     { path: '/drama/:id/episode/:num', name: 'DramaStudio', component: () => import('../views/DramaStudio.vue') },

@@ -75,3 +75,60 @@ async def gecko_init(request: web.Request):
         logger.error(f'[gecko] 初始化异常: {e}', exc_info=True)
         print(f'[Gecko Init] 初始化异常: {e}')
         raise web.HTTPInternalServerError(reason=str(e))
+
+
+@routes.post('/api-proxy/gecko/tasks')
+async def gecko_tasks(request: web.Request):
+    from ..utils.http_client import post
+    from requests.exceptions import RequestException
+
+    client_ip = get_client_ip(request)
+    body = await request.json() if request.can_read_body else {}
+    page = body.get('page', 1)
+
+    try:
+        result = post(
+            'https://192.168.0.25/api/python-v2/get_my_active_tasks',
+            json={
+                'page': page,
+                'page_size': 50,
+                'ip_address': client_ip,
+                'filter_list': [],
+                'sort': '-updated_at',
+            }
+        )
+        success = result.get('success', False)
+        data = result.get('data') or {}
+        total_count= data.get('total_count', 0)
+        data_list: list = data.get('data_list',[])
+        result_list: list = []
+        for item in data_list:
+            r1 = {
+                'task_id': item.get('task.id'),
+                'project_name': item.get('task.project_name'),
+                'task_artist': item.get('task.artist'),
+                'task_name': item.get('task.task_name'),
+                'task_type': item.get('task.task_type'),
+            }
+            result_list.append(r1)
+
+        if not success:
+            return web.json_response({
+                'success': False,
+                'message': result.get('message') or '获取任务失败'
+            })
+
+        return web.json_response({
+            'success': True,
+            'total_count': total_count,
+            'data_list': result_list,
+        })
+    except RequestException as e:
+        logger.error(f'[gecko] 获取任务失败: {e}', exc_info=True)
+        return web.json_response({
+            'success': False,
+            'message': f'获取任务失败（{e}）'
+        }, status=200)
+    except Exception as e:
+        logger.error(f'[gecko] 获取任务异常: {e}', exc_info=True)
+        raise web.HTTPInternalServerError(reason=str(e))
