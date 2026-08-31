@@ -44,8 +44,8 @@ async def gecko_init(request: web.Request):
         )
         success = result.get('success', False)
         data = result.get('data') or {}
-        name = data.get('acount.name')
-        account_id = data.get('acount.id')
+        name = data.get('account.name')
+        account_id = data.get('account.id')
         department = data.get('account.department')
 
         logger.info(f'[gecko] 初始化响应: success={success}, name={name}, id={account_id}, department={department}')
@@ -62,6 +62,7 @@ async def gecko_init(request: web.Request):
             'name': name,
             'id': account_id,
             'department': department,
+            'ip': client_ip,
         })
     except RequestException as e:
         logger.error(f'[gecko] 初始化失败: {e}', exc_info=True)
