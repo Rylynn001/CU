@@ -1,7 +1,11 @@
 import time
 from typing import Optional, Dict, Any
 import requests
+import urllib3
 from requests.exceptions import RequestException
+
+# 内网服务使用自签名证书，跳过校验后抑制对应的警告日志
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 class HttpClient:
@@ -93,6 +97,7 @@ class HttpClient:
                     method=method,
                     url=url,
                     timeout=self.timeout,
+                    verify=False,
                     **kwargs
                 )
                 response.raise_for_status()
