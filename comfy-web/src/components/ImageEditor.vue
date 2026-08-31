@@ -54,6 +54,8 @@ let activeRect: Rect | null = null
 
 function onMouseDown(opt: any) {
   if (activeTool.value !== 'rect') return
+  // 点击已有对象时交给 Fabric 处理拖动/缩放，不要重新创建矩形
+  if (opt.target) return
   const pointer = canvas!.getScenePoint(opt.e)
   isDrawingRect = true
   rectStartX = pointer.x

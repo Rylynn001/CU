@@ -53,7 +53,7 @@ async function handleLogout() {
 
 // Gecko 初始化
 const geckoInitializing = ref(false)
-const geckoStatus = ref<{ success: boolean; username: string | null } | null>(null)
+const geckoStatus = ref<{ success: boolean; name: string | null; id: string | null; department: string | null } | null>(null)
 
 async function initGecko() {
   geckoInitializing.value = true
@@ -62,16 +62,18 @@ async function initGecko() {
     const data = await res.json()
     geckoStatus.value = {
       success: data.success,
-      username: data.username || null
+      name: data.name || null,
+      id: data.id || null,
+      department: data.department || null
     }
     if (data.success) {
-      ElMessage.success(`Gecko 初始化成功，用户：${data.username}`)
+      ElMessage.success(`Gecko 初始化成功，用户：${data.name}（${data.department}）`)
     } else {
       ElMessage.error(data.message || '请先登录Gecko')
     }
   } catch (e: any) {
     ElMessage.error('初始化失败')
-    geckoStatus.value = { success: false, username: null }
+    geckoStatus.value = { success: false, name: null, id: null, department: null }
   } finally {
     geckoInitializing.value = false
   }
@@ -117,7 +119,7 @@ async function initGecko() {
           <span v-else class="nav-icon">
             <span class="mini-spin-nav" />
           </span>
-          <span class="nav-label">{{ geckoStatus?.success ? `Gecko: ${geckoStatus.username}` : 'Gecko初始化' }}</span>
+          <span class="nav-label">{{ geckoStatus?.success ? `Gecko: ${geckoStatus.name}` : 'Gecko初始化' }}</span>
         </button>
       </li>
     </ul>

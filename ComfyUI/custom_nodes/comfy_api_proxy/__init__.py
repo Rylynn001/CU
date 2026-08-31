@@ -5,6 +5,7 @@ logger = logging.getLogger('comfy_api_proxy')
 try:
     from . import routes  # 注册所有路由
     from .task_routes import auth_routes
+    from .task_routes import gecko_routes as _gecko_routes  # noqa: F401 触发 gecko 路由注册
     from .hooks import asset_hook
     from server import PromptServer
 

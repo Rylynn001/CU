@@ -907,32 +907,3 @@ async def delete_node_board(request: web.Request):
         raise web.HTTPNotFound(reason='工作区不存在或无权限')
     return web.json_response({'ok': True})
 
-
-# ── /api-proxy/gecko/init ─────────────────────────────────────────────────
-
-@routes.post('/api-proxy/gecko/init')
-async def gecko_init(request: web.Request):
-    from .utils.http_client import post
-    from requests.exceptions import RequestException
-
-    try:
-        result = post('https://192.168.0.25/api/python-v2/init')
-        message = result.get('message', '')
-        data = result.get('data')
-
-        return web.json_response({
-            'success': message == '成功',
-            'message': message,
-            'username': data if isinstance(data, str) else None
-        })
-    except RequestException as e:
-        logger.error(f'[gecko] 初始化失败: {e}')
-        return web.json_response({
-            'success': False,
-            'message': '请先登录Gecko'
-        }, status=200)
-    except Exception as e:
-        logger.error(f'[gecko] 初始化异常: {e}')
-        raise web.HTTPInternalServerError(reason=str(e))
-
-
