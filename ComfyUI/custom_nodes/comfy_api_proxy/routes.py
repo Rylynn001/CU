@@ -176,8 +176,135 @@ async def set_asset_favorite(request: web.Request):
 
 # ── /api-proxy/upload/image ───────────────────────────────────────────────
 
-@routes.post('/api-proxy/upload/image')
-async def upload_input_image(request: web.Request):
+# 允许的图片文件类型
+ALLOWED_IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'}
+ALLOWED_IMAGE_MIMES = {
+    'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/bmp'
+}
+# 图片文件头魔数校验
+IMAGE_MAGIC_BYTES = {
+    b'\xFF\xD8\xFF': 'jpg',
+    b'\x89PNG\r\n\x1a\n': 'png',
+    b'GIF87a': 'gif',
+    b'GIF89a': 'gif',
+    b'RIFF': 'webp',
+    b'BM': 'bmp',
+}
+
+# 允许的视频文件类型
+ALLOWED_VIDEO_EXTENSIONS = {'.mp4', '.mov', '.avi', '.mkv', '.webm', '.flv', '.wmv'}
+ALLOWED_VIDEO_MIMES = {
+    'video/mp4', 'video/quicktime', 'video/x-msvideo', 'video/x-matroska',
+    'video/webm', 'video/x-flv', 'video/x-ms-wmv'
+}
+# 视频文件头魔数校验
+VIDEO_MAGIC_BYTES = {
+    b'\x00\x00\x00\x18ftypmp4': 'mp4',  # ftyp 开头的 mp4
+    b'\x00\x00\x00\x1cftypisom': 'mp4',
+    b'\x00\x00\x00\x20ftypisom': 'mp4',
+    b'\x00\x00\x00\x1cftypmp42': 'mp4',
+    b'\x00\x00\x00\x20ftypmp42': 'mp4',
+    b'\x00\x00\x00\x14ftypqt': 'mov',  # QuickTime
+    b'RIFF': 'avi',  # AVI 需要进一步检查 AVI 标识
+    b'\x1aE\xdf\xa3': 'mkv',  # Matroska
+    b'FLV': 'flv',
+    b'\x30\x26\xb2\x75': 'wmv',  # ASF/WMV
+}
+
+
+def validate_image_file(file_bytes: bytes, filename: str, mime_type: str | None) -> tuple[bool, str]:
+    """校验图片文件
+
+    Returns:
+        (is_valid, error_message)
+    """
+    # 1. 校验文件大小（1GB 限制）
+    if len(file_bytes) > 1024 * 1024 * 1024:
+        return False, '文件大小不能超过 1GB'
+
+    if len(file_bytes) < 10:
+        return False, '文件内容过小，疑似无效文件'
+
+    # 2. 校验扩展名
+    ext = pathlib.Path(filename).suffix.lower()
+    if ext not in ALLOWED_IMAGE_EXTENSIONS:
+        return False, f'不支持的文件格式 {ext}，仅支持图片格式：{", ".join(sorted(ALLOWED_IMAGE_EXTENSIONS))}'
+
+    # 3. 校验 MIME 类型（如果提供）
+    if mime_type and mime_type not in ALLOWED_IMAGE_MIMES:
+        return False, f'不支持的 MIME 类型 {mime_type}'
+
+    # 4. 校验文件头魔数
+    is_valid_magic = False
+    for magic, file_type in IMAGE_MAGIC_BYTES.items():
+        if file_bytes.startswith(magic):
+            # WEBP 需要额外检查
+            if magic == b'RIFF' and len(file_bytes) >= 12:
+                if file_bytes[8:12] == b'WEBP':
+                    is_valid_magic = True
+                    break
+            else:
+                is_valid_magic = True
+                break
+
+    if not is_valid_magic:
+        return False, '文件内容不是有效的图片格式'
+
+    return True, ''
+
+
+def validate_video_file(file_bytes: bytes, filename: str, mime_type: str | None) -> tuple[bool, str]:
+    """校验视频文件
+
+    Returns:
+        (is_valid, error_message)
+    """
+    # 1. 校验文件大小（1GB 限制）
+    if len(file_bytes) > 1024 * 1024 * 1024:
+        return False, '文件大小不能超过 1GB'
+
+    if len(file_bytes) < 100:
+        return False, '文件内容过小，疑似无效文件'
+
+    # 2. 校验扩展名
+    ext = pathlib.Path(filename).suffix.lower()
+    if ext not in ALLOWED_VIDEO_EXTENSIONS:
+        return False, f'不支持的文件格式 {ext}，仅支持视频格式：{", ".join(sorted(ALLOWED_VIDEO_EXTENSIONS))}'
+
+    # 3. 校验 MIME 类型（如果提供）
+    if mime_type and mime_type not in ALLOWED_VIDEO_MIMES:
+        return False, f'不支持的 MIME 类型 {mime_type}'
+
+    # 4. 校验文件头魔数
+    is_valid_magic = False
+    file_head = file_bytes[:32]  # 读取前 32 字节用于检查
+
+    for magic, file_type in VIDEO_MAGIC_BYTES.items():
+        if file_head.startswith(magic):
+            # AVI 需要额外检查 (RIFF....AVI)
+            if magic == b'RIFF' and len(file_bytes) >= 12:
+                if file_bytes[8:11] == b'AVI':
+                    is_valid_magic = True
+                    break
+            else:
+                is_valid_magic = True
+                break
+        # MP4/MOV 的 ftyp 可能不在最开头，检查前 32 字节
+        if b'ftyp' in file_head[:32]:
+            is_valid_magic = True
+            break
+
+    if not is_valid_magic:
+        return False, '文件内容不是有效的视频格式'
+
+    return True, ''
+
+
+# ── /api-proxy/upload/file ───────────────────────────────────────────────
+
+@routes.post('/api-proxy/upload/file')
+async def upload_file(request: web.Request):
+    """通用文件上传接口（自动识别图片或视频类型）"""
     import uuid
     from .repositories import asset_repo
 
@@ -185,12 +312,14 @@ async def upload_input_image(request: web.Request):
     user_id = None
     file_bytes = None
     filename = None
+    mime_type = None
 
     async for field in reader:
         if field.name == 'user_id':
             user_id = int(await field.read())
         elif field.name == 'file':
-            filename = field.filename or 'upload.png'
+            filename = field.filename or 'upload'
+            mime_type = field.headers.get('Content-Type')
             file_bytes = await field.read()
 
     if not user_id:
@@ -198,8 +327,25 @@ async def upload_input_image(request: web.Request):
     if not file_bytes:
         raise web.HTTPBadRequest(reason='file is required')
 
+    # 自动识别文件类型（先尝试图片，再尝试视频）
+    ext = pathlib.Path(filename).suffix.lower()
+
+    is_image_valid, image_error = validate_image_file(file_bytes, filename, mime_type)
+    if is_image_valid:
+        asset_type = 'picture'
+        default_ext = '.png'
+    else:
+        is_video_valid, video_error = validate_video_file(file_bytes, filename, mime_type)
+        if is_video_valid:
+            asset_type = 'video'
+            default_ext = '.mp4'
+        else:
+            raise web.HTTPBadRequest(
+                reason=f'不支持的文件类型。图片错误：{image_error}；视频错误：{video_error}'
+            )
+
     output_dir = cfg.get_output_dir()
-    ext = pathlib.Path(filename).suffix or '.png'
+    ext = ext or default_ext
     unique_filename = f'{uuid.uuid4().hex}{ext}'
     location = str(output_dir / unique_filename)
 
@@ -207,13 +353,13 @@ async def upload_input_image(request: web.Request):
         f.write(file_bytes)
 
     try:
-        asset_id = asset_repo.save_output_asset(location, user_id, 'picture')
+        asset_id = asset_repo.save_output_asset(location, user_id, asset_type)
     except Exception as e:
-        logger.error(f'[api-proxy] 上传输入图片数据库错误: {e}')
+        logger.error(f'[api-proxy] 上传文件数据库错误: {e}')
         raise web.HTTPInternalServerError(reason=str(e))
 
-    logger.info(f'[api-proxy] 输入图片已上传: id={asset_id} location={location}')
-    return web.json_response({'id': asset_id, 'location': location})
+    logger.info(f'[api-proxy] 文件已上传: id={asset_id} type={asset_type} location={location}')
+    return web.json_response({'id': asset_id, 'location': location, 'asset_type': asset_type})
 
 
 @routes.get('/api-proxy/upload/image/{asset_id}/b64')

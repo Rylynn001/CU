@@ -226,6 +226,11 @@ const maxReferenceImages = computed(() => modelSource.value === 'api' ? 12 : 1)
 
 function addLocalImage(file: File) {
   if (inputImages.value.length >= maxReferenceImages.value) return
+  // 校验文件类型：只允许图片
+  if (!file.type.startsWith('image/')) {
+    ElMessage.error('图生图只能上传图片文件，不支持视频')
+    return
+  }
   // URL.createObjectURL 创建临时的 blob: URL 用于预览
   inputImages.value.push({ file, preview: URL.createObjectURL(file), assetLocation: '' })
 }

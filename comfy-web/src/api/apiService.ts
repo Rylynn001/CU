@@ -89,7 +89,7 @@ export async function uploadInputImage(file: File, userId: number): Promise<{ id
   const form = new FormData()
   form.append('file', file)
   form.append('user_id', String(userId))
-  const res = await fetch(`${BASE}/upload/image`, { method: 'POST', body: form })
+  const res = await fetch(`${BASE}/upload/file`, { method: 'POST', body: form })
   if (!res.ok) {
     const text = await res.text()
     throw new Error(text || `upload failed: ${res.status}`)

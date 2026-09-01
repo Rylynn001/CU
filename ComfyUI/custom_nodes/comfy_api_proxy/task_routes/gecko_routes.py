@@ -163,7 +163,7 @@ async def gecko_task_directories(request: web.Request):
     logger.info(f'[gecko] 请求任务目录: project={project_name}, task_id={task_id}, task_type={task_type}')
     print(f'[Gecko Task Directories] 请求参数: project={project_name}, task_id={task_id}, task_type={task_type}')
 
-    if task_type == 'assets':
+    if task_type == 'asset':
         url = 'https://192.168.0.25/api/python-v2/get_project_asset_task_directories'
     else:
         url = 'https://192.168.0.25/api/python-v2/get_project_shot_task_directories'
