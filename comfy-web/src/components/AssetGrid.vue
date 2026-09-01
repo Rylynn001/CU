@@ -20,6 +20,7 @@ const emit = defineEmits<{
   openVideo: [asset: Asset]
   download: [asset: Asset]
   setFavorite: [asset: Asset, tag: 0 | 1 | 2 | 3 | 4]
+  contextMenu: [event: MouseEvent, asset: Asset]
 }>()
 
 const showProjectManager = ref(false)
@@ -60,7 +61,12 @@ function isVideo(asset: Asset): boolean {
   </div>
 
   <div v-else class="gallery">
-    <div v-for="asset in assets" :key="asset.id" class="gallery-item">
+    <div
+      v-for="asset in assets"
+      :key="asset.id"
+      class="gallery-item"
+      @contextmenu.prevent="emit('contextMenu', $event, asset)"
+    >
       <div
         v-if="isVideo(asset)"
         class="gallery-media video-thumb"

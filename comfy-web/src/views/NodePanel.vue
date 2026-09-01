@@ -8,7 +8,7 @@ import MediaCoverflow, { type CoverflowItem } from '../components/MediaCoverflow
 import NodeGenSidePanel from '../components/NodeGenSidePanel.vue'
 import { type SourceAsset, type GeneratedAsset } from '../components/NodeGenerateDialog.vue'
 import BoardSelector from '../components/BoardSelector.vue'
-import { fetchHistoryByAsset, pollTaskUntilDone } from '../api/apiService'
+import { fetchHistoryByAsset, pollTaskUntilDone, uploadInputImage } from '../api/apiService'
 import { getCurrentUserId } from '../utils/user'
 import {
   loadBoard, saveBoard, createBoard as apiBoardCreate,
@@ -132,6 +132,9 @@ const panel2VideoHistoryIds = ref<number[]>([])
 
 const coverflowRefs = ref<Array<InstanceType<typeof MediaCoverflow> | null>>([])
 const panelRefs = ref<Array<HTMLElement | null>>([])
+const assetSidebarRef = ref<InstanceType<typeof AssetSidebar> | null>(null)
+const uploadInputRef = ref<HTMLInputElement | null>(null)
+const uploading = ref(false)
 const genDockTop = ref(0)
 
 function syncGenDockTop() {
@@ -286,6 +289,31 @@ function addAssetToPanel(payload: Asset | Asset[], index?: number) {
   })
   markDirty()
   ElMessage.success(assets.length > 1 ? `已添加 ${assets.length} 个素材` : '已添加到节点面板')
+}
+
+function openLocalUpload() {
+  uploadInputRef.value?.click()
+}
+
+async function handleLocalUpload(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+
+  const userId = getCurrentUserId()
+  if (!userId) { ElMessage.warning('未登录'); return }
+
+  uploading.value = true
+  try {
+    const uploaded = await uploadInputImage(file, Number(userId))
+    addAssetToPanel({ ...uploaded, asset_type: 'picture' }, 0)
+    await assetSidebarRef.value?.refreshAssets()
+  } catch (error: any) {
+    ElMessage.error(error?.message || '上传失败')
+  } finally {
+    uploading.value = false
+  }
 }
 
 function getDraggedAssets(payload: any): Asset[] {
@@ -1026,6 +1054,22 @@ function stopResize() {
                   <span v-if="activeGenState && !activeGenState.submitted && !activeGenState.generating && index === activeGenState.panelIndex - 1" class="gen-ref-tag">选择参考图</span>
                 </div>
 
+                <div v-if="index === 0" class="panel-upload">
+                  <button
+                    type="button"
+                    class="gen-btn upload-btn"
+                    :disabled="uploading"
+                    @click="openLocalUpload"
+                  >
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <path d="M12 16V4" />
+                      <path d="m7 9 5-5 5 5" />
+                      <path d="M20 15v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-4" />
+                    </svg>
+                    {{ uploading ? '上传中...' : '本地上传' }}
+                  </button>
+                </div>
+
                 <!-- 第三面板只展示生成结果，生成入口仅放在第二面板 -->
                 <div v-if="index === 1 && !openGenState" class="panel-gen-btns">
                   <button type="button" class="gen-btn" @click="addGenPlaceholder(index, 'image')">＋图片生成</button>
@@ -1097,8 +1141,16 @@ function stopResize() {
         </div>
       </section>
 
-      <AssetSidebar @select="handleSidebarSelect" />
+      <AssetSidebar ref="assetSidebarRef" @select="handleSidebarSelect" />
     </main>
+
+    <input
+      ref="uploadInputRef"
+      class="upload-input"
+      type="file"
+      accept="image/*"
+      @change="handleLocalUpload"
+    >
 
     <!-- 溯源连线覆盖层 -->
     <Teleport to="body">
@@ -1295,6 +1347,24 @@ function stopResize() {
   z-index: 5;
   display: flex;
   gap: 8px;
+}
+.panel-upload {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  z-index: 5;
+}
+.upload-input {
+  display: none;
+}
+.upload-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.upload-btn:disabled {
+  opacity: 0.55;
+  cursor: wait;
 }
 .gen-btn {
   padding: 5px 12px;

@@ -1,4 +1,5 @@
 """Gecko 相关路由：初始化 / 获取当前账号信息"""
+import asyncio
 import logging
 from aiohttp import web
 from server import PromptServer
@@ -38,7 +39,9 @@ async def gecko_init(request: web.Request):
     print(f'[Gecko Init] 客户端 IP: {client_ip}')
 
     try:
-        result = post(
+        # 在线程池执行同步请求，避免阻塞事件循环
+        result = await asyncio.to_thread(
+            post,
             'https://192.168.0.25/api/python-v2/get_current_account_data',
             json={'ip_address': client_ip}
         )
@@ -87,7 +90,9 @@ async def gecko_tasks(request: web.Request):
     page = body.get('page', 1)
 
     try:
-        result = post(
+        # 在线程池执行同步请求，避免阻塞事件循环
+        result = await asyncio.to_thread(
+            post,
             'https://192.168.0.25/api/python-v2/get_my_active_tasks',
             json={
                 'page': page,
@@ -144,32 +149,59 @@ async def gecko_task_directories(request: web.Request):
     task_id = body.get('task_id')
     task_type = body.get('task_type')
 
+    logger.info(f'[gecko] 请求任务目录: project={project_name}, task_id={task_id}, task_type={task_type}')
+    print(f'[Gecko Task Directories] 请求参数: project={project_name}, task_id={task_id}, task_type={task_type}')
+
     if task_type == 'assets':
         url = 'https://192.168.0.25/api/python-v2/get_project_asset_task_directories'
     else:
         url = 'https://192.168.0.25/api/python-v2/get_project_shot_task_directories'
 
+    logger.info(f'[gecko] 目标URL: {url}')
+    print(f'[Gecko Task Directories] 目标URL: {url}')
+
     try:
-        result = post(
+        # 在线程池执行同步请求，避免阻塞事件循环
+        result = await asyncio.to_thread(
+            post,
             url,
             json={'project': project_name, 'task_id': task_id}
         )
+
+        logger.info(f'[gecko] API响应: {result}')
+        print(f'[Gecko Task Directories] API响应: {result}')
+
         success = result.get('success', False)
         data = result.get('data') or []
+
+        logger.info(f'[gecko] 解析结果: success={success}, data条数={len(data)}')
+        print(f'[Gecko Task Directories] 解析: success={success}, data={data}')
+
         dir1 = ''
         for item in data:
             title = item.get("title")
+            logger.info(f'[gecko] 遍历目录项: title={title}, dir={item.get("dir")}')
+            print(f'[Gecko Task Directories] 目录项: title={title}, dir={item.get("dir")}')
             if title == 'Work':
                 dir1 = item.get('dir')
+                logger.info(f'[gecko] 找到Work目录: {dir1}')
+                print(f'[Gecko Task Directories] 找到Work目录: {dir1}')
                 break
 
-
         if not success:
+            logger.warning(f'[gecko] API返回失败: {result.get("message")}')
+            print(f'[Gecko Task Directories] API失败: {result.get("message")}')
             return web.json_response({
                 'success': False,
                 'message': result.get('message') or '获取任务目录失败'
             })
 
+        if not dir1:
+            logger.warning(f'[gecko] 未找到Work目录，返回的data: {data}')
+            print(f'[Gecko Task Directories] 警告: 未找到Work目录')
+
+        logger.info(f'[gecko] 最终返回目录: {dir1}')
+        print(f'[Gecko Task Directories] 成功返回: {dir1}')
 
         return web.json_response({
             'success': True,
@@ -177,10 +209,12 @@ async def gecko_task_directories(request: web.Request):
         })
     except RequestException as e:
         logger.error(f'[gecko] 获取任务目录失败: {e}', exc_info=True)
+        print(f'[Gecko Task Directories] 请求失败: {e}')
         return web.json_response({
             'success': False,
             'message': f'获取任务目录失败（{e}）'
         }, status=200)
     except Exception as e:
         logger.error(f'[gecko] 获取任务目录异常: {e}', exc_info=True)
+        print(f'[Gecko Task Directories] 异常: {e}')
         raise web.HTTPInternalServerError(reason=str(e))

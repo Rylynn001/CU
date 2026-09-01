@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { ElMessage, ElDialog, ElInput } from 'element-plus'
 import {
-  favoriteAsset, fetchHistoryByAsset,
+  favoriteAsset, fetchHistoryByAsset, uploadInputImage,
   listPendingAssets, listMySubmissions, reviewAsset, addAssetToCategory, fetchReviewTimeline,
   type PendingAsset, type MySubmission, type ReviewEvent,
 } from '../api/apiService'
@@ -342,6 +342,8 @@ async function handleResubmitSelect(selectedAssets: Array<{ id: number }>) {
 const assets = ref<Asset[]>([])
 const loading = ref(false)
 const loadingMore = ref(false)
+const uploading = ref(false)
+const uploadInputRef = ref<HTMLInputElement | null>(null)
 const activeFilter = ref<'all' | 'picture' | 'video'>('all')
 // 收藏颜色筛选：0=不筛选，1=红，2=黄，3=绿，4=蓝
 const favoriteTag = ref<0 | 1 | 2 | 3 | 4>(0)
@@ -376,6 +378,39 @@ async function loadAssets(assetType?: 'picture' | 'video') {
     loading.value = false
   }
   await fillIfNotScrollable()
+}
+
+function refreshAssets() {
+  return loadAssets(activeFilter.value === 'all' ? undefined : activeFilter.value)
+}
+
+defineExpose({ refreshAssets })
+
+function openLocalUpload() {
+  uploadInputRef.value?.click()
+}
+
+async function handleLocalUpload(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+
+  const user = getUser()
+  if (!user) { ElMessage.warning('未登录'); return }
+
+  uploading.value = true
+  try {
+    await uploadInputImage(file, user.id)
+    activeFilter.value = 'all'
+    favoriteTag.value = 0
+    await loadAssets()
+    ElMessage.success('已上传到资产库')
+  } catch (error: any) {
+    ElMessage.error(error?.message || '上传失败')
+  } finally {
+    uploading.value = false
+  }
 }
 
 const thumbGridRef = ref<HTMLElement | null>(null)
@@ -896,6 +931,20 @@ onUnmounted(() => {
           <button class="chip" :class="{ active: activeFilter === 'picture' }" @click="setFilter('picture')">图片</button>
           <button class="chip" :class="{ active: activeFilter === 'video' }" @click="setFilter('video')">视频</button>
         </div>
+        <button
+          type="button"
+          class="sidebar-upload-btn"
+          :disabled="uploading"
+          :title="uploading ? '上传中...' : '本地上传'"
+          aria-label="本地上传"
+          @click="openLocalUpload"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 16V4" />
+            <path d="m7 9 5-5 5 5" />
+            <path d="M20 15v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-4" />
+          </svg>
+        </button>
         <div class="fav-chip-group">
           <button
             v-for="c in FAVORITE_COLORS" :key="c.tag"
@@ -910,6 +959,13 @@ onUnmounted(() => {
             </svg>
           </button>
         </div>
+        <input
+          ref="uploadInputRef"
+          class="sidebar-upload-input"
+          type="file"
+          accept="image/*"
+          @change="handleLocalUpload"
+        >
       </div>
 
       <!-- 加载中 -->
@@ -1808,6 +1864,32 @@ onUnmounted(() => {
   border-color: currentColor;
 }
 .fav-chip.active svg { fill: currentColor; }
+
+.sidebar-upload-input { display: none; }
+.sidebar-upload-btn {
+  width: 28px;
+  height: 28px;
+  margin-left: auto;
+  flex: 0 0 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.055);
+  color: var(--color-muted);
+  cursor: pointer;
+  transition: color 0.2s, background 0.2s, border-color 0.2s;
+}
+.sidebar-upload-btn:hover {
+  color: var(--color-text);
+  background: rgba(255, 255, 255, 0.11);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+.sidebar-upload-btn:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
 
 /* ── 缩略图网格 ── */
 .thumb-grid {

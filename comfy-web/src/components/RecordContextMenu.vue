@@ -5,6 +5,14 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { fetchHistoryByAsset, type HistoryRecord } from '../api/apiService'
 
+withDefaults(defineProps<{
+  showAddToMaterial?: boolean
+  showReuseParams?: boolean
+}>(), {
+  showAddToMaterial: true,
+  showReuseParams: true,
+})
+
 interface MenuTarget {
   assetId: number
   location: string          // 完整 url 或文件路径，供 handleAssetSelect 使用
@@ -85,7 +93,7 @@ defineExpose({ open })
         :style="{ left: menu.x + 'px', top: menu.y + 'px' }"
         @click.stop
       >
-        <div class="context-menu-item" @click="addToMaterial">
+        <div v-if="showAddToMaterial" class="context-menu-item" @click="addToMaterial">
           <span class="context-menu-icon">＋</span>
           <span>添加到素材</span>
         </div>
@@ -209,7 +217,7 @@ defineExpose({ open })
 
           <div class="modal-footer">
             <button class="modal-btn cancel-btn" @click="closeDetail">关闭</button>
-            <button class="modal-btn reuse-btn" @click="reuseParams">
+            <button v-if="showReuseParams" class="modal-btn reuse-btn" @click="reuseParams">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <polyline points="1 4 1 10 7 10"/>
                 <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>

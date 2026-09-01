@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElDialog, ElInput } from 'element-plus'
 import MediaViewer from '../components/MediaViewer.vue'
 import AssetGrid from '../components/AssetGrid.vue'
+import RecordContextMenu from '../components/RecordContextMenu.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import ProjectTeamDialog from '../components/ProjectTeamDialog.vue'
 import { favoriteAsset, fetchReviewTimeline } from '../api/apiService'
@@ -526,6 +527,16 @@ function isVideo(asset: Asset): boolean {
   return ['mp4', 'mov', 'avi', 'webm'].includes(ext || '')
 }
 
+const recordMenu = ref<InstanceType<typeof RecordContextMenu> | null>(null)
+
+function openRecordMenu(event: MouseEvent, asset: Asset) {
+  recordMenu.value?.open(event, {
+    assetId: asset.id,
+    location: getMediaUrl(asset.location),
+    asset_type: isVideo(asset) ? 'video' : 'picture',
+  })
+}
+
 function downloadAsset(asset: Asset) {
   const url = getMediaUrl(asset.location)
   const a = document.createElement('a')
@@ -669,6 +680,7 @@ onUnmounted(() => {
             @open-video="(a) => openVideo(a, assets)"
             @download="downloadAsset"
             @set-favorite="setFavorite"
+            @context-menu="openRecordMenu"
           />
 
           <div v-if="assets.length > 0 && (loadingMore || !hasMore)" class="load-more-bar">
@@ -768,7 +780,12 @@ onUnmounted(() => {
               </div>
 
               <div v-else class="gallery">
-                <div v-for="asset in categoryAssets" :key="asset.id" class="gallery-item">
+                <div
+                  v-for="asset in categoryAssets"
+                  :key="asset.id"
+                  class="gallery-item"
+                  @contextmenu.prevent="openRecordMenu($event, asset)"
+                >
                   <div
                     v-if="isVideo(asset)"
                     class="gallery-media video-thumb"
@@ -833,6 +850,12 @@ onUnmounted(() => {
       @close="closeMediaViewer"
       @prev="goToPrev"
       @next="goToNext"
+    />
+
+    <RecordContextMenu
+      ref="recordMenu"
+      :show-add-to-material="false"
+      :show-reuse-params="false"
     />
 
     <!-- 确认删除弹窗 -->
