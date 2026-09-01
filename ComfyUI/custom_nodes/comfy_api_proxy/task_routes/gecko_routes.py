@@ -132,3 +132,55 @@ async def gecko_tasks(request: web.Request):
     except Exception as e:
         logger.error(f'[gecko] 获取任务异常: {e}', exc_info=True)
         raise web.HTTPInternalServerError(reason=str(e))
+
+
+@routes.post('/api-proxy/gecko/task-directories')
+async def gecko_task_directories(request: web.Request):
+    from ..utils.http_client import post
+    from requests.exceptions import RequestException
+
+    body = await request.json() if request.can_read_body else {}
+    project_name = body.get('project_name')
+    task_id = body.get('task_id')
+    task_type = body.get('task_type')
+
+    if task_type == 'assets':
+        url = 'https://192.168.0.25/api/python-v2/get_project_asset_task_directories'
+    else:
+        url = 'https://192.168.0.25/api/python-v2/get_project_shot_task_directories'
+
+    try:
+        result = post(
+            url,
+            json={'project': project_name, 'task_id': task_id}
+        )
+        success = result.get('success', False)
+        data = result.get('data') or []
+        dir1 = ''
+        for item in data:
+            title = item.get("title")
+            if title == 'Work':
+                dir1 = item.get('dir')
+                break
+
+
+        if not success:
+            return web.json_response({
+                'success': False,
+                'message': result.get('message') or '获取任务目录失败'
+            })
+
+
+        return web.json_response({
+            'success': True,
+            'message': dir1,
+        })
+    except RequestException as e:
+        logger.error(f'[gecko] 获取任务目录失败: {e}', exc_info=True)
+        return web.json_response({
+            'success': False,
+            'message': f'获取任务目录失败（{e}）'
+        }, status=200)
+    except Exception as e:
+        logger.error(f'[gecko] 获取任务目录异常: {e}', exc_info=True)
+        raise web.HTTPInternalServerError(reason=str(e))
