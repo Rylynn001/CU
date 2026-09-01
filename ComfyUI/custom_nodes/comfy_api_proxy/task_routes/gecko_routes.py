@@ -7,6 +7,18 @@ from server import PromptServer
 logger = logging.getLogger('comfy_api_proxy')
 routes = PromptServer.instance.routes
 
+# Gecko 专用 HTTP 客户端：更短的超时和重试，避免阻塞线程池
+_gecko_client = None
+
+def get_gecko_client():
+    """获取 Gecko 专用的 HTTP 客户端（5秒超时，仅重试1次）"""
+    global _gecko_client
+    if _gecko_client is None:
+        from ..utils.http_client import HttpClient
+        _gecko_client = HttpClient(timeout=5, retry_delay=0.5)
+        _gecko_client.max_retries = 1
+    return _gecko_client
+
 
 def get_client_ip(request: web.Request) -> str:
     """获取客户端真实 IPv4 地址"""
@@ -30,7 +42,6 @@ def get_client_ip(request: web.Request) -> str:
 
 @routes.post('/api-proxy/gecko/init')
 async def gecko_init(request: web.Request):
-    from ..utils.http_client import post
     from requests.exceptions import RequestException
 
     # 获取并打印客户端 IP
@@ -39,9 +50,10 @@ async def gecko_init(request: web.Request):
     print(f'[Gecko Init] 客户端 IP: {client_ip}')
 
     try:
-        # 在线程池执行同步请求，避免阻塞事件循环
+        # 使用 Gecko 专用客户端，在线程池执行同步请求
+        gecko_client = get_gecko_client()
         result = await asyncio.to_thread(
-            post,
+            gecko_client.post,
             'https://192.168.0.25/api/python-v2/get_current_account_data',
             json={'ip_address': client_ip}
         )
@@ -82,7 +94,6 @@ async def gecko_init(request: web.Request):
 
 @routes.post('/api-proxy/gecko/tasks')
 async def gecko_tasks(request: web.Request):
-    from ..utils.http_client import post
     from requests.exceptions import RequestException
 
     client_ip = get_client_ip(request)
@@ -90,9 +101,10 @@ async def gecko_tasks(request: web.Request):
     page = body.get('page', 1)
 
     try:
-        # 在线程池执行同步请求，避免阻塞事件循环
+        # 使用 Gecko 专用客户端，在线程池执行同步请求
+        gecko_client = get_gecko_client()
         result = await asyncio.to_thread(
-            post,
+            gecko_client.post,
             'https://192.168.0.25/api/python-v2/get_my_active_tasks',
             json={
                 'page': page,
@@ -141,7 +153,6 @@ async def gecko_tasks(request: web.Request):
 
 @routes.post('/api-proxy/gecko/task-directories')
 async def gecko_task_directories(request: web.Request):
-    from ..utils.http_client import post
     from requests.exceptions import RequestException
 
     body = await request.json() if request.can_read_body else {}
@@ -161,9 +172,10 @@ async def gecko_task_directories(request: web.Request):
     print(f'[Gecko Task Directories] 目标URL: {url}')
 
     try:
-        # 在线程池执行同步请求，避免阻塞事件循环
+        # 使用 Gecko 专用客户端，在线程池执行同步请求
+        gecko_client = get_gecko_client()
         result = await asyncio.to_thread(
-            post,
+            gecko_client.post,
             url,
             json={'project': project_name, 'task_id': task_id}
         )
