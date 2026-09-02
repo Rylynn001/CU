@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import { Brush, Film, FolderOpened, House, MagicStick, Moon, Picture, SwitchButton, VideoCamera } from '@element-plus/icons-vue'
+import { getCurrentUserName } from '../utils/user'
 
 const props = defineProps<{
   businessTheme: 'light' | 'dot' | 'black'
@@ -15,6 +16,7 @@ const emit = defineEmits<{
 
 const router = useRouter()
 const route = useRoute()
+const currentUserName = getCurrentUserName()
 
 const themeMeta = computed(() => ({
   light: { icon: Brush, label: '光束主题' },
@@ -55,9 +57,14 @@ async function handleLogout() {
 
 <template>
   <nav class="side-nav" aria-label="主导航">
-    <RouterLink class="nav-logo" to="/" aria-label="返回首页">
-      <span class="logo-dot" aria-hidden="true" />
-    </RouterLink>
+    <div class="brand-section">
+      <RouterLink class="nav-logo" to="/" aria-label="返回首页">
+        <span class="brand-logo-viewport">
+          <img class="brand-logo" src="/logo.svg" alt="若晴AI Studio" />
+        </span>
+      </RouterLink>
+      <div v-if="currentUserName" class="brand-greeting" aria-live="polite">Hi！{{ currentUserName }}</div>
+    </div>
 
     <ul class="nav-list">
       <li v-for="item in navItems" :key="item.path">
@@ -145,26 +152,64 @@ async function handleLogout() {
   height: 44px;
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   flex-shrink: 0;
-  margin-bottom: 16px;
+  padding-left: 12px;
   border-radius: var(--radius-md);
 }
 
 .side-nav:hover .nav-logo,
 .side-nav:has(:focus-visible) .nav-logo {
+  width: 174px;
   padding-left: 12px;
   justify-content: flex-start;
 }
 
-.logo-dot {
-  width: 18px;
-  height: 18px;
-  border-radius: 7px;
-  background: rgba(255, 255, 255, 0.9);
-  animation: pulse-dot 2.5s ease-in-out infinite;
+.brand-logo-viewport {
+  width: 30px;
+  display: block;
+  overflow: hidden;
   flex-shrink: 0;
-  box-shadow: 0 0 24px rgba(255,255,255, 0.24);
+  transition: width 0.48s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.side-nav:hover .brand-logo-viewport,
+.side-nav:has(:focus-visible) .brand-logo-viewport {
+  width: 156px;
+}
+
+.brand-logo {
+  width: 156px;
+  height: auto;
+  display: block;
+  flex-shrink: 0;
+}
+
+.brand-section {
+  width: 100%;
+  flex-shrink: 0;
+  margin-bottom: 16px;
+}
+
+.brand-greeting {
+  width: 174px;
+  padding: 0 12px;
+  color: var(--color-muted);
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translateX(-10px);
+  overflow: hidden;
+  pointer-events: none;
+  transition: opacity 0.26s ease, transform 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.side-nav:hover .brand-greeting,
+.side-nav:has(:focus-visible) .brand-greeting {
+  opacity: 1;
+  transform: translateX(0);
+  transition-delay: 0.14s;
 }
 
 .nav-list {
@@ -290,9 +335,13 @@ async function handleLogout() {
   border-color: rgba(96,165,250,0.5);
 }
 
-@keyframes pulse-dot {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.7; transform: scale(0.95); }
+@media (prefers-reduced-motion: reduce) {
+  .side-nav,
+  .nav-logo,
+  .brand-logo-viewport,
+  .brand-greeting {
+    transition: none;
+  }
 }
 
 </style>

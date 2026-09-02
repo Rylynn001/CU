@@ -44,7 +44,7 @@ async def login_handler(request: web.Request):
         try:
             with conn.cursor() as cursor:
                 cursor.execute(
-                    'SELECT id, user_name, password FROM sys_user WHERE user_name = %s',
+                    'SELECT id, user_name, password, real_name FROM sys_user WHERE user_name = %s',
                     (username,)
                 )
                 user = cursor.fetchone()
@@ -55,7 +55,7 @@ async def login_handler(request: web.Request):
             raise web.HTTPUnauthorized(reason='用户名或密码错误')
 
         token = create_access_token(user['id'], user['user_name'])
-        return web.json_response({'token': token, 'user': {'id': user['id'], 'username': user['user_name']}})
+        return web.json_response({'token': token, 'user': {'id': user['id'], 'username': user['user_name'], 'real_name': user['real_name']}})
 
     except web.HTTPException:
         raise

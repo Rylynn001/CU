@@ -30,8 +30,7 @@ const features = [
   <div class="home">
     <main class="home-stage">
       <section class="hero" aria-labelledby="home-title">
-        <div class="hero-kicker">AI 创作中枢</div>
-        <h1 id="home-title" class="hero-title">若晴节点式创作平台</h1>
+        <h1 id="home-title" class="hero-title">若晴AI Studio</h1>
         <p class="hero-sub">从提示词、参考素材到历史记录，用清晰的工作台承载连续创作流程。</p>
       </section>
 
@@ -75,11 +74,6 @@ const features = [
   flex-direction: column;
   align-items: flex-start;
   gap: 18px;
-}
-
-.hero-kicker {
-  font-size: 12px;
-  color: var(--color-muted);
 }
 
 .hero-title {

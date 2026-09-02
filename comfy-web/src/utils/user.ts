@@ -8,3 +8,14 @@ export function getCurrentUserId(): number | undefined {
     return undefined
   }
 }
+
+// 读取当前登录用户的显示姓名
+export function getCurrentUserName(): string {
+  try {
+    const userStr = localStorage.getItem('user')
+    const user = userStr ? JSON.parse(userStr) : null
+    return user?.real_name || ''
+  } catch {
+    return ''
+  }
+}
