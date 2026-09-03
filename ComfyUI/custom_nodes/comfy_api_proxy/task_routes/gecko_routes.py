@@ -186,9 +186,8 @@ async def gecko_upload_media(request: web.Request):
         eps_name = form_data.get('eps_name')
         shot = form_data.get('shot')
         user_name = form_data.get('user_name')
-        version_name = form_data.get('version_name')
 
-        logger.info(f'[gecko] 上传文件: project={project_name}, eps={eps_name}, shot={shot}, user={user_name}, version={version_name}, files={len(files_data)}')
+        logger.info(f'[gecko] 上传文件: project={project_name}, eps={eps_name}, shot={shot}, user={user_name}, files={len(files_data)}')
 
         # 构建 form-data 发送给 Gecko
         form = aiohttp.FormData()
@@ -196,7 +195,6 @@ async def gecko_upload_media(request: web.Request):
         form.add_field('sequence_name', eps_name)
         form.add_field('shot_name', shot)
         form.add_field('user_name', user_name)
-        form.add_field('version_name', version_name)
 
         for file_item in files_data:
             form.add_field(

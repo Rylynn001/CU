@@ -4,6 +4,7 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { fetchHistoryByAsset, type HistoryRecord } from '../api/apiService'
+import GeckoTaskPicker from './GeckoTaskPicker.vue'
 
 withDefaults(defineProps<{
   showAddToMaterial?: boolean
@@ -40,6 +41,64 @@ function addToMaterial() {
   const t = menu.value.target
   closeMenu()
   if (t) emit('select', [{ id: t.assetId, location: t.location, asset_type: t.asset_type }])
+}
+
+// ── Gecko 上传 ────────────────────────────────────────────────────────────
+const showGeckoTaskPicker = ref(false)
+const geckoUploading = ref(false)
+
+function openGeckoUpload() {
+  const t = menu.value.target
+  closeMenu()
+  if (!t) return
+  showGeckoTaskPicker.value = true
+}
+
+async function handleGeckoTaskSelect(task: any) {
+  const t = menu.value.target
+  if (!t) return
+
+  const userStr = localStorage.getItem('user')
+  if (!userStr) {
+    ElMessage.error('未登录')
+    return
+  }
+  const user = JSON.parse(userStr)
+
+  geckoUploading.value = true
+  try {
+    // 获取文件
+    const response = await fetch(t.location)
+    const blob = await response.blob()
+
+    // 获取文件名
+    const filename = t.location.split(/[/\\]/).pop() || 'file'
+
+    // 构建 FormData
+    const formData = new FormData()
+    formData.append('project_name', task.project_name)
+    formData.append('eps_name', task.eps_name || '')
+    formData.append('shot', task.shot || '')
+    formData.append('user_name', user.name || user.username || '')
+    formData.append('files', blob, filename)
+
+    // 上传
+    const res = await fetch('/api/api-proxy/gecko/upload-media', {
+      method: 'POST',
+      body: formData,
+    })
+    const data = await res.json()
+
+    if (!data.success) {
+      throw new Error(data.message || '上传失败')
+    }
+
+    ElMessage.success('已保存到 Gecko 任务目录')
+  } catch (e: any) {
+    ElMessage.error(e.message || '上传失败')
+  } finally {
+    geckoUploading.value = false
+  }
 }
 
 // ── 查看生成记录弹窗 ──
@@ -101,9 +160,19 @@ defineExpose({ open })
           <span class="context-menu-icon">◉</span>
           <span>查看生成记录</span>
         </div>
+        <div class="context-menu-item" @click="openGeckoUpload">
+          <span class="context-menu-icon">📤</span>
+          <span>保存到Gecko任务目录</span>
+        </div>
       </div>
     </Transition>
   </Teleport>
+
+  <!-- Gecko 任务选择器 -->
+  <GeckoTaskPicker
+    v-model:visible="showGeckoTaskPicker"
+    @select="handleGeckoTaskSelect"
+  />
 
   <!-- 生成记录详情弹窗 -->
   <Teleport to="body">

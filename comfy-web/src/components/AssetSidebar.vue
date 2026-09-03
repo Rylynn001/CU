@@ -13,6 +13,7 @@ import ConfirmDialog from './ConfirmDialog.vue'
 import ProjectTeamDialog from './ProjectTeamDialog.vue'
 import AssetPicker from './AssetPicker.vue'
 import ProjectDetailDialog from './ProjectDetailDialog.vue'
+import GeckoTaskPicker from './GeckoTaskPicker.vue'
 import type { MemberRole } from '../api/apiService'
 
 interface Asset {
@@ -830,7 +831,7 @@ function goToNext() {
   }
 }
 
-// ── 右键菜单：添加到素材 / 查看生成记录 ──────────────────────────────────
+// ── 右键菜单：添加到素材 / 查看生成记录 / 保存到Gecko ──────────────────────────────────
 const contextMenu = ref<{ visible: boolean; x: number; y: number; asset: Asset | null }>({
   visible: false, x: 0, y: 0, asset: null,
 })
@@ -846,6 +847,67 @@ function addToMaterial() {
   const asset = contextMenu.value.asset
   closeContextMenu()
   if (asset) emit('select', [asset])
+}
+
+// ── Gecko 上传 ────────────────────────────────────────────────────────────
+const showGeckoTaskPicker = ref(false)
+const geckoUploadingAsset = ref<Asset | null>(null)
+const geckoUploading = ref(false)
+
+function openGeckoUpload() {
+  const asset = contextMenu.value.asset
+  closeContextMenu()
+  if (!asset) return
+  geckoUploadingAsset.value = asset
+  showGeckoTaskPicker.value = true
+}
+
+async function handleGeckoTaskSelect(task: any) {
+  const asset = geckoUploadingAsset.value
+  if (!asset) return
+
+  const user = getUser()
+  if (!user) {
+    ElMessage.error('未登录')
+    return
+  }
+
+  geckoUploading.value = true
+  try {
+    // 获取文件
+    const fileUrl = getMediaUrl(asset.location)
+    const response = await fetch(fileUrl)
+    const blob = await response.blob()
+
+    // 获取文件名
+    const filename = asset.location.split(/[/\\]/).pop() || 'file'
+
+    // 构建 FormData
+    const formData = new FormData()
+    formData.append('project_name', task.project_name)
+    formData.append('eps_name', task.eps_name || '')
+    formData.append('shot', task.shot || '')
+    formData.append('user_name', user.name || user.username || '')
+    formData.append('files', blob, filename)
+
+    // 上传
+    const res = await fetch('/api/api-proxy/gecko/upload-media', {
+      method: 'POST',
+      body: formData,
+    })
+    const data = await res.json()
+
+    if (!data.success) {
+      throw new Error(data.message || '上传失败')
+    }
+
+    ElMessage.success('已保存到 Gecko 任务目录')
+  } catch (e: any) {
+    ElMessage.error(e.message || '上传失败')
+  } finally {
+    geckoUploading.value = false
+    geckoUploadingAsset.value = null
+  }
 }
 
 // ── 拖拽发起：将资产数据写入 dataTransfer，供拖放目标读取 ──────────────────
@@ -1230,7 +1292,7 @@ onUnmounted(() => {
       @next="goToNext"
     />
 
-    <!-- 右键菜单：添加到素材 / 查看生成记录 -->
+    <!-- 右键菜单：添加到素材 / 查看生成记录 / 保存到Gecko -->
     <Teleport to="body">
       <Transition name="ctx-menu">
         <div
@@ -1246,6 +1308,10 @@ onUnmounted(() => {
           <div class="context-menu-item" @click="viewGenerationRecord">
             <span class="context-menu-icon">◉</span>
             <span>查看生成记录</span>
+          </div>
+          <div class="context-menu-item" @click="openGeckoUpload">
+            <span class="context-menu-icon">📤</span>
+            <span>保存到Gecko任务目录</span>
           </div>
         </div>
       </Transition>
@@ -1464,6 +1530,12 @@ onUnmounted(() => {
       :visible="showProjectDetail"
       :project-id="currentProjectId"
       @close="closeProjectDetail"
+    />
+
+    <!-- Gecko 任务选择器 -->
+    <GeckoTaskPicker
+      v-model:visible="showGeckoTaskPicker"
+      @select="handleGeckoTaskSelect"
     />
   </div>
 </template>
