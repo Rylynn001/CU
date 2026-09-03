@@ -3,6 +3,7 @@ import asyncio
 import logging
 from aiohttp import web
 from server import PromptServer
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 logger = logging.getLogger('comfy_api_proxy')
 routes = PromptServer.instance.routes
@@ -237,3 +238,36 @@ async def gecko_upload_media(request: web.Request):
     except Exception as e:
         logger.error(f'[gecko] 上传文件异常: {e}', exc_info=True)
         raise web.HTTPInternalServerError(reason=str(e))
+
+
+# ========== 定时任务：每天凌晨1点自动登录 ==========
+@routes.post('/api-proxy/gecko/daily-login')
+async def daily_login():
+    """每天凌晨1点执行登录"""
+    import aiohttp
+
+    try:
+        logger.info('[gecko定时任务] 开始执行每日登录')
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                'https://192.168.0.25/api/login',
+                json={
+                    'username': 'ai_node_creation_platform',
+                    'password': '9yz4HpTyuBLwroW'
+                },
+                ssl=False,
+                timeout=aiohttp.ClientTimeout(total=10)
+            ) as resp:
+                result = await resp.json()
+                logger.info(f'[gecko定时任务] 登录响应: {result}')
+    except Exception as e:
+        logger.error(f'[gecko定时任务] 执行失败: {e}', exc_info=True)
+
+
+# 启动定时任务调度器
+scheduler = AsyncIOScheduler()
+scheduler.add_job(daily_login, 'cron', hour=1, minute=0, id='gecko_daily_login')
+scheduler.start()
+logger.info('[gecko] 定时任务已启动：每天凌晨1点自动登录')
+
+

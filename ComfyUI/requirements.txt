@@ -31,6 +31,7 @@ cryptography
 langchain-openai
 langchain-core
 langgraph
+APScheduler
 
 #non essential dependencies:
 kornia>=0.7.1
