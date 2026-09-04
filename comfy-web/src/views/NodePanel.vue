@@ -5,10 +5,11 @@ import { ElMessage } from 'element-plus'
 import AssetSidebar from '../components/AssetSidebar.vue'
 import MediaViewer from '../components/MediaViewer.vue'
 import MediaCoverflow, { type CoverflowItem } from '../components/MediaCoverflow.vue'
-import NodeGenSidePanel from '../components/NodeGenSidePanel.vue'
+import NodeGenSidePanel, { type NodeGenerationRequest } from '../components/NodeGenSidePanel.vue'
 import { type SourceAsset, type GeneratedAsset } from '../components/NodeGenerateDialog.vue'
 import BoardSelector from '../components/BoardSelector.vue'
-import { fetchHistoryByAsset, pollTaskUntilDone, uploadInputImage } from '../api/apiService'
+import GeckoTaskPicker from '../components/GeckoTaskPicker.vue'
+import { fetchHistoryByAsset, pollTaskUntilDone, uploadInputImage, type HistoryRecord } from '../api/apiService'
 import { getCurrentUserId } from '../utils/user'
 import {
   loadBoard, saveBoard, createBoard as apiBoardCreate,
@@ -33,6 +34,12 @@ interface PanelState {
   assets: Asset[]
   // 溯源覆盖层：非空时 coverflow 改显示这些参考资产，退出溯源恢复 assets
   traceAssets: Asset[] | null
+}
+
+interface GeckoTask {
+  project_name: string
+  eps_name?: string
+  shot?: string
 }
 
 const PANEL_COUNT = 3
@@ -135,6 +142,8 @@ const panelRefs = ref<Array<HTMLElement | null>>([])
 const assetSidebarRef = ref<InstanceType<typeof AssetSidebar> | null>(null)
 const uploadInputRef = ref<HTMLInputElement | null>(null)
 const uploading = ref(false)
+const showGeckoTaskPicker = ref(false)
+const geckoUploading = ref(false)
 const genDockTop = ref(0)
 
 function syncGenDockTop() {
@@ -316,6 +325,57 @@ async function handleLocalUpload(event: Event) {
   }
 }
 
+function openPanel3GeckoUpload() {
+  const assets = panels.value[2].assets.filter((asset) => !asset.isGenPlaceholder && asset.location)
+  if (!assets.length) {
+    ElMessage.warning('面板三暂无可保存资产')
+    return
+  }
+  showGeckoTaskPicker.value = true
+}
+
+async function handlePanel3GeckoTaskSelect(task: GeckoTask) {
+  const assets = panels.value[2].assets.filter((asset) => !asset.isGenPlaceholder && asset.location)
+  if (!assets.length) return
+
+  const userStr = localStorage.getItem('user')
+  if (!userStr) {
+    ElMessage.error('未登录')
+    return
+  }
+  const user = JSON.parse(userStr)
+
+  geckoUploading.value = true
+  try {
+    const formData = new FormData()
+    formData.append('project_name', task.project_name)
+    formData.append('eps_name', task.eps_name || '')
+    formData.append('shot', task.shot || '')
+    formData.append('user_name', user.name || user.username || '')
+
+    for (const asset of assets) {
+      const response = await fetch(getMediaUrl(asset.location))
+      if (!response.ok) throw new Error(`获取资产失败: ${response.status}`)
+      const blob = await response.blob()
+      const filename = asset.location.split(/[/\\]/).pop() || `asset-${asset.id}`
+      formData.append('files', blob, filename)
+    }
+
+    const res = await fetch('/api/api-proxy/gecko/upload-media', {
+      method: 'POST',
+      body: formData,
+    })
+    const data = await res.json()
+    if (!data.success) throw new Error(data.message || '上传失败')
+
+    ElMessage.success(`已将 ${assets.length} 个资产保存到 Gecko 任务目录`)
+  } catch (error: any) {
+    ElMessage.error(error?.message || '上传失败')
+  } finally {
+    geckoUploading.value = false
+  }
+}
+
 function getDraggedAssets(payload: any): Asset[] {
   const list = Array.isArray(payload.assets) ? payload.assets : [payload]
   return list
@@ -400,6 +460,9 @@ const coverflowItems = computed(() =>
 // 生成侧边面板：已选参考图的完整 SourceAsset 列表；只读基础资产，避免普通溯源覆盖影响生成任务
 function getGenRefAssets(job: GenState): SourceAsset[] {
   if (!job.refAssetIds.length) return []
+  if (job.refAssets) {
+    return job.refAssets.filter((asset) => job.refAssetIds.includes(asset.id))
+  }
   const upper = panels.value[job.refPanelIndex]
   if (!upper) return []
   return job.refAssetIds
@@ -466,6 +529,8 @@ interface GenState {
   failed?: boolean
   errorMessage?: string
   settings?: Record<string, unknown>
+  refAssets?: SourceAsset[]
+  autoGenerate?: boolean
 }
 const genStates = ref<GenState[]>([])
 const activeGenId = ref<number | null>(null)
@@ -654,6 +719,7 @@ function addGenRef(refAssetId: number, refPanelIndex: number) {
 function removeGenRef(job: GenState, refAssetId: number) {
   if (job.submitted || job.generating) return
   job.refAssetIds = job.refAssetIds.filter((id) => id !== refAssetId)
+  if (job.refAssets) job.refAssets = job.refAssets.filter((asset) => asset.id !== refAssetId)
   updateLines()
   if (!trace.value && !hasGenLinks.value) stopLineLoop()
 }
@@ -743,7 +809,10 @@ function onGenSubmitted(pid: number, historyId: number) {
 
 function onGenGenerating(pid: number, value: boolean) {
   const job = findGenState(pid)
-  if (job) job.generating = value
+  if (job) {
+    job.generating = value
+    if (value) job.autoGenerate = false
+  }
 }
 
 // ── 溯源 ────────────────────────────────────────────────────────────────
@@ -755,7 +824,25 @@ interface TraceLink {
   toId: number
 }
 const trace = ref<{ links: TraceLink[]; savedRatios: number[] } | null>(null)
+const traceHistory = ref<HistoryRecord | null>(null)
+const traceReferences = ref<SourceAsset[]>([])
+const tracePrompt = ref('')
 const linePaths = ref<string[]>([])
+
+const traceHistoryMode = computed<'image' | 'video'>(() => {
+  const record = traceHistory.value
+  if (record?.type === 'video' || record?.output_urls?.some((item) => item.type === 'video')) return 'video'
+  return 'image'
+})
+
+const traceSettings = computed<Record<string, unknown>>(() => {
+  const record = traceHistory.value
+  if (!record) return {}
+  return {
+    ...(record.payload || {}),
+    model: record.payload?.model ?? record.model_id,
+  }
+})
 
 // 每个面板当前高亮的资产 id（连线端点）
 const highlightIds = computed<number[][]>(() => {
@@ -812,11 +899,17 @@ async function handleCardSelect(item: CoverflowItem, panelIndex: number) {
     const record = await fetchHistoryByAsset(item.id, userId)
     const inputIds = record?.input_asset_ids ?? []
     if (!inputIds.length) {
+      clearTrace()
+      traceHistory.value = record
+      tracePrompt.value = record.prompt || ''
       ElMessage.info('该资产没有参考素材')
       return
     }
     const refAssets = await fetchAssetsByIds(inputIds)
     if (!refAssets.length) {
+      clearTrace()
+      traceHistory.value = record
+      tracePrompt.value = record.prompt || ''
       ElMessage.info('参考素材已不可用')
       return
     }
@@ -844,6 +937,13 @@ async function handleCardSelect(item: CoverflowItem, panelIndex: number) {
       panels.value.forEach((p) => { p.ratio = 1 })
     }
     trace.value = { links: [...kept, ...added], savedRatios }
+    traceHistory.value = record
+    tracePrompt.value = record.prompt || ''
+    traceReferences.value = refAssets.map((asset) => ({
+      id: asset.id,
+      url: getMediaUrl(asset.location),
+      isVideo: asset.asset_type === 'video' || isVideo(asset),
+    }))
 
     await nextTick()
     startLineLoop()
@@ -858,6 +958,9 @@ function clearTrace() {
     panels.value.forEach((p, i) => { p.ratio = trace.value!.savedRatios[i] })
   }
   trace.value = null
+  traceHistory.value = null
+  traceReferences.value = []
+  tracePrompt.value = ''
   linePaths.value = []
   panels.value.forEach((p) => { p.traceAssets = null })
   // gen 连线还在时不停 loop，让 updateLines 继续渲染 gen 连线
@@ -865,6 +968,44 @@ function clearTrace() {
     return
   }
   stopLineLoop()
+}
+
+function removeTraceReference(id: number) {
+  traceReferences.value = traceReferences.value.filter((asset) => asset.id !== id)
+}
+
+function handoffTraceGeneration(request: NodeGenerationRequest) {
+  if (!traceHistory.value) return
+  const panelIndex = 1
+  const tempId = genTempIdCounter--
+  const references = [...traceReferences.value]
+  panels.value[panelIndex].assets.push({
+    id: tempId,
+    location: '',
+    asset_type: request.mode === 'video' ? 'video' : 'picture',
+    isGenPlaceholder: true,
+    genMode: request.mode,
+  })
+  genStates.value.push({
+    placeholderTempId: tempId,
+    panelIndex,
+    refAssetIds: references.map((asset) => asset.id),
+    refPanelIndex: 0,
+    refAssets: references,
+    prompt: request.prompt,
+    settings: { ...request.settings },
+    submitted: false,
+    generating: false,
+    panelOpen: false,
+    autoGenerate: true,
+  })
+  activeGenId.value = tempId
+  markDirty()
+  clearTrace()
+  nextTick(() => {
+    syncGenDockTop()
+    if (references.length) startLineLoop()
+  })
 }
 
 // ── 连线绘制：rAF 循环，每帧从 coverflow 查卡片中心，更新 SVG path ──────
@@ -1076,6 +1217,22 @@ function stopResize() {
                   <button type="button" class="gen-btn" @click="addGenPlaceholder(index, 'video')">＋视频生成</button>
                 </div>
 
+                <div v-if="index === 2" class="panel-gecko-actions">
+                  <button
+                    type="button"
+                    class="gen-btn gecko-save-btn"
+                    :disabled="geckoUploading || !panel.assets.some((asset) => !asset.isGenPlaceholder)"
+                    @click="openPanel3GeckoUpload"
+                  >
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <path d="M12 3v12" />
+                      <path d="m7 10 5 5 5-5" />
+                      <path d="M5 21h14" />
+                    </svg>
+                    {{ geckoUploading ? '保存中...' : '保存到 Gecko 任务目录' }}
+                  </button>
+                </div>
+
                 <MediaCoverflow
                   v-if="displayedCoverflowItems[index].length > 0"
                   :ref="(el) => { coverflowRefs[index] = el as any }"
@@ -1124,6 +1281,7 @@ function stopResize() {
                 :ref-assets="getGenRefAssets(job)"
                 :prompt="job.prompt"
                 :settings="job.settings"
+                :auto-generate="job.autoGenerate"
                 :view-only="job.generating || job.failed"
                 :error-message="job.errorMessage"
                 @update:prompt="job.prompt = $event"
@@ -1141,7 +1299,23 @@ function stopResize() {
         </div>
       </section>
 
-      <AssetSidebar ref="assetSidebarRef" @select="handleSidebarSelect" />
+      <div class="right-sidebar-slot">
+        <AssetSidebar v-show="!traceHistory" ref="assetSidebarRef" @select="handleSidebarSelect" />
+        <aside v-if="traceHistory" class="trace-gen-sidebar">
+          <NodeGenSidePanel
+            :key="traceHistory.id"
+            :mode="traceHistoryMode"
+            :ref-assets="traceReferences"
+            :prompt="tracePrompt"
+            :settings="traceSettings"
+            handoff-on-generate
+            @update:prompt="tracePrompt = $event"
+            @remove-ref="removeTraceReference"
+            @close="clearTrace"
+            @generate-request="handoffTraceGeneration"
+          />
+        </aside>
+      </div>
     </main>
 
     <input
@@ -1151,6 +1325,11 @@ function stopResize() {
       accept="image/*"
       @change="handleLocalUpload"
     >
+
+    <GeckoTaskPicker
+      v-model:visible="showGeckoTaskPicker"
+      @select="handlePanel3GeckoTaskSelect"
+    />
 
     <!-- 溯源连线覆盖层 -->
     <Teleport to="body">
@@ -1275,6 +1454,21 @@ function stopResize() {
   min-height: 0;
 }
 
+.right-sidebar-slot {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.trace-gen-sidebar {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+}
+
 .panel-stack {
   position: relative;
   height: 100%;
@@ -1354,6 +1548,12 @@ function stopResize() {
   right: 12px;
   z-index: 5;
 }
+.panel-gecko-actions {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  z-index: 5;
+}
 .upload-input {
   display: none;
 }
@@ -1365,6 +1565,15 @@ function stopResize() {
 .upload-btn:disabled {
   opacity: 0.55;
   cursor: wait;
+}
+.gecko-save-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.gecko-save-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 .gen-btn {
   padding: 5px 12px;

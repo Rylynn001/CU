@@ -36,6 +36,8 @@ const selectedIds = ref<number[]>([])
 const dragOverGenId = ref<number | null>(null)
 const selectionStart = ref<{ x: number; y: number } | null>(null)
 const selectionEnd = ref<{ x: number; y: number } | null>(null)
+const selectionScroll = ref(0)
+let selectionPointer: { x: number; y: number } | null = null
 const selectedItems = computed(() => props.items.filter(
   (item) => selectedIds.value.includes(item.id) && !item.isGenPlaceholder,
 ))
@@ -46,7 +48,7 @@ const selectionStyle = computed(() => {
   const end = selectionEnd.value
   if (!start || !end) return {}
   return {
-    left: `${Math.min(start.x, end.x)}px`,
+    left: `${Math.min(start.x, end.x) - selectionScroll.value}px`,
     top: `${Math.min(start.y, end.y)}px`,
     width: `${Math.abs(end.x - start.x)}px`,
     height: `${Math.abs(end.y - start.y)}px`,
@@ -59,22 +61,42 @@ function isHighlighted(id: number) {
 
 // 尺寸随容器变化（面板拖动缩放时重算）
 const size = ref({ w: 1, h: 1 })
+const CARD_ASPECT_RATIO = 0.76
+const CARD_MAX_WIDTH_RATIO = 0.82
+const cardH = ref(200)
 const cardW = ref(200)
 const spacing = ref(220)
+const mediaRatios = ref<Record<number, number>>({})
 
 // 滚动：target 为目标位置，current 缓动逼近 target，产生惯性顺滑感
 const scroll = { current: 0, target: 0 }
 let raf = 0
 let snapTimer = 0
+let traceWheelDistance = 0
+let traceExitRequested = false
+let wheelDirection = 0
 
 function computeSize() {
   const el = containerRef.value
   if (!el) return
   size.value = { w: el.clientWidth, h: el.clientHeight }
-  const cardH = Math.max(size.value.h * 0.8, 80)
-  cardW.value = Math.min(cardH * 0.72, size.value.w * 0.5)
+  cardH.value = Math.max(size.value.h * 0.8, 80)
+  cardW.value = Math.min(cardH.value * CARD_MAX_WIDTH_RATIO, size.value.w * 0.55)
   spacing.value = cardW.value * 1.08
   clampTarget()
+}
+
+function getCardStyle(item: CoverflowItem) {
+  const ratio = item.isGenPlaceholder ? CARD_ASPECT_RATIO : (mediaRatios.value[item.id] ?? CARD_ASPECT_RATIO)
+  const width = Math.min(cardW.value, cardH.value * ratio)
+  return { width: `${width}px`, height: `${width / ratio}px` }
+}
+
+function rememberMediaRatio(itemId: number, event: Event) {
+  const media = event.currentTarget as HTMLImageElement | HTMLVideoElement
+  const width = media instanceof HTMLVideoElement ? media.videoWidth : media.naturalWidth
+  const height = media instanceof HTMLVideoElement ? media.videoHeight : media.naturalHeight
+  if (width > 0 && height > 0) mediaRatios.value[itemId] = width / height
 }
 
 function clampTarget() {
@@ -99,6 +121,13 @@ const cardGeom: Array<{ offset: number; scale: number }> = []
 // 每帧更新每张卡片的位移/缩放/3D 倾斜：离中心越近越大越正
 function tick() {
   scroll.current = lerp(scroll.current, scroll.target, 0.09)
+  if (selectionStart.value && selectionPointer) {
+    selectionScroll.value = scroll.current
+    selectionEnd.value = {
+      x: selectionPointer.x + scroll.current,
+      y: selectionPointer.y,
+    }
+  }
   const cards = cardRefs.value
   for (let i = 0; i < cards.length; i++) {
     const card = cards[i]
@@ -108,19 +137,25 @@ function tick() {
     const clampedNorm = Math.max(-3, Math.min(3, norm))
     const scale = Math.max(0.6, 1 - Math.abs(clampedNorm) * 0.16)
     const rotateY = Math.max(-24, Math.min(24, -clampedNorm * 22))
-    const opacity = Math.max(0.35, 1 - Math.abs(clampedNorm) * 0.28)
+    const baseOpacity = Math.max(0.35, 1 - Math.abs(clampedNorm) * 0.28)
+    const opacity = selectedIds.value.includes(props.items[i]?.id) ? Math.max(0.82, baseOpacity) : baseOpacity
     card.style.transform =
       `translate(-50%, -50%) translateX(${offset}px) scale(${scale}) rotateY(${rotateY}deg)`
     card.style.opacity = String(opacity)
     card.style.zIndex = String(1000 - Math.round(Math.abs(offset)))
     cardGeom[i] = { offset, scale }
   }
+  if (selectionStart.value) updateSelectedItems()
   raf = requestAnimationFrame(tick)
 }
 
 // 吸附到最近一张
 function snap() {
-  const idx = Math.round(scroll.target / spacing.value)
+  const position = scroll.target / spacing.value
+  const nearest = Math.round(position)
+  const idx = Math.abs(position - nearest) < 0.01
+    ? nearest
+    : wheelDirection > 0 ? Math.ceil(position) : Math.floor(position)
   scroll.target = idx * spacing.value
   clampTarget()
 }
@@ -129,16 +164,32 @@ function snap() {
 function onWheel(e: WheelEvent) {
   e.preventDefault()
   const delta = e.deltaY || e.deltaX
+  if (delta) wheelDirection = Math.sign(delta)
   scroll.target += delta * 0.9
   clampTarget()
   window.clearTimeout(snapTimer)
   snapTimer = window.setTimeout(snap, 140)
+
+  if (props.traceRootId != null && !traceExitRequested) {
+    const distance = e.deltaMode === WheelEvent.DOM_DELTA_LINE
+      ? Math.abs(delta) * 16
+      : e.deltaMode === WheelEvent.DOM_DELTA_PAGE
+        ? Math.abs(delta) * size.value.w
+        : Math.abs(delta)
+    traceWheelDistance += distance
+    if (traceWheelDistance >= 400) {
+      traceExitRequested = true
+      emit('exit-trace')
+    }
+  }
 }
 
 // 单击 → 溯源（200ms 延迟，双击时取消）
 let singleClickTimer = 0
 
-function onCardClick(item: CoverflowItem) {
+function onCardClick(item: CoverflowItem, index: number) {
+  scroll.target = index * spacing.value
+  clampTarget()
   window.clearTimeout(singleClickTimer)
   singleClickTimer = window.setTimeout(() => {
     emit('select', item)
@@ -218,28 +269,46 @@ function startSelection(e: PointerEvent) {
   if (!point) return
   e.preventDefault()
   selectedIds.value = []
-  selectionStart.value = point
-  selectionEnd.value = point
+  selectionPointer = point
+  selectionScroll.value = scroll.current
+  selectionStart.value = { x: point.x + scroll.current, y: point.y }
+  selectionEnd.value = { x: point.x + scroll.current, y: point.y }
 }
 
-function updateSelection(e: PointerEvent) {
+function updateSelectedItems() {
   const start = selectionStart.value
-  const point = getSelectionPoint(e)
+  const end = selectionEnd.value
   const container = containerRef.value
-  if (!start || !point || !container) return
-  selectionEnd.value = point
+  if (!start || !end || !container) return
   const containerRect = container.getBoundingClientRect()
-  const left = containerRect.left + Math.min(start.x, point.x)
-  const right = containerRect.left + Math.max(start.x, point.x)
-  const top = containerRect.top + Math.min(start.y, point.y)
-  const bottom = containerRect.top + Math.max(start.y, point.y)
-  selectedIds.value = props.items
+  const left = Math.min(start.x, end.x)
+  const right = Math.max(start.x, end.x)
+  const top = Math.min(start.y, end.y)
+  const bottom = Math.max(start.y, end.y)
+  const nextIds = props.items
     .filter((item, index) => {
       if (item.isGenPlaceholder) return false
       const rect = cardRefs.value[index]?.getBoundingClientRect()
-      return !!rect && rect.right >= left && rect.left <= right && rect.bottom >= top && rect.top <= bottom
+      if (!rect) return false
+      const cardLeft = rect.left - containerRect.left + scroll.current
+      const cardRight = rect.right - containerRect.left + scroll.current
+      const cardTop = rect.top - containerRect.top
+      const cardBottom = rect.bottom - containerRect.top
+      return cardRight >= left && cardLeft <= right && cardBottom >= top && cardTop <= bottom
     })
     .map((item) => item.id)
+  if (nextIds.length !== selectedIds.value.length || nextIds.some((id, index) => id !== selectedIds.value[index])) {
+    selectedIds.value = nextIds
+  }
+}
+
+function updateSelection(e: PointerEvent) {
+  if (!selectionStart.value) return
+  const point = getSelectionPoint(e)
+  if (!point) return
+  selectionPointer = point
+  selectionEnd.value = { x: point.x + scroll.current, y: point.y }
+  updateSelectedItems()
 }
 
 function finishSelection() {
@@ -250,6 +319,7 @@ function finishSelection() {
   }
   selectionStart.value = null
   selectionEnd.value = null
+  selectionPointer = null
 }
 
 function clearDragOver() {
@@ -263,12 +333,17 @@ function getCardAnchor(id: number, edge: 'top' | 'bottom' | 'center' = 'center')
   const idx = props.items.findIndex((it) => it.id === id)
   if (idx < 0) return null
   const el = containerRef.value
+  const card = cardRefs.value[idx]
   const geom = cardGeom[idx]
-  if (!el || !geom) return null
+  if (!el || !card || !geom) return null
   const box = el.getBoundingClientRect()
+  const cardBox = card.getBoundingClientRect()
+  if (cardBox.right <= box.left || cardBox.left >= box.right || cardBox.bottom <= box.top || cardBox.top >= box.bottom) {
+    return null
+  }
   const cx = box.left + box.width / 2 + geom.offset
   const cy = box.top + box.height / 2
-  const halfH = (cardW.value / 0.72) * geom.scale / 2
+  const halfH = card.offsetHeight * geom.scale / 2
   const y = edge === 'top' ? cy - halfH : edge === 'bottom' ? cy + halfH : cy
   return { x: cx, y }
 }
@@ -328,6 +403,11 @@ watch(() => props.items, (newItems, oldItems) => {
     jumpToIndex(Math.min(centeredIdx, newItems.length - 1), newItems.length)
   }
 }, { deep: false })
+
+watch(() => props.traceRootId, () => {
+  traceWheelDistance = 0
+  traceExitRequested = false
+})
 </script>
 
 <template>
@@ -354,9 +434,9 @@ watch(() => props.items, (newItems, oldItems) => {
         'cf-failed': item.isGenPlaceholder && item.hasError,
         'cf-drop-target': dragOverGenId === item.id,
       }"
-      :style="{ width: cardW + 'px', height: (cardW / 0.72) + 'px' }"
+      :style="getCardStyle(item)"
       :draggable="!item.isGenPlaceholder"
-      @click.stop="onCardClick(item)"
+      @click.stop="onCardClick(item, i)"
       @dblclick.stop="!item.isGenPlaceholder && onCardDblClick(item)"
       @dragstart="!item.isGenPlaceholder && onCardDragStart($event, item, i)"
       @dragover.prevent
@@ -374,8 +454,16 @@ watch(() => props.items, (newItems, oldItems) => {
           muted
           playsinline
           draggable="false"
+          @loadedmetadata="rememberMediaRatio(item.id, $event)"
         />
-        <img v-else :src="item.url" class="cf-media" loading="lazy" draggable="false" />
+        <img
+          v-else
+          :src="item.url"
+          class="cf-media"
+          loading="lazy"
+          draggable="false"
+          @load="rememberMediaRatio(item.id, $event)"
+        />
         <div v-if="item.isVideo" class="cf-play">▶</div>
       </template>
 
@@ -542,7 +630,7 @@ watch(() => props.items, (newItems, oldItems) => {
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
   will-change: transform, opacity;
   cursor: pointer;
-  transition: box-shadow 0.2s, border-color 0.2s;
+  transition: box-shadow 0.2s, border-color 0.2s, filter 0.2s;
 }
 
 /* 溯源命中高亮 */
@@ -556,10 +644,21 @@ watch(() => props.items, (newItems, oldItems) => {
   box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.32), 0 12px 40px rgba(0, 0, 0, 0.4);
 }
 
+.cf-card:not(.cf-placeholder) {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.cf-card.cf-selected:not(.cf-placeholder) {
+  box-shadow: 0 0 14px rgba(255, 255, 255, 0.68), 0 0 34px rgba(82, 163, 255, 0.52);
+  filter: brightness(1.16) saturate(1.12);
+}
+
 .cf-media {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   display: block;
   pointer-events: none;
   user-select: none;

@@ -66,7 +66,7 @@ export async function submitImageGeneration(params: ImageGenerateParams): Promis
   }
 
   const result = await apiGenerate({
-    model: String(params.modelId),
+    model: params.modelId,
     prompt: params.prompt,
     aspect_ratio: params.aspect_ratio,
     quality: params.quality,

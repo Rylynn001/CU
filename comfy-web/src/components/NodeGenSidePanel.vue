@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getApiModels, pollTaskUntilDone, type ApiModel } from '../api/apiService'
 import { getCurrentUserId } from '../utils/user'
@@ -8,14 +8,25 @@ import { submitVideoGeneration, submitImg2VideoGeneration } from '../services/vi
 import { useAtMention } from '../composables/useAtMention'
 import type { SourceAsset, GeneratedAsset } from './NodeGenerateDialog.vue'
 
-const props = defineProps<{
+export interface NodeGenerationRequest {
+  mode: 'image' | 'video'
+  prompt: string
+  settings: Record<string, unknown>
+}
+
+const props = withDefaults(defineProps<{
   mode: 'image' | 'video'
   refAssets: SourceAsset[]
   prompt: string
   settings?: Record<string, unknown>
   viewOnly?: boolean
   errorMessage?: string
-}>()
+  handoffOnGenerate?: boolean
+  autoGenerate?: boolean
+}>(), {
+  handoffOnGenerate: false,
+  autoGenerate: false,
+})
 
 const emit = defineEmits<{
   close: []
@@ -23,6 +34,7 @@ const emit = defineEmits<{
   generating: [value: boolean]
   submitted: [historyId: number]
   failed: [message: string]
+  'generate-request': [request: NodeGenerationRequest]
   'remove-ref': [id: number]
   'update:prompt': [value: string]
 }>()
@@ -72,7 +84,10 @@ function getMentionLabel(asset: SourceAsset, index: number) {
 
 async function loadModels() {
   try {
-    models.value = await getApiModels(props.mode)
+    models.value = (await getApiModels(props.mode)).map((model) => ({
+      ...model,
+      id: String(model.id),
+    }))
     if (models.value.length && !models.value.some((m) => m.id === modelId.value)) {
       modelId.value = models.value[0].id
     }
@@ -91,9 +106,13 @@ function applySettings() {
   if (typeof settings.duration === 'number') duration.value = settings.duration
 }
 
-onMounted(() => {
+onMounted(async () => {
   applySettings()
-  loadModels()
+  await loadModels()
+  if (props.autoGenerate) {
+    await nextTick()
+    void handleGenerate()
+  }
 })
 watch(() => props.mode, loadModels)
 watch(() => props.settings, applySettings, { deep: true })
@@ -101,6 +120,16 @@ watch(() => props.settings, applySettings, { deep: true })
 async function handleGenerate() {
   if (!modelId.value) { ElMessage.warning('请选择模型'); return }
   if (!props.prompt.trim()) { ElMessage.warning('请输入提示词'); return }
+  if (props.handoffOnGenerate) {
+    emit('generate-request', {
+      mode: props.mode,
+      prompt: props.prompt,
+      settings: props.mode === 'image'
+        ? { model: Number(modelId.value), aspect_ratio: aspectRatio.value, quality: quality.value, n: batchSize.value }
+        : { model: Number(modelId.value), ratio: videoRatio.value, resolution: resolution.value, duration: duration.value },
+    })
+    return
+  }
   const userId = getCurrentUserId() ?? undefined
   generating.value = true
   emit('generating', true)
@@ -141,7 +170,7 @@ async function handleGenerate() {
       let historyId: number | undefined
       if (refIds.length > 0) {
         const r = await submitImg2VideoGeneration({
-          modelId: modelId.value, prompt: props.prompt,
+          modelId: Number(modelId.value), prompt: props.prompt,
           ratio: videoRatio.value, resolution: resolution.value, duration: duration.value,
           inputAssetIds: refIds, userId,
         })
@@ -149,7 +178,7 @@ async function handleGenerate() {
         historyId = r.historyId
       } else {
         const r = await submitVideoGeneration({
-          modelId: modelId.value, prompt: props.prompt,
+          modelId: Number(modelId.value), prompt: props.prompt,
           ratio: videoRatio.value, resolution: resolution.value, duration: duration.value, userId,
         })
         taskId = r.taskId

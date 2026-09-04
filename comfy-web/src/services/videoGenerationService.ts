@@ -2,7 +2,7 @@ import { apiVideoGenerate, apiImg2VideoGenerate, uploadInputImage } from '../api
 import { getCurrentUserId } from '../utils/user'
 
 export interface VideoGenerateParams {
-  modelId: string
+  modelId: string | number
   prompt: string
   ratio: string
   resolution: string

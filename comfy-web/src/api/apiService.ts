@@ -15,7 +15,7 @@ export interface ApiModel {
 
 // 图片生成请求参数
 export interface ApiGenerateParams {
-  model: string
+  model: number
   prompt: string
   aspect_ratio: string     // 比例，如 "1:1"、"16:9"，后端按模型映射
   quality: string          // 清晰度，如 "low"/"medium"/"high"，后端按模型映射
@@ -141,7 +141,7 @@ export function resolveImageSrc(item: { b64?: string; url?: string }): string {
 
 // 文生视频请求参数
 export interface ApiVideoParams {
-  model: string
+  model: string | number
   prompt: string
   user_id?: number
   ratio?: string       // 画面比例，如 "16:9"
@@ -182,7 +182,7 @@ export async function apiVideoGenerate(params: ApiVideoParams): Promise<ApiVideo
 
 // 图生视频请求参数（比文生视频多了 input_asset_ids）
 export interface ApiImg2VideoParams {
-  model: string
+  model: string | number
   prompt: string
   user_id?: number
   ratio?: string
