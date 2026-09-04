@@ -157,72 +157,122 @@ async def gecko_tasks(request: web.Request):
 
 @routes.post('/api-proxy/gecko/upload-media')
 async def gecko_upload_media(request: web.Request):
-    """上传文件到 Gecko 任务目录"""
+    """
+    上传文件到 Gecko 任务目录
+
+    接收前端的 multipart/form-data 请求，包含：
+    - project_name: 项目名称
+    - eps_name: 集数名称
+    - shot: 镜头名称
+    - user_name: 用户名
+    - files: 多个文件（字段名都是 'files'）
+
+    转发给 Gecko API: /api/python-v2/upload_media
+    - 普通字段映射: eps_name -> sequence_name, shot -> shot_name
+    - 文件字段保持 'files' 作为字段名，支持多文件上传
+    """
     from requests.exceptions import RequestException
     import aiohttp
 
     try:
-        # 读取 multipart/form-data
+        logger.info('[gecko_upload_media] ========== 开始处理上传请求 ==========')
+
+        # 步骤1: 读取 multipart/form-data
         reader = await request.multipart()
 
-        # 收集表单字段和文件
+        # 步骤2: 收集表单字段和文件
         form_data = {}
         files_data = []
 
         async for field in reader:
             if field.filename:
-                # 文件字段
+                # 文件字段：收集文件内容和元信息
                 file_content = await field.read()
-                files_data.append({
-                    'name': field.name,
-                    'filename': field.filename,
+                file_info = {
+                    'name': field.name,  # 字段名（应该是 'files'）
+                    'filename': field.filename,  # 文件名
                     'content': file_content,
-                    'content_type': field.headers.get('Content-Type', 'application/octet-stream')
-                })
+                    'content_type': field.headers.get('Content-Type', 'application/octet-stream'),
+                    'size': len(file_content)
+                }
+                files_data.append(file_info)
+                logger.info(f'[gecko_upload_media] 收到文件: name={field.name}, filename={field.filename}, size={len(file_content)} bytes, type={file_info["content_type"]}')
             else:
-                # 普通字段
-                form_data[field.name] = (await field.read()).decode('utf-8')
+                # 普通字段：收集表单数据
+                field_value = (await field.read()).decode('utf-8')
+                form_data[field.name] = field_value
+                logger.info(f'[gecko_upload_media] 收到字段: {field.name}={field_value}')
 
+        # 步骤3: 提取必要参数
         project_name = form_data.get('project_name')
         eps_name = form_data.get('eps_name')
         shot = form_data.get('shot')
         user_name = form_data.get('user_name')
 
-        logger.info(f'[gecko] 上传文件: project={project_name}, eps={eps_name}, shot={shot}, user={user_name}, files={len(files_data)}')
+        logger.info(f'[gecko_upload_media] 解析参数: project_name={project_name}, eps_name={eps_name}, shot={shot}, user_name={user_name}, 文件数量={len(files_data)}')
 
-        # 构建 form-data 发送给 Gecko
+        # 检查必要参数
+        if not all([project_name, eps_name, shot, user_name]):
+            logger.error(f'[gecko_upload_media] 缺少必要参数')
+            return web.json_response({
+                'success': False,
+                'message': '缺少必要参数'
+            })
+
+        if not files_data:
+            logger.error(f'[gecko_upload_media] 没有文件')
+            return web.json_response({
+                'success': False,
+                'message': '没有文件'
+            })
+
+        # 步骤4: 构建发送给 Gecko 的 form-data
+        logger.info('[gecko_upload_media] 构建发送给 Gecko 的 form-data...')
         form = aiohttp.FormData()
-        form.add_field('project_name', project_name)
-        form.add_field('sequence_name', eps_name)
-        form.add_field('shot_name', shot)
-        form.add_field('user_name', user_name)
 
-        for file_item in files_data:
+        # 添加普通字段（注意：eps_name 映射为 sequence_name, shot 映射为 shot_name）
+        form.add_field('project_name', project_name)
+        form.add_field('sequence_name', eps_name)  # Gecko API 要求的字段名
+        form.add_field('shot_name', shot)  # Gecko API 要求的字段名
+        form.add_field('user_name', user_name)
+        logger.info(f'[gecko_upload_media] 添加字段: project_name={project_name}, sequence_name={eps_name}, shot_name={shot}, user_name={user_name}')
+
+        # 添加文件字段（每个文件都用 'files' 作为字段名，符合多文件上传规范）
+        for idx, file_item in enumerate(files_data):
             form.add_field(
-                'files',
+                'files',  # 字段名固定为 'files'
                 file_item['content'],
                 filename=file_item['filename'],
                 content_type=file_item['content_type']
             )
+            logger.info(f'[gecko_upload_media] 添加文件[{idx}]: files={file_item["filename"]}, size={file_item["size"]} bytes, type={file_item["content_type"]}')
 
-        # 发送请求到 Gecko
+        # 步骤5: 发送请求到 Gecko API
+        gecko_url = 'https://192.168.0.25/api/python-v2/upload_media'
+        logger.info(f'[gecko_upload_media] 发送请求到 Gecko: {gecko_url}')
+
         async with aiohttp.ClientSession() as session:
             async with session.post(
-                'https://192.168.0.25/api/python-v2/upload_media',
+                gecko_url,
                 data=form,
-                ssl=False
+                ssl=False,
+                timeout=aiohttp.ClientTimeout(total=60)  # 设置60秒超时
             ) as resp:
                 result = await resp.json()
 
-        logger.info(f'[gecko] 上传响应: {result}')
+        logger.info(f'[gecko_upload_media] Gecko 响应: {result}')
 
+        # 步骤6: 处理响应
         success = result.get('success', False)
         if not success:
+            error_msg = result.get('message') or '上传失败'
+            logger.error(f'[gecko_upload_media] 上传失败: {error_msg}')
             return web.json_response({
                 'success': False,
-                'message': result.get('message') or '上传失败'
+                'message': error_msg
             })
 
+        logger.info('[gecko_upload_media] ========== 上传成功 ==========')
         return web.json_response({
             'success': True,
             'message': '上传成功',
@@ -230,13 +280,13 @@ async def gecko_upload_media(request: web.Request):
         })
 
     except RequestException as e:
-        logger.error(f'[gecko] 上传文件失败: {e}', exc_info=True)
+        logger.error(f'[gecko_upload_media] 请求异常: {e}', exc_info=True)
         return web.json_response({
             'success': False,
             'message': f'上传失败（{e}）'
         }, status=200)
     except Exception as e:
-        logger.error(f'[gecko] 上传文件异常: {e}', exc_info=True)
+        logger.error(f'[gecko_upload_media] 未知异常: {e}', exc_info=True)
         raise web.HTTPInternalServerError(reason=str(e))
 
 
