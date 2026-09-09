@@ -32,7 +32,7 @@ interface Asset {
 interface PanelState {
   ratio: number
   assets: Asset[]
-  // 溯源覆盖层：非空时 coverflow 改显示这些参考资产，退出溯源恢复 assets
+  // 溯源展示层：参考资产临时追加到 coverflow，退出溯源恢复原资产
   traceAssets: Asset[] | null
 }
 
@@ -254,14 +254,23 @@ onMounted(() => {
   window.addEventListener('dragstart', handleGlobalDragStart)
   window.addEventListener('dragend', handleGlobalDragEnd)
   window.addEventListener('resize', syncGenDockTop)
+  window.addEventListener('keydown', handleGlobalKeydown)
   loadBoards()
 })
 onUnmounted(() => {
   window.removeEventListener('dragstart', handleGlobalDragStart)
   window.removeEventListener('dragend', handleGlobalDragEnd)
   window.removeEventListener('resize', syncGenDockTop)
+  window.removeEventListener('keydown', handleGlobalKeydown)
   stopLineLoop()
 })
+
+function handleGlobalKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape' && (trace.value || traceHistory.value)) {
+    event.preventDefault()
+    clearTrace()
+  }
+}
 
 const panelStyles = computed(() => panels.value.map((panel) => ({
   flexGrow: panel.ratio,
@@ -439,10 +448,13 @@ function handleGenPanelDragLeave(e: DragEvent, id: number) {
   }
 }
 
-// 面板资产 → coverflow 数据；溯源激活时优先显示 traceAssets
+// 面板资产 → coverflow 数据；溯源资产只作为展示追加到末尾，不写入面板资产列表
 const coverflowItems = computed(() =>
   panels.value.map((panel) => {
-    const source = panel.traceAssets ?? panel.assets
+    const traceOnlyAssets = (panel.traceAssets ?? []).filter(
+      (traceAsset) => !panel.assets.some((asset) => asset.id === traceAsset.id),
+    )
+    const source = [...panel.assets, ...traceOnlyAssets]
     return source.map<CoverflowItem>((asset) => ({
       id: asset.id,
       url: asset.isGenPlaceholder ? '' : getMediaUrl(asset.location),
@@ -826,6 +838,8 @@ interface TraceLink {
 const trace = ref<{ links: TraceLink[]; savedRatios: number[] } | null>(null)
 const traceHistory = ref<HistoryRecord | null>(null)
 const traceReferences = ref<SourceAsset[]>([])
+const traceTarget = ref<SourceAsset | null>(null)
+const traceReferencePanelIndex = ref<number | null>(null)
 const tracePrompt = ref('')
 const linePaths = ref<string[]>([])
 
@@ -860,17 +874,11 @@ const highlightIds = computed<number[][]>(() => {
       arr[job.refPanelIndex]?.push(refId)
     }
   }
+  // 溯源生成中新增的参考图也保持高亮，方便确认本次生成输入
+  if (traceHistory.value && traceReferencePanelIndex.value != null) {
+    arr[traceReferencePanelIndex.value]?.push(...traceReferences.value.map((asset) => asset.id))
+  }
   return arr
-})
-
-// Fix1: 溯源根节点（最深层触发溯源的面板及卡片）
-const traceRoot = computed<{ panelIndex: number; cardId: number } | null>(() => {
-  if (!trace.value?.links.length) return null
-  // 只看普通溯源链路（fromId >= 0 排除 gen 占位符负数 id）
-  const traceLinks = trace.value.links.filter((l) => l.fromId >= 0)
-  if (!traceLinks.length) return null
-  const deepest = traceLinks.reduce((a, b) => a.fromPanel > b.fromPanel ? a : b)
-  return { panelIndex: deepest.fromPanel, cardId: deepest.fromId }
 })
 
 // 点击某面板资产 → 溯源它的参考素材，或处理生成模式
@@ -889,6 +897,20 @@ async function handleCardSelect(item: CoverflowItem, panelIndex: number) {
     return
   }
 
+  // 溯源参数面板打开时，点击参考面板里的图片只加入本次生成输入，
+  // 不修改面板资产；已有参考图保持原有溯源连线。
+  if (traceHistory.value && traceReferencePanelIndex.value === panelIndex) {
+    const refAsset: SourceAsset = {
+      id: item.id,
+      url: item.url,
+      isVideo: item.isVideo,
+    }
+    if (!traceReferences.value.some((asset) => asset.id === refAsset.id)) {
+      traceReferences.value = [...traceReferences.value, refAsset]
+    }
+    return
+  }
+
   // ③ 普通溯源（第 1 面板无上层）
   if (panelIndex <= 0) return
 
@@ -897,9 +919,15 @@ async function handleCardSelect(item: CoverflowItem, panelIndex: number) {
 
   try {
     const record = await fetchHistoryByAsset(item.id, userId)
+    const targetAsset: SourceAsset = {
+      id: item.id,
+      url: item.url,
+      isVideo: item.isVideo,
+    }
     const inputIds = record?.input_asset_ids ?? []
     if (!inputIds.length) {
       clearTrace()
+      traceTarget.value = targetAsset
       traceHistory.value = record
       tracePrompt.value = record.prompt || ''
       ElMessage.info('该资产没有参考素材')
@@ -908,6 +936,7 @@ async function handleCardSelect(item: CoverflowItem, panelIndex: number) {
     const refAssets = await fetchAssetsByIds(inputIds)
     if (!refAssets.length) {
       clearTrace()
+      traceTarget.value = targetAsset
       traceHistory.value = record
       tracePrompt.value = record.prompt || ''
       ElMessage.info('参考素材已不可用')
@@ -915,6 +944,9 @@ async function handleCardSelect(item: CoverflowItem, panelIndex: number) {
     }
 
     const upper = panelIndex - 1
+
+    traceTarget.value = targetAsset
+    traceReferencePanelIndex.value = upper
 
     // 上层链路失效：清空 upper 及其以上所有面板的溯源覆盖
     for (let t = upper; t >= 0; t--) {
@@ -960,6 +992,8 @@ function clearTrace() {
   trace.value = null
   traceHistory.value = null
   traceReferences.value = []
+  traceTarget.value = null
+  traceReferencePanelIndex.value = null
   tracePrompt.value = ''
   linePaths.value = []
   panels.value.forEach((p) => { p.traceAssets = null })
@@ -1168,7 +1202,7 @@ function stopResize() {
     </header>
 
     <main class="panel-workspace">
-      <section class="panel-shell" aria-label="节点预览面板">
+      <section class="panel-shell" :class="{ 'has-trace-dock': traceHistory }" aria-label="节点预览面板">
         <div class="panel-stack" :class="{ 'is-gen-editing': openGenState }">
           <div class="panel-column">
             <template v-for="(panel, index) in panels" :key="index">
@@ -1239,13 +1273,11 @@ function stopResize() {
                   :items="displayedCoverflowItems[index]"
                   :highlight-ids="highlightIds[index]"
                   :panel-index="index"
-                  :trace-root-id="traceRoot?.panelIndex === index ? traceRoot?.cardId : undefined"
                   @remove="(id) => removeAssetById(id, index)"
                   @open="openPreview"
                   @select="(item) => handleCardSelect(item, index)"
                   @drop-asset="(event) => handlePanelDrop(event, index)"
                   @drop-on-gen="(event, item) => handleGenPlaceholderDrop(event, item, index)"
-                  @exit-trace="clearTrace"
                 />
                 <div v-else-if="!openGenState || index < openGenState.panelIndex" class="panel-empty">拖拽资产到此处</div>
               </article>
@@ -1295,26 +1327,45 @@ function stopResize() {
             </aside>
           </template>
 
-          <!-- 溯源退出按钮已移至根节点卡片上（见 MediaCoverflow traceRootId）-->
         </div>
+
+        <aside
+          v-if="traceHistory"
+          class="trace-bottom-dock"
+        >
+          <div class="trace-settings-column">
+            <NodeGenSidePanel
+              :key="traceHistory.id"
+              :mode="traceHistoryMode"
+              :ref-assets="traceReferences"
+              :prompt="tracePrompt"
+              :settings="traceSettings"
+              handoff-on-generate
+              @update:prompt="tracePrompt = $event"
+              @remove-ref="removeTraceReference"
+              @close="clearTrace"
+              @generate-request="handoffTraceGeneration"
+            />
+          </div>
+          <div class="trace-target-preview">
+            <div class="trace-target-label">被溯源图片</div>
+            <div v-if="traceTarget" class="trace-target-media">
+              <video
+                v-if="traceTarget.isVideo"
+                :src="traceTarget.url"
+                controls
+                muted
+                playsinline
+              />
+              <img v-else :src="traceTarget.url" alt="被溯源图片" />
+            </div>
+            <div v-else class="trace-target-empty">暂无预览</div>
+          </div>
+        </aside>
       </section>
 
       <div class="right-sidebar-slot">
-        <AssetSidebar v-show="!traceHistory" ref="assetSidebarRef" @select="handleSidebarSelect" />
-        <aside v-if="traceHistory" class="trace-gen-sidebar">
-          <NodeGenSidePanel
-            :key="traceHistory.id"
-            :mode="traceHistoryMode"
-            :ref-assets="traceReferences"
-            :prompt="tracePrompt"
-            :settings="traceSettings"
-            handoff-on-generate
-            @update:prompt="tracePrompt = $event"
-            @remove-ref="removeTraceReference"
-            @close="clearTrace"
-            @generate-request="handoffTraceGeneration"
-          />
-        </aside>
+        <AssetSidebar ref="assetSidebarRef" @select="handleSidebarSelect" />
       </div>
     </main>
 
@@ -1454,6 +1505,12 @@ function stopResize() {
   min-height: 0;
 }
 
+.panel-shell.has-trace-dock {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
 .right-sidebar-slot {
   position: relative;
   flex: 1;
@@ -1463,17 +1520,78 @@ function stopResize() {
   overflow: hidden;
 }
 
-.trace-gen-sidebar {
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-}
-
 .panel-stack {
   position: relative;
   height: 100%;
   width: 100%;
   min-height: 0;
+}
+
+.panel-shell.has-trace-dock .panel-stack {
+  height: auto;
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+.trace-bottom-dock {
+  flex: 0 1 42%;
+  min-height: 280px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(220px, 0.65fr);
+  gap: 14px;
+  min-width: 0;
+}
+
+.trace-settings-column,
+.trace-target-preview {
+  min-width: 0;
+  min-height: 0;
+}
+
+.trace-target-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: rgba(7, 9, 15, 0.42);
+  box-shadow: var(--shadow-soft);
+}
+
+.trace-target-label {
+  flex: 0 0 auto;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 12px;
+  letter-spacing: 0.5px;
+}
+
+.trace-target-media {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.32);
+}
+
+.trace-target-media img,
+.trace-target-media video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.trace-target-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.24);
+  font-size: 12px;
 }
 
 .panel-column {

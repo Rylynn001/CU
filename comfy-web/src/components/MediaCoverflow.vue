@@ -17,7 +17,6 @@ const props = defineProps<{
   items: CoverflowItem[]
   highlightIds?: number[]
   panelIndex?: number
-  traceRootId?: number  // Fix1: 根节点卡片 id，在该卡片上显示"退出溯源"按钮
 }>()
 
 const emit = defineEmits<{
@@ -26,7 +25,6 @@ const emit = defineEmits<{
   select: [item: CoverflowItem]
   'drop-asset': [event: DragEvent]
   'drop-on-gen': [event: DragEvent, item: CoverflowItem]
-  'exit-trace': []  // Fix1
 }>()
 
 const containerRef = ref<HTMLDivElement | null>(null)
@@ -72,8 +70,6 @@ const mediaRatios = ref<Record<number, number>>({})
 const scroll = { current: 0, target: 0 }
 let raf = 0
 let snapTimer = 0
-let traceWheelDistance = 0
-let traceExitRequested = false
 let wheelDirection = 0
 
 function computeSize() {
@@ -169,37 +165,31 @@ function onWheel(e: WheelEvent) {
   clampTarget()
   window.clearTimeout(snapTimer)
   snapTimer = window.setTimeout(snap, 140)
-
-  if (props.traceRootId != null && !traceExitRequested) {
-    const distance = e.deltaMode === WheelEvent.DOM_DELTA_LINE
-      ? Math.abs(delta) * 16
-      : e.deltaMode === WheelEvent.DOM_DELTA_PAGE
-        ? Math.abs(delta) * size.value.w
-        : Math.abs(delta)
-    traceWheelDistance += distance
-    if (traceWheelDistance >= 400) {
-      traceExitRequested = true
-      emit('exit-trace')
-    }
-  }
 }
 
-// 单击 → 溯源（200ms 延迟，双击时取消）
+// 单击 → 溯源；只有同一张卡片连续点击才视为双击预览
 let singleClickTimer = 0
+let pendingClickId: number | null = null
+let lastClickAt = 0
 
 function onCardClick(item: CoverflowItem, index: number) {
-  scroll.target = index * spacing.value
-  clampTarget()
+  const now = performance.now()
+  const isDoubleClick = pendingClickId === item.id && now - lastClickAt < 320
   window.clearTimeout(singleClickTimer)
+  jumpToIndex(index)
+  lastClickAt = now
+  if (isDoubleClick) {
+    pendingClickId = null
+    emit('open', item)
+    return
+  }
+  pendingClickId = item.id
   singleClickTimer = window.setTimeout(() => {
-    emit('select', item)
-  }, 200)
-}
-
-// 双击 → 预览（取消单击定时器避免重复触发）
-function onCardDblClick(item: CoverflowItem) {
-  window.clearTimeout(singleClickTimer)
-  emit('open', item)
+    if (pendingClickId === item.id) {
+      emit('select', item)
+      pendingClickId = null
+    }
+  }, 220)
 }
 
 // 卡片拖拽开始 → 携带资产数据，支持跨面板移动
@@ -367,6 +357,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   cancelAnimationFrame(raf)
   window.clearTimeout(snapTimer)
+  window.clearTimeout(singleClickTimer)
   window.removeEventListener('pointermove', updateSelection)
   window.removeEventListener('pointerup', finishSelection)
   window.removeEventListener('pointercancel', finishSelection)
@@ -404,10 +395,6 @@ watch(() => props.items, (newItems, oldItems) => {
   }
 }, { deep: false })
 
-watch(() => props.traceRootId, () => {
-  traceWheelDistance = 0
-  traceExitRequested = false
-})
 </script>
 
 <template>
@@ -437,7 +424,6 @@ watch(() => props.traceRootId, () => {
       :style="getCardStyle(item)"
       :draggable="!item.isGenPlaceholder"
       @click.stop="onCardClick(item, i)"
-      @dblclick.stop="!item.isGenPlaceholder && onCardDblClick(item)"
       @dragstart="!item.isGenPlaceholder && onCardDragStart($event, item, i)"
       @dragover.prevent
       @dragenter.prevent="onCardDragEnter(item)"
@@ -484,17 +470,6 @@ watch(() => props.traceRootId, () => {
       <!-- 连线锚点 -->
       <span class="cf-anchor cf-anchor-top" aria-hidden="true" />
       <span class="cf-anchor cf-anchor-bottom" aria-hidden="true" />
-
-      <!-- Fix1: 退出溯源按钮，仅在根节点卡片上显示 -->
-      <button
-        v-if="item.id === traceRootId"
-        type="button"
-        class="cf-exit-trace"
-        @click.stop="emit('exit-trace')"
-        @pointerdown.stop
-      >
-        退出溯源
-      </button>
 
       <!-- 移除按钮（普通卡片 + 占位符合并为一个） -->
       <button
@@ -708,28 +683,6 @@ watch(() => props.traceRootId, () => {
 }
 .cf-card:hover .cf-remove { opacity: 1; }
 
-/* Fix1: 退出溯源按钮，覆盖在根节点卡片底部 */
-.cf-exit-trace {
-  position: absolute;
-  bottom: 8px;
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 4px 12px;
-  border-radius: 999px;
-  border: 1px solid rgba(255,255,255, 0.5);
-  background: rgba(10, 14, 20, 0.88);
-  color: rgba(255,255,255,0.82);
-  font-size: 11px;
-  cursor: pointer;
-  backdrop-filter: blur(6px);
-  white-space: nowrap;
-  z-index: 3;
-  transition: all 0.2s;
-}
-.cf-exit-trace:hover {
-  background: rgba(255,255,255, 0.18);
-  border-color: rgba(255,255,255, 0.8);
-}
 /* 占位符卡片 */
 .cf-card.cf-placeholder {
   border-style: dashed;

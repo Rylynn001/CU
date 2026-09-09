@@ -181,7 +181,10 @@ async def gecko_upload_media(request: web.Request):
         reader = await request.multipart()
 
         # 步骤2: 收集表单字段和文件
-        form_data = {}
+        project_name = None
+        eps_name = None
+        shot = None
+        user_name = None
         files_data = []
 
         async for field in reader:
@@ -198,17 +201,19 @@ async def gecko_upload_media(request: web.Request):
                 files_data.append(file_info)
                 logger.info(f'[gecko_upload_media] 收到文件: name={field.name}, filename={field.filename}, size={len(file_content)} bytes, type={file_info["content_type"]}')
             else:
-                # 普通字段：收集表单数据
+                # 普通字段：直接赋值
                 field_value = (await field.read()).decode('utf-8')
-                form_data[field.name] = field_value
+                if field.name == 'project_name':
+                    project_name = field_value
+                elif field.name == 'eps_name':
+                    eps_name = field_value
+                elif field.name == 'shot':
+                    shot = field_value
+                elif field.name == 'user_name':
+                    user_name = field_value
                 logger.info(f'[gecko_upload_media] 收到字段: {field.name}={field_value}')
 
-        # 步骤3: 提取必要参数
-        project_name = form_data.get('project_name')
-        eps_name = form_data.get('eps_name')
-        shot = form_data.get('shot')
-        user_name = form_data.get('user_name')
-
+        # 步骤3: 检查参数
         logger.info(f'[gecko_upload_media] 解析参数: project_name={project_name}, eps_name={eps_name}, shot={shot}, user_name={user_name}, 文件数量={len(files_data)}')
 
         # 检查必要参数
