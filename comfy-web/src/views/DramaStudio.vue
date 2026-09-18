@@ -923,15 +923,14 @@ async function genImage(
   if (!prompt) { ElMessage.warning(`${label} 缺少描述，无法生成`); return }
   pendingSet.value = new Set([...pendingSet.value, id])
   try {
-    const userId = getCurrentUserId()
     const res = await fetch(`${BASE}/txt2img`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: IMAGE_MODEL_ID, prompt, aspect_ratio: '1:1', user_id: userId }),
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token') ?? ''}` },
+      body: JSON.stringify({ model: IMAGE_MODEL_ID, prompt, aspect_ratio: '1:1' }),
     })
     if (!res.ok) throw new Error(await res.text())
     const { task_id } = await res.json()
-    const result = await pollTaskUntilDone(task_id, userId ?? undefined, 'image')
+    const result = await pollTaskUntilDone(task_id, 'image')
     const img = result.images?.[0]
     if (!img?.url) throw new Error('生成结果中没有图片 URL')
     if (!img.asset_id) throw new Error('生成结果中没有 asset_id')
@@ -1048,11 +1047,10 @@ async function genShotFrame(sb: any, frameType: 'first_frame' | 'last_frame') {
   if (pendingShotFrameKeys.value.includes(key)) return
   pendingShotFrameKeys.value = [...pendingShotFrameKeys.value, key]
   try {
-    const userId = getCurrentUserId()
     const prompt = buildFramePrompt(sb, frameType)
     const input_asset_ids = getShotRefAssetIds(sb)
 
-    const body: any = { model: IMAGE_MODEL_ID, prompt, aspect_ratio: '16:9', user_id: userId }
+    const body: any = { model: IMAGE_MODEL_ID, prompt, aspect_ratio: '16:9' }
     if (input_asset_ids.length) body.input_asset_ids = input_asset_ids
 
     const res = await fetch(`${BASE}/txt2img`, {
@@ -1063,7 +1061,7 @@ async function genShotFrame(sb: any, frameType: 'first_frame' | 'last_frame') {
     if (!res.ok) throw new Error(await res.text())
     const { task_id } = await res.json()
     addSbPendingTask({ sbId: sb.id, taskId: task_id, type: 'frame', frameType, episodeId: episode.value.id })
-    const result = await pollTaskUntilDone(task_id, userId ?? undefined, 'image')
+    const result = await pollTaskUntilDone(task_id, 'image')
     const img = result.images?.[0]
     if (!img?.url) throw new Error('生成结果中没有图片 URL')
     if (!img.asset_id) throw new Error('生成结果中没有 asset_id')
@@ -1502,8 +1500,6 @@ async function genVideo(sb: any) {
   pendingVideoIds.value = next
 
   try {
-    const userId = getCurrentUserId()
-
     // 收集首帧/尾帧 asset_id，直接引用不再重新上传
     const input_asset_ids: number[] = []
     for (const assetId of [sb.first_asset_id, sb.last_asset_id]) {
@@ -1518,7 +1514,7 @@ async function genVideo(sb: any) {
           const blob = await audioRes.blob()
           const filename = sb.tts_audio_url.split('/').pop() || 'audio.mp3'
           const file = new File([blob], filename, { type: 'audio/mpeg' })
-          const uploaded = await uploadInputImage(file, userId ?? 1)
+          const uploaded = await uploadInputImage(file)
           input_asset_ids.push(uploaded.id)
         }
       } catch (_) { /* 音频获取失败不阻断 */ }
@@ -1527,14 +1523,13 @@ async function genVideo(sb: any) {
     const { task_id } = await apiImg2VideoGenerate({
       model: videoModelId.value,
       prompt,
-      user_id: userId ?? undefined,
       ratio: '16:9',
       duration: sb.duration || 8,
       input_asset_ids,
     })
     addSbPendingTask({ sbId: sb.id, taskId: task_id, type: 'video', episodeId: episode.value.id })
 
-    const result = await pollTaskUntilDone(task_id, userId ?? undefined, 'video')
+    const result = await pollTaskUntilDone(task_id, 'video')
     const videoItem = result.images?.[0]
     if (!videoItem?.url) throw new Error('生成结果中没有视频 URL')
 
@@ -1622,7 +1617,6 @@ onMounted(async () => {
   const userId = getCurrentUserId()
   await resumeSbPendingTasks(
     episode.value.id,
-    userId ?? undefined,
     // 视频完成回调
     async (sbId, videoUrl) => {
       const sb = sbs.value.find((s: any) => s.id === sbId)

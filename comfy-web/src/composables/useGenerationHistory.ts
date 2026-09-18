@@ -1,7 +1,6 @@
 import { ref, computed } from 'vue'
 import { useTaskHistory } from './useTaskHistory'
 import { useHistoryDb } from './useHistoryDb'
-import { getCurrentUserId } from '../utils/user'
 import { generateUUID } from '../utils/uuid'
 import type { HistoryRecord } from './useHistoryDb'
 
@@ -53,15 +52,13 @@ export function useGenerationHistory<T extends BaseGenerationRecord>(
   async function deleteRecord(id: string) {
     const rec = (records.value as T[]).find(r => r.id === id)
     if (rec?.dbId) {
-      const userId = getCurrentUserId()
-      if (userId) await historyDb.remove(rec.dbId, userId)
+      await historyDb.remove(rec.dbId)
     }
     await deleteRecordLocal(id)
   }
 
   async function clearAll() {
-    const userId = getCurrentUserId()
-    if (userId) await historyDb.clear(userId)
+    await historyDb.clear()
     clearAllLocal()
     dbPage.value = 1
     dbTotal.value = 0
@@ -71,29 +68,25 @@ export function useGenerationHistory<T extends BaseGenerationRecord>(
     mapDbRecord: (r: HistoryRecord) => T,
     filter?: (r: HistoryRecord) => boolean,
   ): Promise<number | undefined> {
-    const userId = getCurrentUserId()
-    if (!userId) return undefined
-
     dbPage.value = 1
-    const { records: dbRecords, total } = await historyDb.load(userId, historyType, 1, dbPageSize.value)
+    const { records: dbRecords, total } = await historyDb.load(historyType, 1, dbPageSize.value)
     dbTotal.value = total
     const filtered = filter ? dbRecords.filter(filter) : dbRecords
     const localPending = (records.value as T[]).filter(r => r.status === 'generating')
     const fromDb = filtered.map(mapDbRecord)
     records.value = [...localPending, ...fromDb] as any
     saveRecords()
-    return userId
+    return undefined
   }
 
   async function loadMoreFromDb(
     mapDbRecord: (r: HistoryRecord) => T,
     filter?: (r: HistoryRecord) => boolean,
   ): Promise<void> {
-    const userId = getCurrentUserId()
-    if (!userId || !hasMoreInDb.value) return
+    if (!hasMoreInDb.value) return
 
     const nextPage = dbPage.value + 1
-    const { records: dbRecords, total } = await historyDb.load(userId, historyType, nextPage, dbPageSize.value)
+    const { records: dbRecords, total } = await historyDb.load(historyType, nextPage, dbPageSize.value)
     dbTotal.value = total
     dbPage.value = nextPage
     if (!dbRecords.length) return  // 后端返回空页时停止，防止死循环

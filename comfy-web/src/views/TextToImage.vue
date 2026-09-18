@@ -149,7 +149,7 @@ const { resumeTaskPolling } = useTaskPolling<GenerationRecord>(
 
 // 对图片生成任务启动轮询，回调中将结果写入记录
 function pollImage(record: GenerationRecord, userId?: number) {
-  return resumeTaskPolling(record, userId, (rec, result) => {
+  return resumeTaskPolling(record, (rec, result) => {
     // 将返回的图片列表写入记录（过滤掉空值）
     rec.images = result.images.map((i: any) => i.url).filter(Boolean) as string[]
     // 同时保存资产 ID，用于后续收藏操作

@@ -324,7 +324,7 @@ async function handleLocalUpload(event: Event) {
 
   uploading.value = true
   try {
-    const uploaded = await uploadInputImage(file, Number(userId))
+    const uploaded = await uploadInputImage(file)
     addAssetToPanel({ ...uploaded, asset_type: 'picture' }, 0)
     await assetSidebarRef.value?.refreshAssets()
   } catch (error: any) {
@@ -614,7 +614,7 @@ async function pollRestoredTask(job: GenState) {
   if (!userId) return
   restoredPollingHistoryIds.add(job.historyId)
   try {
-    const result = await pollTaskUntilDone(job.taskId, Number(userId), getGenMode(job))
+    const result = await pollTaskUntilDone(job.taskId, getGenMode(job))
     const assets = (result.images ?? []).map((item) => ({
       id: item.asset_id ?? -(Date.now()),
       url: item.url ?? '',

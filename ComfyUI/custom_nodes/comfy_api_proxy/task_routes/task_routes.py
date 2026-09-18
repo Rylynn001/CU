@@ -13,6 +13,7 @@ from .. import config as cfg
 from ..repositories import provider_repo as db_queries
 from ..services import task_queue, provider_service
 from ..repositories import asset_repo, history_repo
+from .auth_routes import require_auth
 
 logger = logging.getLogger('comfy_api_proxy')
 routes = PromptServer.instance.routes
@@ -178,6 +179,7 @@ async def _poll_ark_task(task_id: str, remote_id: str, api_key: str, base_url: s
 # ── /api-proxy/txt2img ────────────────────────────────────────────────────
 
 @routes.post('/api-proxy/txt2img')
+@require_auth
 async def txt2img(request: web.Request):
     body = await request.json()
 
@@ -187,7 +189,7 @@ async def txt2img(request: web.Request):
     quality = body.get('quality', 'medium')
     n = body.get('n', 1)
     input_asset_ids = body.get('input_asset_ids', [])
-    user_id = body.get('user_id')
+    user_id = request['user_id']
 
     if not model_id:
         raise web.HTTPBadRequest(reason='model is required')
@@ -220,7 +222,7 @@ async def txt2img(request: web.Request):
     history_id = history_repo.save_history(
         task_id=task_id,
         prompt=prompt,
-        user_id=int(user_id) if user_id else 0,
+        user_id=user_id,
         model_id=int(model_id) if model_id else None,
         input_asset_ids=input_asset_ids,
         output_asset_ids=[],
@@ -256,6 +258,7 @@ async def txt2img(request: web.Request):
 # ── /api-proxy/txt2video ──────────────────────────────────────────────────
 
 @routes.post('/api-proxy/txt2video')
+@require_auth
 async def txt2video(request: web.Request):
     body = await request.json()
 
@@ -281,11 +284,11 @@ async def txt2video(request: web.Request):
         raise web.HTTPServiceUnavailable(reason=f'系统繁忙，请稍后再试')
 
     task_id = str(uuid.uuid4())
-    user_id = body.get('user_id')
+    user_id = request['user_id']
     history_id = history_repo.save_history(
         task_id=task_id,
         prompt=prompt,
-        user_id=int(user_id) if user_id else 0,
+        user_id=user_id,
         model_id=int(model_id) if model_id else None,
         input_asset_ids=[],
         output_asset_ids=[],
@@ -319,6 +322,7 @@ async def txt2video(request: web.Request):
 # ── /api-proxy/img2video ──────────────────────────────────────────────────
 
 @routes.post('/api-proxy/img2video')
+@require_auth
 async def img2video(request: web.Request):
     body = await request.json()
 
@@ -347,12 +351,12 @@ async def img2video(request: web.Request):
     if isinstance(input_asset_ids, str):
         input_asset_ids = [int(x.strip()) for x in input_asset_ids.split(',') if x.strip()]
 
-    user_id = body.get('user_id')
+    user_id = request['user_id']
     task_id = str(uuid.uuid4())
     history_id = history_repo.save_history(
         task_id=task_id,
         prompt=prompt,
-        user_id=int(user_id) if user_id else 0,
+        user_id=user_id,
         model_id=int(model_id) if model_id else None,
         input_asset_ids=input_asset_ids,
         output_asset_ids=[],

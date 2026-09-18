@@ -10,13 +10,12 @@ export type { HistoryRecord }
 export function useHistoryDb() {
   // 拉取指定用户的历史记录，失败时返回空数组（不阻断页面）
   async function load(
-    userId: number,
     type?: 'img' | 'video',
     page = 1,
     pageSize: 30 | 50 | 100 = 30,
   ): Promise<{ records: HistoryRecord[]; total: number }> {
     try {
-      return await fetchHistory(userId, type, page, pageSize)
+      return await fetchHistory(type, page, pageSize)
     } catch (e) {
       console.warn('[useHistoryDb] load failed:', e)
       return { records: [], total: 0 }
@@ -25,7 +24,6 @@ export function useHistoryDb() {
 
   // 保存一条历史记录到后端，返回新记录的 id；失败时返回 null
   async function persist(params: {
-    userId: number
     prompt: string
     outputUrls: string[]
     inputAssetIds?: number[]
@@ -38,7 +36,6 @@ export function useHistoryDb() {
   }): Promise<number | null> {
     try {
       const res = await saveHistory({
-        user_id: params.userId,
         prompt: params.prompt,
         output_urls: params.outputUrls,
         input_asset_ids: params.inputAssetIds,
@@ -57,18 +54,18 @@ export function useHistoryDb() {
   }
 
   // 删除单条历史记录，失败时静默处理
-  async function remove(dbId: number, userId: number): Promise<void> {
+  async function remove(dbId: number): Promise<void> {
     try {
-      await deleteHistory(dbId, userId)
+      await deleteHistory(dbId)
     } catch (e) {
       console.warn('[useHistoryDb] remove failed:', e)
     }
   }
 
   // 清空指定用户的所有历史记录，失败时静默处理
-  async function clear(userId: number): Promise<void> {
+  async function clear(): Promise<void> {
     try {
-      await clearHistory(userId)
+      await clearHistory()
     } catch (e) {
       console.warn('[useHistoryDb] clear failed:', e)
     }

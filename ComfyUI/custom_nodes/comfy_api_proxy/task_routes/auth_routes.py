@@ -7,7 +7,7 @@ from .. import config as cfg
 
 SECRET_KEY = 'your-secret-key-change-this-in-production'
 ALGORITHM = 'HS256'
-TOKEN_EXPIRE_HOURS = 24
+TOKEN_EXPIRE_DAYS = 3  # JWT 有效期改为 3 天
 
 
 def verify_password(plain_password: str, hashed_password: str | bytes) -> bool:
@@ -17,7 +17,7 @@ def verify_password(plain_password: str, hashed_password: str | bytes) -> bool:
 
 
 def create_access_token(user_id: int, username: str) -> str:
-    expire = datetime.utcnow() + timedelta(hours=TOKEN_EXPIRE_HOURS)
+    expire = datetime.utcnow() + timedelta(days=TOKEN_EXPIRE_DAYS)
     payload = {'user_id': user_id, 'username': username, 'exp': expire}
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
@@ -73,6 +73,26 @@ async def verify_token_handler(request: web.Request):
         raise web.HTTPUnauthorized(reason='token 无效或已过期')
 
     return web.json_response({'user': {'id': payload['user_id'], 'username': payload['username']}})
+
+
+def require_auth(handler):
+    """JWT 认证装饰器,自动从 Authorization header 提取 user_id"""
+    async def wrapper(request: web.Request):
+        auth_header = request.headers.get('Authorization', '')
+        if not auth_header.startswith('Bearer '):
+            raise web.HTTPUnauthorized(reason='缺少认证 token')
+
+        token = auth_header[7:]
+        payload = decode_token(token)
+        if not payload:
+            raise web.HTTPUnauthorized(reason='token 无效或已过期')
+
+        # 将认证用户信息存储到 request 对象中
+        request['user_id'] = payload['user_id']
+        request['username'] = payload['username']
+
+        return await handler(request)
+    return wrapper
 
 
 def add_auth_routes(routes):

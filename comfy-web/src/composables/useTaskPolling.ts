@@ -32,7 +32,6 @@ export function useTaskPolling<T extends BaseRecord>(
    */
   async function resumeTaskPolling(
     record: T,
-    userId: number | undefined,
     onDone: PollResultHandler<T>,
     expectedType: 'image' | 'video' = 'image',
   ) {
@@ -43,11 +42,8 @@ export function useTaskPolling<T extends BaseRecord>(
 
     try {
       // 先查一次当前状态，避免任务已完成还走完整轮询
-      const checkUrl = userId
-        ? `/api/api-proxy/task/${record.taskId}?user_id=${userId}`
-        : `/api/api-proxy/task/${record.taskId}`
-
-      const checkRes = await fetch(checkUrl)
+      const checkUrl = `/api/api-proxy/task/${record.taskId}`
+      const checkRes = await fetch(checkUrl, { headers: { Authorization: `Bearer ${localStorage.getItem('token') ?? ''}` } })
       if (checkRes.ok) {
         const checkData = await checkRes.json()
         if (checkData.status === 'completed' && checkData.result) {
@@ -76,7 +72,7 @@ export function useTaskPolling<T extends BaseRecord>(
       }
 
       // 任务仍在进行中，开始完整轮询
-      const result = await pollTaskUntilDone(record.taskId, userId, expectedType)
+      const result = await pollTaskUntilDone(record.taskId, expectedType)
       const rec = getRecord()
       if (rec) {
         onDone(rec, {

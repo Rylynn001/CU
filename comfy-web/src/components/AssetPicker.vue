@@ -48,10 +48,11 @@ async function loadAssets(assetType?: 'picture' | 'video') {
   loading.value = true
   currentPage.value = 1
   try {
-    let url = `/api/api-proxy/user/assets?user_id=${user.id}&page=1&page_size=${PAGE_SIZE}`
+    let url = `/api/api-proxy/user/assets?page=1&page_size=${PAGE_SIZE}`
     if (assetType) url += `&asset_type=${assetType}`
     if (favoritesOnly.value) url += `&favorite=1`
-    const res = await fetch(url)
+    const token = localStorage.getItem('token') ?? ''
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
     if (!res.ok) throw new Error('加载失败')
     const data = await res.json()
     assets.value = data.assets || []
@@ -71,10 +72,11 @@ async function loadMore() {
   const nextPage = currentPage.value + 1
   try {
     const assetType = activeFilter.value === 'all' ? undefined : activeFilter.value
-    let url = `/api/api-proxy/user/assets?user_id=${user.id}&page=${nextPage}&page_size=${PAGE_SIZE}`
+    let url = `/api/api-proxy/user/assets?page=${nextPage}&page_size=${PAGE_SIZE}`
     if (assetType) url += `&asset_type=${assetType}`
     if (favoritesOnly.value) url += `&favorite=1`
-    const res = await fetch(url)
+    const token = localStorage.getItem('token') ?? ''
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
     if (!res.ok) throw new Error('加载失败')
     const data = await res.json()
     assets.value.push(...(data.assets || []))

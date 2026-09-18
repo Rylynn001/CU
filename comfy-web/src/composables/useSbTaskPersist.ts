@@ -43,7 +43,6 @@ export function removeSbPendingTask(sbId: number, type: 'video' | 'frame', frame
  */
 export async function resumeSbPendingTasks(
   episodeId: number,
-  userId: number | undefined,
   onVideoDone: (sbId: number, videoUrl: string) => Promise<void>,
   onFrameDone: (sbId: number, frameType: 'first_frame' | 'last_frame', imgUrl: string, assetId: number) => Promise<void>,
 ) {
@@ -53,11 +52,11 @@ export async function resumeSbPendingTasks(
   await Promise.allSettled(tasks.map(async task => {
     try {
       if (task.type === 'video') {
-        const result = await pollTaskUntilDone(task.taskId, userId, 'video')
+        const result = await pollTaskUntilDone(task.taskId, 'video')
         const item = result.images?.[0]
         if (item?.url) await onVideoDone(task.sbId, item.url)
       } else if (task.type === 'frame' && task.frameType) {
-        const result = await pollTaskUntilDone(task.taskId, userId, 'image')
+        const result = await pollTaskUntilDone(task.taskId, 'image')
         const item = result.images?.[0]
         if (item?.url && item?.asset_id) await onFrameDone(task.sbId, task.frameType, item.url, item.asset_id)
       }

@@ -83,7 +83,7 @@ const { resumeTaskPolling } = useTaskPolling<VideoRecord>(
 
 // 瀵硅棰戠敓鎴愪换鍔″惎鍔ㄨ疆璇紝鍥炶皟涓皢缁撴灉鍐欏叆璁板綍
 function pollVideo(record: VideoRecord, userId?: number) {
-  return resumeTaskPolling(record, userId, (rec, result) => {
+  return resumeTaskPolling(record, (rec, result) => {
     // 浠庤繑鍥炵殑 images 鏁扮粍涓壘鍒拌棰戠被鍨嬬殑鏉＄洰
     const videoItem = result.images.find((i: any) => i.url)
     rec.videoUrl = videoItem?.url || ''
@@ -370,7 +370,7 @@ async function generateFromEdit() {
     if (editedFile) {
       // 灏嗙紪杈戝悗鐨勫浘鐗囦笂浼犲埌璧勪骇搴擄紝鑾峰彇璧勪骇 ID
       const { uploadInputImage } = await import('../api/apiService')
-      const uploaded = await uploadInputImage(editedFile, userId ?? 1)
+      const uploaded = await uploadInputImage(editedFile)
       inputAssetIds = [uploaded.id]
     } else if (editedFile) {
       inputAssetIds = []

@@ -2,7 +2,6 @@
 import { ref, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getApiModels, pollTaskUntilDone, type ApiModel } from '../api/apiService'
-import { getCurrentUserId } from '../utils/user'
 import { submitImageGeneration, type InputImage } from '../services/imageGenerationService'
 import { submitVideoGeneration, submitImg2VideoGeneration } from '../services/videoGenerationService'
 
@@ -81,7 +80,6 @@ async function handleGenerate() {
   if (!modelId.value) { ElMessage.warning('请选择模型'); return }
   if (!prompt.value.trim()) { ElMessage.warning('请输入提示词'); return }
 
-  const userId = getCurrentUserId() ?? undefined
   const refs = refCandidates.value.filter((a) => selectedRefIds.value.includes(a.id))
   generating.value = true
 
@@ -100,10 +98,9 @@ async function handleGenerate() {
         batchSize: batchSize.value,
         img2img: refs.length > 0,
         inputImages,
-        userId,
       })
       if (result.taskId) {
-        const done = await pollTaskUntilDone(result.taskId, userId, 'image')
+        const done = await pollTaskUntilDone(result.taskId, 'image')
         const first = done.images?.[0] as { url: string; asset_id?: number } | undefined
         if (first?.asset_id) asset = { id: first.asset_id, url: first.url, isVideo: false }
       } else if (result.images?.length) {
@@ -120,7 +117,6 @@ async function handleGenerate() {
           resolution: resolution.value,
           duration: duration.value,
           inputAssetIds: refs.map((a) => a.id),
-          userId,
         })
         taskId = r.taskId
       } else {
@@ -130,12 +126,11 @@ async function handleGenerate() {
           ratio: ratio.value,
           resolution: resolution.value,
           duration: duration.value,
-          userId,
         })
         taskId = r.taskId
       }
       if (taskId) {
-        const done = await pollTaskUntilDone(taskId, userId, 'video')
+        const done = await pollTaskUntilDone(taskId, 'video')
         const first = done.images?.[0] as { url: string; asset_id?: number } | undefined
         if (first?.asset_id) asset = { id: first.asset_id, url: first.url, isVideo: true }
       }

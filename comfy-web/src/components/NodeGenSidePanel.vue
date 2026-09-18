@@ -2,7 +2,6 @@
 import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getApiModels, pollTaskUntilDone, type ApiModel } from '../api/apiService'
-import { getCurrentUserId } from '../utils/user'
 import { submitImageGeneration, type InputImage } from '../services/imageGenerationService'
 import { submitVideoGeneration, submitImg2VideoGeneration } from '../services/videoGenerationService'
 import { useAtMention } from '../composables/useAtMention'
@@ -130,7 +129,6 @@ async function handleGenerate() {
     })
     return
   }
-  const userId = getCurrentUserId() ?? undefined
   generating.value = true
   emit('generating', true)
   // 提交后1秒自动收回参数面板，生成在后台继续
@@ -144,11 +142,11 @@ async function handleGenerate() {
       const result = await submitImageGeneration({
         modelId: Number(modelId.value), prompt: props.prompt,
         aspect_ratio: aspectRatio.value, quality: quality.value, batchSize: batchSize.value,
-        img2img: inputImages.length > 0, inputImages, userId,
+        img2img: inputImages.length > 0, inputImages,
       })
       if (result.taskId) {
         if (result.historyId) emit('submitted', result.historyId)
-        const done = await pollTaskUntilDone(result.taskId, userId, 'image')
+        const done = await pollTaskUntilDone(result.taskId, 'image')
         done.images?.forEach((item, index) => {
           const output = item as { url: string; asset_id?: number }
           if (output.url) {
@@ -172,21 +170,21 @@ async function handleGenerate() {
         const r = await submitImg2VideoGeneration({
           modelId: Number(modelId.value), prompt: props.prompt,
           ratio: videoRatio.value, resolution: resolution.value, duration: duration.value,
-          inputAssetIds: refIds, userId,
+          inputAssetIds: refIds,
         })
         taskId = r.taskId
         historyId = r.historyId
       } else {
         const r = await submitVideoGeneration({
           modelId: Number(modelId.value), prompt: props.prompt,
-          ratio: videoRatio.value, resolution: resolution.value, duration: duration.value, userId,
+          ratio: videoRatio.value, resolution: resolution.value, duration: duration.value,
         })
         taskId = r.taskId
         historyId = r.historyId
       }
       if (taskId) {
         if (historyId) emit('submitted', historyId)
-        const done = await pollTaskUntilDone(taskId, userId, 'video')
+        const done = await pollTaskUntilDone(taskId, 'video')
         done.images?.forEach((item, index) => {
           const output = item as { url: string; asset_id?: number }
           if (output.url) {

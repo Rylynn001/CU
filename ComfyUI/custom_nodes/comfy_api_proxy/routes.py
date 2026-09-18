@@ -5,6 +5,7 @@ from server import PromptServer
 
 from . import config as cfg
 from .repositories import provider_repo
+from .task_routes.auth_routes import require_auth
 from .task_routes import task_routes as _  # noqa: F401 触发 task 路由注册
 from .task_routes import drama_routes as _drama_routes  # noqa: F401 触发 drama 路由注册
 from .ai import routes as _agent_routes  # noqa: F401 触发 agent 路由注册
@@ -109,14 +110,9 @@ async def serve_output_file(request: web.Request):
 # ── /api-proxy/user/assets ────────────────────────────────────────────────
 
 @routes.get('/api-proxy/user/assets')
+@require_auth
 async def get_user_assets(request: web.Request):
-    user_id = request.rel_url.query.get('user_id')
-    if not user_id:
-        raise web.HTTPBadRequest(reason='user_id is required')
-    try:
-        user_id = int(user_id)
-    except ValueError:
-        raise web.HTTPBadRequest(reason='user_id must be an integer')
+    user_id = request['user_id']
 
     asset_type = request.rel_url.query.get('asset_type')
     tag_str = request.rel_url.query.get('tag')
@@ -140,6 +136,7 @@ async def get_user_assets(request: web.Request):
 # ── /api-proxy/user/assets/{asset_id}/favorite ───────────────────────────
 
 @routes.post('/api-proxy/user/assets/{asset_id}/favorite')
+@require_auth
 async def set_asset_favorite(request: web.Request):
     asset_id = request.match_info['asset_id']
     try:
@@ -148,13 +145,10 @@ async def set_asset_favorite(request: web.Request):
         raise web.HTTPBadRequest(reason='asset_id must be an integer')
 
     body = await request.json()
-    user_id = body.get('user_id')
+    user_id = request['user_id']
     tag = body.get('tag', 1)
 
-    if user_id is None:
-        raise web.HTTPBadRequest(reason='user_id is required')
     try:
-        user_id = int(user_id)
         tag = int(tag)
     except (ValueError, TypeError):
         raise web.HTTPBadRequest(reason='参数类型错误')
@@ -303,27 +297,24 @@ def validate_video_file(file_bytes: bytes, filename: str, mime_type: str | None)
 # ── /api-proxy/upload/file ───────────────────────────────────────────────
 
 @routes.post('/api-proxy/upload/file')
+@require_auth
 async def upload_file(request: web.Request):
     """通用文件上传接口（自动识别图片或视频类型）"""
     import uuid
     from .repositories import asset_repo
 
+    user_id = request['user_id']
     reader = await request.multipart()
-    user_id = None
     file_bytes = None
     filename = None
     mime_type = None
 
     async for field in reader:
-        if field.name == 'user_id':
-            user_id = int(await field.read())
-        elif field.name == 'file':
+        if field.name == 'file':
             filename = field.filename or 'upload'
             mime_type = field.headers.get('Content-Type')
             file_bytes = await field.read()
 
-    if not user_id:
-        raise web.HTTPBadRequest(reason='user_id is required')
     if not file_bytes:
         raise web.HTTPBadRequest(reason='file is required')
 
@@ -383,10 +374,11 @@ async def get_input_image_b64(request: web.Request):
 # ── /api-proxy/history ────────────────────────────────────────────────────
 
 @routes.post('/api-proxy/history')
+@require_auth
 async def save_history(request: web.Request):
     from .repositories import history_repo, asset_repo
     body = await request.json()
-    user_id = body.get('user_id')
+    user_id = request['user_id']
     prompt = body.get('prompt', '')
     output_urls = body.get('output_urls', [])
     input_asset_ids = body.get('input_asset_ids', [])
@@ -397,19 +389,16 @@ async def save_history(request: web.Request):
     message = body.get('message')
     model_id = body.get('model_id')
 
-    if not user_id:
-        raise web.HTTPBadRequest(reason='user_id is required')
-
     output_asset_ids = []
     for url in output_urls:
         filename = pathlib.Path(url).name
-        row = asset_repo.find_asset_by_filename(filename, int(user_id))
+        row = asset_repo.find_asset_by_filename(filename, user_id)
         if row:
             output_asset_ids.append(row['id'])
 
     try:
         history_id = history_repo.save_history(
-            user_id=int(user_id),
+            user_id=user_id,
             prompt=prompt,
             input_asset_ids=input_asset_ids,
             output_asset_ids=output_asset_ids,
@@ -427,11 +416,10 @@ async def save_history(request: web.Request):
 
 
 @routes.get('/api-proxy/history')
+@require_auth
 async def get_history(request: web.Request):
     from .repositories import history_repo
-    user_id = request.rel_url.query.get('user_id')
-    if not user_id:
-        raise web.HTTPBadRequest(reason='user_id is required')
+    user_id = request['user_id']
     type_filter = request.rel_url.query.get('type')
     try:
         page = int(request.rel_url.query.get('page', 1))
@@ -442,7 +430,7 @@ async def get_history(request: web.Request):
         page_size = 30
     try:
         records, total = history_repo.get_user_history(
-            int(user_id), type_filter=type_filter or None, page=page, page_size=page_size
+            user_id, type_filter=type_filter or None, page=page, page_size=page_size
         )
         return web.json_response({'records': records, 'total': total, 'page': page, 'page_size': page_size})
     except Exception as e:
@@ -453,30 +441,28 @@ async def get_history(request: web.Request):
 # ── /api-proxy/history/by-asset/{asset_id} ────────────────────────────────
 
 @routes.get('/api-proxy/history/by-asset/{asset_id}')
+@require_auth
 async def get_history_by_asset(request: web.Request):
     from .repositories import history_repo
     asset_id = request.match_info['asset_id']
-    user_id = request.rel_url.query.get('user_id')
-    if not user_id:
-        raise web.HTTPBadRequest(reason='user_id is required')
+    user_id = request['user_id']
     try:
-        record = history_repo.find_history_by_asset_id(int(user_id), int(asset_id))
+        record = history_repo.find_history_by_asset_id(user_id, int(asset_id))
     except ValueError:
-        raise web.HTTPBadRequest(reason='asset_id 和 user_id 必须为整数')
+        raise web.HTTPBadRequest(reason='asset_id 必须为整数')
     if not record:
         raise web.HTTPNotFound(reason='未找到该资产对应的历史记录')
     return web.json_response({'record': record})
 
 
 @routes.delete('/api-proxy/history/{history_id}')
+@require_auth
 async def delete_history(request: web.Request):
     from .repositories import history_repo
     history_id = request.match_info['history_id']
-    user_id = request.rel_url.query.get('user_id')
-    if not user_id:
-        raise web.HTTPBadRequest(reason='user_id is required')
+    user_id = request['user_id']
     try:
-        deleted = history_repo.delete_history(int(history_id), int(user_id))
+        deleted = history_repo.delete_history(int(history_id), user_id)
         return web.json_response({'ok': deleted})
     except Exception as e:
         logger.error(f'[api-proxy] 删除历史记录失败: {e}')
@@ -484,13 +470,12 @@ async def delete_history(request: web.Request):
 
 
 @routes.delete('/api-proxy/history')
+@require_auth
 async def clear_history(request: web.Request):
     from .repositories import history_repo
-    user_id = request.rel_url.query.get('user_id')
-    if not user_id:
-        raise web.HTTPBadRequest(reason='user_id is required')
+    user_id = request['user_id']
     try:
-        count = history_repo.clear_user_history(int(user_id))
+        count = history_repo.clear_user_history(user_id)
         return web.json_response({'deleted': count})
     except Exception as e:
         logger.error(f'[api-proxy] 清空历史记录失败: {e}')
@@ -518,6 +503,7 @@ async def test_save_asset(request: web.Request):
 # ── /api-proxy/extract-frame ──────────────────────────────────────────────
 
 @routes.post('/api-proxy/extract-frame')
+@require_auth
 async def extract_frame(request: web.Request):
     import asyncio
     import uuid
@@ -527,15 +513,14 @@ async def extract_frame(request: web.Request):
     body = await request.json()
     asset_id = body.get('asset_id')
     time_sec = body.get('time_sec')
-    user_id = body.get('user_id')
+    user_id = request['user_id']
 
-    if asset_id is None or time_sec is None or user_id is None:
-        raise web.HTTPBadRequest(reason='asset_id, time_sec, user_id are required')
+    if asset_id is None or time_sec is None:
+        raise web.HTTPBadRequest(reason='asset_id, time_sec are required')
 
     try:
         asset_id = int(asset_id)
         time_sec = float(time_sec)
-        user_id = int(user_id)
     except (ValueError, TypeError):
         raise web.HTTPBadRequest(reason='参数类型错误')
 
@@ -598,15 +583,10 @@ async def get_assets_by_ids(request: web.Request):
 # ── /api-proxy/projects ───────────────────────────────────────────────────
 
 @routes.get('/api-proxy/projects')
+@require_auth
 async def get_projects(request: web.Request):
     from .repositories import asset_repo
-    user_id = request.rel_url.query.get('user_id')
-    if not user_id:
-        raise web.HTTPBadRequest(reason='user_id is required')
-    try:
-        user_id = int(user_id)
-    except ValueError:
-        raise web.HTTPBadRequest(reason='user_id must be an integer')
+    user_id = request['user_id']
     try:
         projects = asset_repo.get_user_projects(user_id)
         return web.json_response({'projects': projects})
@@ -616,41 +596,40 @@ async def get_projects(request: web.Request):
 
 
 @routes.get('/api-proxy/projects/{project_id}')
+@require_auth
 async def get_project_detail(request: web.Request):
     from .repositories import asset_repo
     project_id = int(request.match_info['project_id'])
-    user_id = request.rel_url.query.get('user_id')
-    if not user_id:
-        raise web.HTTPBadRequest(reason='user_id is required')
-    detail = asset_repo.get_project_detail(project_id, int(user_id))
+    user_id = request['user_id']
+    detail = asset_repo.get_project_detail(project_id, user_id)
     if detail is None:
         raise web.HTTPForbidden(reason='非项目成员或项目不存在')
     return web.json_response(detail)
 
 
 @routes.get('/api-proxy/projects/{project_id}/categories')
+@require_auth
 async def get_project_categories(request: web.Request):
     from .repositories import asset_repo
     project_id = int(request.match_info['project_id'])
-    user_id = request.rel_url.query.get('user_id')
-    if not user_id:
-        raise web.HTTPBadRequest(reason='user_id is required')
-    categories = asset_repo.get_project_categories(project_id, int(user_id))
+    user_id = request['user_id']
+    categories = asset_repo.get_project_categories(project_id, user_id)
     if categories is None:
         raise web.HTTPForbidden(reason='非项目成员')
     return web.json_response({'categories': categories})
 
 
 @routes.post('/api-proxy/projects')
+@require_auth
 async def create_project(request: web.Request):
     from .repositories import asset_repo
     body = await request.json()
-    user_id = body.get('user_id')
+    user_id = request['user_id']
     name = body.get('name')
-    if not user_id or not name:
-        raise web.HTTPBadRequest(reason='user_id and name are required')
+    if not name:
+        raise web.HTTPBadRequest(reason='name is required')
     try:
-        result = asset_repo.create_project(name, int(user_id))
+        result = asset_repo.create_project(name, user_id)
         return web.json_response({
             'id': result['id'],
             'name': name,
@@ -663,29 +642,28 @@ async def create_project(request: web.Request):
 
 
 @routes.delete('/api-proxy/projects/{project_id}')
+@require_auth
 async def delete_project(request: web.Request):
     from .repositories import asset_repo
     project_id = int(request.match_info['project_id'])
-    body = await request.json()
-    user_id = body.get('user_id')
-    if not user_id:
-        raise web.HTTPBadRequest(reason='user_id is required')
-    ok = asset_repo.delete_project(project_id, int(user_id))
+    user_id = request['user_id']
+    ok = asset_repo.delete_project(project_id, user_id)
     if not ok:
         raise web.HTTPNotFound(reason='项目不存在或无权限')
     return web.json_response({'ok': True})
 
 
 @routes.put('/api-proxy/projects/{project_id}')
+@require_auth
 async def rename_project(request: web.Request):
     from .repositories import asset_repo
     project_id = int(request.match_info['project_id'])
     body = await request.json()
-    user_id = body.get('user_id')
+    user_id = request['user_id']
     name = body.get('name', '').strip()
-    if not user_id or not name:
-        raise web.HTTPBadRequest(reason='user_id and name are required')
-    ok = asset_repo.rename_project(project_id, int(user_id), name)
+    if not name:
+        raise web.HTTPBadRequest(reason='name is required')
+    ok = asset_repo.rename_project(project_id, user_id, name)
     if not ok:
         raise web.HTTPNotFound(reason='项目不存在或无权限')
     return web.json_response({'ok': True})
@@ -748,18 +726,19 @@ async def get_category_assets(request: web.Request):
 
 
 @routes.post('/api-proxy/categories/{category_id}/assets')
+@require_auth
 async def add_asset_to_category(request: web.Request):
     from .repositories import asset_repo
     category_id = int(request.match_info['category_id'])
     body = await request.json()
     asset_id = body.get('asset_id')
-    user_id = body.get('user_id')
-    resubmit_id = body.get('resubmit_id')  # 续接被驳回的提交记录（重新提交时传）
-    if asset_id is None or user_id is None:
-        raise web.HTTPBadRequest(reason='asset_id and user_id are required')
+    user_id = request['user_id']
+    resubmit_id = body.get('resubmit_id')
+    if asset_id is None:
+        raise web.HTTPBadRequest(reason='asset_id is required')
     try:
         review_status = asset_repo.add_asset_to_category(
-            category_id, int(asset_id), int(user_id),
+            category_id, int(asset_id), user_id,
             resubmit_id=int(resubmit_id) if resubmit_id is not None else None
         )
         if review_status is None:
@@ -786,28 +765,24 @@ async def remove_asset_from_category(request: web.Request):
 # ── /api-proxy/projects/{project_id}/members ──────────────────────────────
 
 @routes.get('/api-proxy/projects/{project_id}/members')
+@require_auth
 async def list_project_members(request: web.Request):
     from .repositories import member_repo
     project_id = int(request.match_info['project_id'])
-    user_id = request.rel_url.query.get('user_id')
-    if not user_id:
-        raise web.HTTPBadRequest(reason='user_id is required')
-    # 仅项目成员可查看成员列表
-    if member_repo.get_member_role(project_id, int(user_id)) is None:
+    user_id = request['user_id']
+    if member_repo.get_member_role(project_id, user_id) is None:
         raise web.HTTPForbidden(reason='无权限')
     members = member_repo.list_members(project_id)
     return web.json_response({'members': members})
 
 
 @routes.get('/api-proxy/projects/{project_id}/candidate-users')
+@require_auth
 async def list_candidate_users(request: web.Request):
     from .repositories import member_repo
     project_id = int(request.match_info['project_id'])
-    user_id = request.rel_url.query.get('user_id')
-    if not user_id:
-        raise web.HTTPBadRequest(reason='user_id is required')
-    # 仅 owner/admin 可拉人，故也仅他们可查候选用户
-    if member_repo.get_member_role(project_id, int(user_id)) not in ('owner', 'admin'):
+    user_id = request['user_id']
+    if member_repo.get_member_role(project_id, user_id) not in ('owner', 'admin'):
         raise web.HTTPForbidden(reason='无权限')
 
     # 获取分页和搜索参数
@@ -823,19 +798,17 @@ async def list_candidate_users(request: web.Request):
 
 
 @routes.post('/api-proxy/projects/{project_id}/members')
+@require_auth
 async def add_project_member(request: web.Request):
     from .repositories import member_repo
     project_id = int(request.match_info['project_id'])
     body = await request.json()
-    user_id = body.get('user_id')
+    user_id = request['user_id']
     username = (body.get('username') or '').strip()
     role = body.get('role', 'member')
-    if not user_id:
-        raise web.HTTPBadRequest(reason='user_id is required')
     if role not in ('admin', 'member'):
         raise web.HTTPBadRequest(reason='role 只能是 admin 或 member')
-    # 仅 owner/admin 可拉人
-    if member_repo.get_member_role(project_id, int(user_id)) not in ('owner', 'admin'):
+    if member_repo.get_member_role(project_id, user_id) not in ('owner', 'admin'):
         raise web.HTTPForbidden(reason='无权限')
     if not username:
         raise web.HTTPBadRequest(reason='username is required')
@@ -847,17 +820,17 @@ async def add_project_member(request: web.Request):
 
 
 @routes.put('/api-proxy/projects/{project_id}/members/{member_user_id}')
+@require_auth
 async def set_project_member_role(request: web.Request):
     from .repositories import member_repo
     project_id = int(request.match_info['project_id'])
     member_user_id = int(request.match_info['member_user_id'])
     body = await request.json()
-    user_id = body.get('user_id')
+    user_id = request['user_id']
     role = body.get('role')
-    if not user_id or role not in ('admin', 'member'):
-        raise web.HTTPBadRequest(reason='user_id 和合法的 role 必填')
-    # 仅 owner/admin 可改角色，且不能改 owner
-    if member_repo.get_member_role(project_id, int(user_id)) not in ('owner', 'admin'):
+    if role not in ('admin', 'member'):
+        raise web.HTTPBadRequest(reason='合法的 role 必填')
+    if member_repo.get_member_role(project_id, user_id) not in ('owner', 'admin'):
         raise web.HTTPForbidden(reason='无权限')
     if member_repo.get_member_role(project_id, member_user_id) == 'owner':
         raise web.HTTPBadRequest(reason='不能修改 owner 角色')
@@ -868,15 +841,13 @@ async def set_project_member_role(request: web.Request):
 
 
 @routes.delete('/api-proxy/projects/{project_id}/members/{member_user_id}')
+@require_auth
 async def remove_project_member(request: web.Request):
     from .repositories import member_repo
     project_id = int(request.match_info['project_id'])
     member_user_id = int(request.match_info['member_user_id'])
-    user_id = request.rel_url.query.get('user_id')
-    if not user_id:
-        raise web.HTTPBadRequest(reason='user_id is required')
-    # 仅 owner/admin 可移除，且不能移除 owner
-    if member_repo.get_member_role(project_id, int(user_id)) not in ('owner', 'admin'):
+    user_id = request['user_id']
+    if member_repo.get_member_role(project_id, user_id) not in ('owner', 'admin'):
         raise web.HTTPForbidden(reason='无权限')
     if member_repo.get_member_role(project_id, member_user_id) == 'owner':
         raise web.HTTPBadRequest(reason='不能移除 owner')
@@ -889,65 +860,63 @@ async def remove_project_member(request: web.Request):
 # ── /api-proxy/pending-assets ─────────────────────────────────────────────
 
 @routes.get('/api-proxy/pending-assets')
+@require_auth
 async def list_pending_assets(request: web.Request):
     from .repositories import asset_repo
-    user_id = request.rel_url.query.get('user_id')
-    if not user_id:
-        raise web.HTTPBadRequest(reason='user_id is required')
+    user_id = request['user_id']
     try:
         page = max(1, int(request.rel_url.query.get('page', 1)))
         page_size = min(100, max(1, int(request.rel_url.query.get('page_size', 50))))
     except ValueError:
         raise web.HTTPBadRequest(reason='page 和 page_size 必须为整数')
-    assets, total = asset_repo.list_pending_assets(int(user_id), page, page_size)
+    assets, total = asset_repo.list_pending_assets(user_id, page, page_size)
     return web.json_response({
         'assets': assets, 'total': total, 'page': page, 'page_size': page_size
     })
 
 
 @routes.post('/api-proxy/categories/{category_id}/assets/{asset_id}/review')
+@require_auth
 async def review_category_asset(request: web.Request):
     from .repositories import asset_repo
     category_id = int(request.match_info['category_id'])
     asset_id = int(request.match_info['asset_id'])
     body = await request.json()
-    user_id = body.get('user_id')
+    user_id = request['user_id']
     approve = body.get('approve')
     comment = (body.get('comment') or '').strip() or None
-    if not user_id or approve is None:
-        raise web.HTTPBadRequest(reason='user_id 和 approve 必填')
-    ok = asset_repo.review_asset(category_id, asset_id, int(user_id), bool(approve), comment)
+    if approve is None:
+        raise web.HTTPBadRequest(reason='approve 必填')
+    ok = asset_repo.review_asset(category_id, asset_id, user_id, bool(approve), comment)
     if not ok:
         raise web.HTTPForbidden(reason='无权限或该素材不在待审核状态')
     return web.json_response({'ok': True})
 
 
 @routes.get('/api-proxy/categories/{category_id}/assets/{asset_id}/reviews')
+@require_auth
 async def get_asset_review_timeline(request: web.Request):
     from .repositories import asset_repo
     category_id = int(request.match_info['category_id'])
     asset_id = int(request.match_info['asset_id'])
-    user_id = request.rel_url.query.get('user_id')
-    if not user_id:
-        raise web.HTTPBadRequest(reason='user_id is required')
-    result = asset_repo.get_asset_review_timeline(category_id, asset_id, int(user_id))
+    user_id = request['user_id']
+    result = asset_repo.get_asset_review_timeline(category_id, asset_id, user_id)
     if result is None:
         raise web.HTTPForbidden(reason='无权限查看')
     return web.json_response(result)
 
 
 @routes.get('/api-proxy/my-submissions')
+@require_auth
 async def list_my_submissions(request: web.Request):
     from .repositories import asset_repo
-    user_id = request.rel_url.query.get('user_id')
-    if not user_id:
-        raise web.HTTPBadRequest(reason='user_id is required')
+    user_id = request['user_id']
     try:
         page = max(1, int(request.rel_url.query.get('page', 1)))
         page_size = min(100, max(1, int(request.rel_url.query.get('page_size', 50))))
     except ValueError:
         raise web.HTTPBadRequest(reason='page 和 page_size 必须为整数')
-    subs, total, rejected_total = asset_repo.list_my_submissions(int(user_id), page, page_size)
+    subs, total, rejected_total = asset_repo.list_my_submissions(user_id, page, page_size)
     return web.json_response({
         'submissions': subs,
         'total': total,
@@ -960,13 +929,12 @@ async def list_my_submissions(request: web.Request):
 # ── /api-proxy/node-boards ────────────────────────────────────────────────
 
 @routes.get('/api-proxy/node-boards')
+@require_auth
 async def list_node_boards(request: web.Request):
     from .repositories import board_repo
-    user_id = request.rel_url.query.get('user_id')
-    if not user_id:
-        raise web.HTTPBadRequest(reason='user_id is required')
+    user_id = request['user_id']
     try:
-        boards = board_repo.list_boards(int(user_id))
+        boards = board_repo.list_boards(user_id)
         return web.json_response({'boards': boards})
     except Exception as e:
         logger.error(f'[node-board] 获取工作区列表失败: {e}')
@@ -974,15 +942,14 @@ async def list_node_boards(request: web.Request):
 
 
 @routes.post('/api-proxy/node-boards')
+@require_auth
 async def create_node_board(request: web.Request):
     from .repositories import board_repo
+    user_id = request['user_id']
     body = await request.json()
-    user_id = body.get('user_id')
     name = (body.get('name') or '').strip() or '新工作区'
-    if not user_id:
-        raise web.HTTPBadRequest(reason='user_id is required')
     try:
-        board = board_repo.create_board(int(user_id), name)
+        board = board_repo.create_board(user_id, name)
         return web.json_response(board)
     except Exception as e:
         logger.error(f'[node-board] 创建工作区失败: {e}')
@@ -990,31 +957,29 @@ async def create_node_board(request: web.Request):
 
 
 @routes.get('/api-proxy/node-boards/{board_id}')
+@require_auth
 async def get_node_board(request: web.Request):
     from .repositories import board_repo
     board_id = int(request.match_info['board_id'])
-    user_id = request.rel_url.query.get('user_id')
-    if not user_id:
-        raise web.HTTPBadRequest(reason='user_id is required')
-    board = board_repo.get_board(board_id, int(user_id))
+    user_id = request['user_id']
+    board = board_repo.get_board(board_id, user_id)
     if not board:
         raise web.HTTPNotFound(reason='工作区不存在')
     return web.json_response(board)
 
 
 @routes.put('/api-proxy/node-boards/{board_id}')
+@require_auth
 async def save_node_board(request: web.Request):
     from .repositories import board_repo
     board_id = int(request.match_info['board_id'])
     body = await request.json()
-    user_id = body.get('user_id')
-    if not user_id:
-        raise web.HTTPBadRequest(reason='user_id is required')
+    user_id = request['user_id']
     panels = body.get('panels', [{}, {}, {}])
     while len(panels) < 3:
         panels.append({})
     ok = board_repo.save_board(
-        board_id, int(user_id),
+        board_id, user_id,
         panels[0].get('asset_ids', []),
         panels[1].get('asset_ids', []),
         panels[2].get('asset_ids', []),
@@ -1027,28 +992,28 @@ async def save_node_board(request: web.Request):
 
 
 @routes.patch('/api-proxy/node-boards/{board_id}')
+@require_auth
 async def rename_node_board(request: web.Request):
     from .repositories import board_repo
     board_id = int(request.match_info['board_id'])
     body = await request.json()
-    user_id = body.get('user_id')
+    user_id = request['user_id']
     name = (body.get('name') or '').strip()
-    if not user_id or not name:
-        raise web.HTTPBadRequest(reason='user_id and name are required')
-    ok = board_repo.rename_board(board_id, int(user_id), name)
+    if not name:
+        raise web.HTTPBadRequest(reason='name is required')
+    ok = board_repo.rename_board(board_id, user_id, name)
     if not ok:
         raise web.HTTPNotFound(reason='工作区不存在或无权限')
     return web.json_response({'ok': True})
 
 
 @routes.delete('/api-proxy/node-boards/{board_id}')
+@require_auth
 async def delete_node_board(request: web.Request):
     from .repositories import board_repo
     board_id = int(request.match_info['board_id'])
-    user_id = request.rel_url.query.get('user_id')
-    if not user_id:
-        raise web.HTTPBadRequest(reason='user_id is required')
-    ok = board_repo.delete_board(board_id, int(user_id))
+    user_id = request['user_id']
+    ok = board_repo.delete_board(board_id, user_id)
     if not ok:
         raise web.HTTPNotFound(reason='工作区不存在或无权限')
     return web.json_response({'ok': True})

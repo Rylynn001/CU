@@ -1,5 +1,4 @@
 import { apiGenerate, uploadInputImage, resolveImageSrc } from '../api/apiService'
-import { getCurrentUserId } from '../utils/user'
 
 export interface InputImage {
   file: File | null          // 本地上传的文件，优先使用
@@ -30,21 +29,20 @@ export interface ImageGenerateResult {
  * 支持两种来源：本地 File 对象、预览 URL（preview 在各场景下都已是正确可访问的地址，
  * 无需再根据 assetLocation 重新拼接，避免拼出错误的 /api/view?type=output 请求）。
  */
-async function uploadInputImages(images: InputImage[], userId: number): Promise<number[]> {
+async function uploadInputImages(images: InputImage[]): Promise<number[]> {
   const ids: number[] = []
   for (const img of images) {
     if (img.assetId != null) {
-      // 从资产库直接引用，无需上传
       ids.push(img.assetId)
     } else if (img.file) {
-      const uploaded = await uploadInputImage(img.file, userId)
+      const uploaded = await uploadInputImage(img.file)
       ids.push(uploaded.id)
     } else if (img.preview) {
       const res = await fetch(img.preview)
       if (!res.ok) throw new Error(`获取参考图失败: ${res.status}`)
       const blob = await res.blob()
       const file = new File([blob], 'input.png', { type: blob.type || 'image/png' })
-      const uploaded = await uploadInputImage(file, userId)
+      const uploaded = await uploadInputImage(file)
       ids.push(uploaded.id)
     }
   }
@@ -57,12 +55,10 @@ async function uploadInputImages(images: InputImage[], userId: number): Promise<
  * 返回 taskId（异步）或 images（同步）。
  */
 export async function submitImageGeneration(params: ImageGenerateParams): Promise<ImageGenerateResult> {
-  const userId = params.userId ?? getCurrentUserId() ?? undefined
-
   let inputAssetIds: number[] | undefined
   if (params.img2img) {
     if (params.inputImages.length === 0) throw new Error('请先上传或选择参考图片')
-    inputAssetIds = await uploadInputImages(params.inputImages, userId ?? 1)
+    inputAssetIds = await uploadInputImages(params.inputImages)
   }
 
   const result = await apiGenerate({
@@ -72,7 +68,6 @@ export async function submitImageGeneration(params: ImageGenerateParams): Promis
     quality: params.quality,
     n: params.batchSize,
     input_asset_ids: inputAssetIds,
-    user_id: userId,
   })
 
   if (result.taskId) {
