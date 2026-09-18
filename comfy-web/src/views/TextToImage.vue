@@ -44,6 +44,7 @@ import { submitImageGeneration, type InputImage } from '../services/imageGenerat
 import { getCurrentUserId } from '../utils/user'
 // 工具函数：生成唯一 ID，用于每条生成记录
 import { generateUUID } from '../utils/uuid'
+import { getAssetFavoriteTag, loadAssetFavoriteTags, setAssetFavoriteTag } from '../composables/useAssetFavorites'
 
 const router = useRouter()
 
@@ -552,9 +553,7 @@ async function setImageFavorite(rec: GenerationRecord, index: number, tag: 0 | 1
   const user = JSON.parse(userStr)
   try {
     await favoriteAsset(assetId, user.id, tag)
-    // 更新本地状态（_favoritedImages 是运行时附加的属性，不持久化）
-    if (!(rec as any)._favoritedImages) (rec as any)._favoritedImages = {}
-    ;(rec as any)._favoritedImages[index] = tag
+    setAssetFavoriteTag(assetId, tag)
     window.dispatchEvent(new CustomEvent('asset-favorite-changed', {
       detail: { assetId, tag },
     }))
@@ -633,11 +632,24 @@ async function locatePendingRecord() {
 watch(pendingRecord, (r) => { if (r) locatePendingRecord() })
 
 const loadingMore = ref(false)
+async function loadImageFavoriteTags() {
+  await loadAssetFavoriteTags(
+    (records.value as GenerationRecord[]).flatMap(record => record.outputAssetIds || []),
+  )
+}
+
+async function loadImageHistory() {
+  const userId = await loadFromDb(mapImgDbRecord, filterImgDbRecord)
+  await loadImageFavoriteTags()
+  return userId
+}
+
 async function loadMoreHistory() {
   if (loadingMore.value) return
   loadingMore.value = true
   try {
     await loadMoreFromDb(mapImgDbRecord, filterImgDbRecord)
+    await loadImageFavoriteTags()
   } finally {
     loadingMore.value = false
   }
@@ -690,7 +702,7 @@ onMounted(async () => {
   } catch {}
 
   // 从数据库加载历史记录，将后端数据格式转换为前端 GenerationRecord 格式
-  const userId = await loadFromDb(mapImgDbRecord, filterImgDbRecord)
+  const userId = await loadImageHistory()
 
   // 将页面刷新前处于 generating 状态的 API 记录标记为待轮询，并恢复轮询
   const pending = markStaleRecords('local')
@@ -1151,7 +1163,7 @@ onUnmounted(() => {
           @delete="deleteRecord"
           @retry="(r) => retryRecord(r as any)"
           @edit="handleRecordEdit"
-          @page-size-change="() => loadFromDb(mapImgDbRecord, filterImgDbRecord)"
+          @page-size-change="loadImageHistory"
           @load-more="loadMoreHistory"
         >
           <template #prompt="{ record: rec }">
@@ -1181,7 +1193,7 @@ onUnmounted(() => {
                 </button>
                 <span v-if="rec.outputAssetIds?.[i]" class="fav-slot" @click.stop>
                   <FavoriteHeart
-                    :tag="(rec as any)._favoritedImages?.[i] || 0"
+                    :tag="getAssetFavoriteTag(rec.outputAssetIds?.[i])"
                     :size="14"
                     @change="(t) => setImageFavorite(rec as any, i, t)"
                   />

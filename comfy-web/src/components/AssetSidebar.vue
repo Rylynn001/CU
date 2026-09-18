@@ -15,6 +15,7 @@ import AssetPicker from './AssetPicker.vue'
 import ProjectDetailDialog from './ProjectDetailDialog.vue'
 import GeckoTaskPicker from './GeckoTaskPicker.vue'
 import type { MemberRole } from '../api/apiService'
+import { cacheAssetFavoriteTags, setAssetFavoriteTag } from '../composables/useAssetFavorites'
 
 interface Asset {
   id: number
@@ -372,6 +373,7 @@ async function loadAssets(assetType?: 'picture' | 'video') {
     if (!res.ok) throw new Error()
     const data = await res.json()
     assets.value = data.assets || []
+    cacheAssetFavoriteTags(assets.value)
     total.value = data.total ?? 0
   } catch {
     ElMessage.error('加载资产失败')
@@ -447,7 +449,9 @@ async function loadMore() {
     const res = await fetch(url)
     if (!res.ok) throw new Error()
     const data = await res.json()
-    assets.value.push(...(data.assets || []))
+    const newAssets = data.assets || []
+    assets.value.push(...newAssets)
+    cacheAssetFavoriteTags(newAssets)
     total.value = data.total ?? 0
     currentPage.value = nextPage
   } catch {
@@ -743,6 +747,7 @@ async function setFavorite(asset: Asset, tag: 0 | 1 | 2 | 3 | 4) {
   try {
     await favoriteAsset(asset.id, user.id, tag)
     asset.tag = tag
+    setAssetFavoriteTag(asset.id, tag)
     window.dispatchEvent(new CustomEvent('asset-favorite-changed', {
       detail: { assetId: asset.id, tag },
     }))
@@ -757,6 +762,7 @@ async function setFavorite(asset: Asset, tag: 0 | 1 | 2 | 3 | 4) {
 function handleFavoriteChanged(event: Event) {
   const detail = (event as CustomEvent<{ assetId?: number; tag?: 0 | 1 | 2 | 3 | 4 }>).detail
   if (!detail?.assetId || detail.tag === undefined) return
+  setAssetFavoriteTag(detail.assetId, detail.tag)
   const asset = assets.value.find(item => item.id === detail.assetId)
   if (!asset) return
   asset.tag = detail.tag

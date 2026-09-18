@@ -36,6 +36,7 @@ import { useLocateHistory } from '../composables/useLocateHistory'
 import { submitVideoGeneration, submitImg2VideoGeneration } from '../services/videoGenerationService'
 import { getCurrentUserId } from '../utils/user'
 import { generateUUID } from '../utils/uuid'
+import { getAssetFavoriteTag, loadAssetFavoriteTags, setAssetFavoriteTag } from '../composables/useAssetFavorites'
 import { ElMessage } from 'element-plus'
 import { useRouter } from 'vue-router'
 
@@ -505,9 +506,6 @@ function downloadVideo(url: string, filename?: string) {
   a.click()
 }
 
-// 璁板綍姣忎釜瑙嗛鐨勬敹钘忛鑹诧紙key 涓鸿褰?ID锛?=鏈敹钘忥紝1-4=绾㈤粍缁胯摑锛?
-const favoritedVideos = ref<Record<string, number>>({})
-
 // 璁剧疆鏌愭潯瑙嗛璁板綍鐨勬敹钘忛鑹?
 async function setVideoFavorite(rec: VideoRecord, tag: 0 | 1 | 2 | 3 | 4) {
   if (!rec.outputAssetId) return
@@ -516,7 +514,7 @@ async function setVideoFavorite(rec: VideoRecord, tag: 0 | 1 | 2 | 3 | 4) {
   const user = JSON.parse(userStr)
   try {
     await favoriteAsset(rec.outputAssetId, user.id, tag)
-    favoritedVideos.value[rec.id] = tag
+    setAssetFavoriteTag(rec.outputAssetId, tag)
     window.dispatchEvent(new CustomEvent('asset-favorite-changed', {
       detail: { assetId: rec.outputAssetId, tag },
     }))
@@ -566,11 +564,24 @@ async function locatePendingRecord() {
 watch(pendingRecord, (r) => { if (r) locatePendingRecord() })
 
 const loadingMore = ref(false)
+async function loadVideoFavoriteTags() {
+  await loadAssetFavoriteTags(
+    (records.value as VideoRecord[]).flatMap(record => record.outputAssetId ? [record.outputAssetId] : []),
+  )
+}
+
+async function loadVideoHistory() {
+  const userId = await loadFromDb(mapVideoDbRecord, filterVideoDbRecord)
+  await loadVideoFavoriteTags()
+  return userId
+}
+
 async function loadMoreHistory() {
   if (loadingMore.value) return
   loadingMore.value = true
   try {
     await loadMoreFromDb(mapVideoDbRecord, filterVideoDbRecord)
+    await loadVideoFavoriteTags()
   } finally {
     loadingMore.value = false
   }
@@ -608,7 +619,7 @@ onMounted(async () => {
   } catch {}
 
   // 浠庢暟鎹簱鍔犺浇鍘嗗彶璁板綍
-  const userId = await loadFromDb(mapVideoDbRecord, filterVideoDbRecord)
+  const userId = await loadVideoHistory()
 
   // 鎭㈠椤甸潰鍒锋柊鍓嶆湭瀹屾垚鐨勪换鍔¤疆璇?
   const pending = markStaleRecords()
@@ -950,7 +961,7 @@ onUnmounted(() => {
           @delete="deleteRecord"
           @retry="(r) => retryRecord(r as any)"
           @edit="handleRecordEdit"
-          @page-size-change="() => loadFromDb(mapVideoDbRecord, filterVideoDbRecord)"
+          @page-size-change="loadVideoHistory"
           @load-more="loadMoreHistory"
         >
           <template #prompt="{ record: rec }">
@@ -975,7 +986,7 @@ onUnmounted(() => {
                 </button>
                 <span v-if="rec.outputAssetId" class="fav-slot" @click.stop>
                   <FavoriteHeart
-                    :tag="favoritedVideos[rec.id] || 0"
+                    :tag="getAssetFavoriteTag(rec.outputAssetId)"
                     :size="14"
                     @change="(t) => setVideoFavorite(rec, t)"
                   />
