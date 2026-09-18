@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { ElMessage, ElDialog, ElInput } from 'element-plus'
 import {
-  favoriteAsset, fetchHistoryByAsset, uploadInputImage,
+  favoriteAsset, fetchHistoryByAsset, uploadInputImage, getAuthHeader,
   listPendingAssets, listMySubmissions, reviewAsset, addAssetToCategory, fetchReviewTimeline,
   type PendingAsset, type MySubmission, type ReviewEvent,
 } from '../api/apiService'
@@ -482,7 +482,7 @@ async function loadProjects() {
   if (!user) return
   projectsLoading.value = true
   try {
-    const res = await fetch(`/api/api-proxy/projects?user_id=${user.id}`)
+    const res = await fetch(`/api/api-proxy/projects`, { headers: getAuthHeader() })
     if (!res.ok) throw new Error()
     const data = await res.json()
     projects.value = data.projects || []
@@ -519,7 +519,7 @@ async function loadCategories(p: Project) {
   const user = getUser()
   if (!user) return
   try {
-    const res = await fetch(`/api/api-proxy/projects/${p.id}/categories?user_id=${user.id}`)
+    const res = await fetch(`/api/api-proxy/projects/${p.id}/categories`, { headers: getAuthHeader() })
     if (!res.ok) throw new Error()
     const data = await res.json()
     p.categories = data.categories || []

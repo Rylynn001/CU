@@ -6,7 +6,7 @@ import AssetGrid from '../components/AssetGrid.vue'
 import RecordContextMenu from '../components/RecordContextMenu.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import ProjectTeamDialog from '../components/ProjectTeamDialog.vue'
-import { favoriteAsset, fetchReviewTimeline } from '../api/apiService'
+import { favoriteAsset, fetchReviewTimeline, getAuthHeader } from '../api/apiService'
 import type { MemberRole } from '../api/apiService'
 
 interface Asset {
@@ -243,7 +243,7 @@ async function loadProjects() {
   if (!user) return
   projectsLoading.value = true
   try {
-    const res = await fetch(`/api/api-proxy/projects?user_id=${user.id}`)
+    const res = await fetch(`/api/api-proxy/projects`, { headers: getAuthHeader() })
     if (!res.ok) throw new Error('加载失败')
     const data = await res.json()
     projects.value = data.projects || []
@@ -284,7 +284,7 @@ async function loadCategories(p: Project) {
   const user = getUser()
   if (!user) return
   try {
-    const res = await fetch(`/api/api-proxy/projects/${p.id}/categories?user_id=${user.id}`)
+    const res = await fetch(`/api/api-proxy/projects/${p.id}/categories`, { headers: getAuthHeader() })
     if (!res.ok) throw new Error()
     const data = await res.json()
     p.categories = data.categories || []

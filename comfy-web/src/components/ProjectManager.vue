@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import { getAuthHeader } from '../api/apiService'
 
 interface Category {
   id: number
@@ -45,7 +46,7 @@ async function loadProjects() {
   if (!user) return
   loadingProjects.value = true
   try {
-    const res = await fetch(`/api/api-proxy/projects?user_id=${user.id}`)
+    const res = await fetch(`/api/api-proxy/projects`, { headers: getAuthHeader() })
     if (!res.ok) throw new Error()
     const data = await res.json()
     projects.value = data.projects || []
@@ -75,7 +76,7 @@ async function loadCategories(project: Project) {
   const user = getUser()
   if (!user) return
   try {
-    const res = await fetch(`/api/api-proxy/projects/${project.id}/categories?user_id=${user.id}`)
+    const res = await fetch(`/api/api-proxy/projects/${project.id}/categories`, { headers: getAuthHeader() })
     if (!res.ok) throw new Error()
     const data = await res.json()
     project.categories = data.categories || []
