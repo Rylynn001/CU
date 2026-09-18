@@ -551,7 +551,7 @@ async function setFavorite(asset: Asset, tag: 0 | 1 | 2 | 3 | 4) {
   const user = getUser()
   if (!user) return
   try {
-    await favoriteAsset(asset.id, user.id, tag)
+    await favoriteAsset(asset.id, tag)
     asset.tag = tag
     if (favoriteTag.value > 0 && tag !== favoriteTag.value) {
       assets.value = assets.value.filter(a => a.id !== asset.id)

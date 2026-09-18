@@ -575,11 +575,8 @@ function downloadImage(url: string, filename?: string) {
 async function setImageFavorite(rec: GenerationRecord, index: number, tag: 0 | 1 | 2 | 3 | 4) {
   const assetId = rec.outputAssetIds?.[index]
   if (!assetId) return
-  const userStr = localStorage.getItem('user')
-  if (!userStr) return
-  const user = JSON.parse(userStr)
   try {
-    await favoriteAsset(assetId, user.id, tag)
+    await favoriteAsset(assetId, tag)
     setAssetFavoriteTag(assetId, tag)
     window.dispatchEvent(new CustomEvent('asset-favorite-changed', {
       detail: { assetId, tag },

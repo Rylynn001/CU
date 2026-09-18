@@ -747,7 +747,7 @@ async function setFavorite(asset: Asset, tag: 0 | 1 | 2 | 3 | 4) {
   const user = getUser()
   if (!user) return
   try {
-    await favoriteAsset(asset.id, user.id, tag)
+    await favoriteAsset(asset.id, tag)
     asset.tag = tag
     setAssetFavoriteTag(asset.id, tag)
     window.dispatchEvent(new CustomEvent('asset-favorite-changed', {

@@ -152,9 +152,8 @@ function downloadPreviewImage() {
 async function setFavorite(asset: Asset, tag: 0 | 1 | 2 | 3 | 4) {
   const userStr = localStorage.getItem('user')
   if (!userStr) return
-  const user = JSON.parse(userStr)
   try {
-    await favoriteAsset(asset.id, user.id, tag)
+    await favoriteAsset(asset.id, tag)
     asset.tag = tag
     if (favoritesOnly.value && tag === 0) {
       assets.value = assets.value.filter(a => a.id !== asset.id)

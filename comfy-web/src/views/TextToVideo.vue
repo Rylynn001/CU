@@ -511,9 +511,8 @@ async function setVideoFavorite(rec: VideoRecord, tag: 0 | 1 | 2 | 3 | 4) {
   if (!rec.outputAssetId) return
   const userStr = localStorage.getItem('user')
   if (!userStr) return
-  const user = JSON.parse(userStr)
   try {
-    await favoriteAsset(rec.outputAssetId, user.id, tag)
+    await favoriteAsset(rec.outputAssetId, tag)
     setAssetFavoriteTag(rec.outputAssetId, tag)
     window.dispatchEvent(new CustomEvent('asset-favorite-changed', {
       detail: { assetId: rec.outputAssetId, tag },
