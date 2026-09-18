@@ -39,10 +39,16 @@ function isActive(path: string) {
 
 async function handleLogout() {
   try {
-    await ElMessageBox.confirm('确定要退出登录吗？', '提示', {
-      confirmButtonText: '退出',
-      cancelButtonText: '取消',
+    await ElMessageBox.confirm('退出后，需要重新登录才能继续使用。', '退出登录', {
+      confirmButtonText: '退出登录',
+      cancelButtonText: '继续使用',
+      confirmButtonClass: 'logout-confirm-button',
+      cancelButtonClass: 'logout-cancel-button',
+      customClass: 'logout-confirm',
       type: 'warning',
+      showClose: false,
+      closeOnClickModal: false,
+      autofocus: false,
     })
 
     localStorage.removeItem('token')
@@ -276,6 +282,105 @@ async function handleLogout() {
 .logout-item:focus-visible {
   color: var(--color-danger);
   background: rgba(248, 113, 113, 0.08);
+}
+
+:global(.logout-confirm.el-message-box) {
+  width: min(380px, calc(100vw - 32px));
+  max-width: 380px;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 16px;
+  background: rgba(9, 12, 18, 0.92);
+  backdrop-filter: blur(24px) saturate(130%);
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.58);
+}
+
+:global(.logout-confirm.el-message-box::before) {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 2px;
+  background: #fb7185;
+}
+
+:global(.logout-confirm .el-message-box__header) {
+  padding: 22px 22px 0;
+}
+
+:global(.logout-confirm .el-message-box__title) {
+  color: rgba(255, 255, 255, 0.94);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+:global(.logout-confirm .el-message-box__content) {
+  padding: 14px 22px 22px;
+  color: rgba(226, 232, 240, 0.56);
+  font-size: 13px;
+}
+
+:global(.logout-confirm .el-message-box__container) {
+  align-items: flex-start;
+}
+
+:global(.logout-confirm .el-message-box__status) {
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(251, 113, 133, 0.1);
+  color: #fb7185;
+  font-size: 19px;
+}
+
+:global(.logout-confirm .el-message-box__message) {
+  padding-top: 6px;
+  line-height: 1.6;
+}
+
+:global(.logout-confirm .el-message-box__btns) {
+  gap: 8px;
+  padding: 14px 22px 18px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+:global(.logout-confirm .el-button) {
+  height: 34px;
+  margin-left: 0;
+  padding: 0 15px;
+  border-radius: 7px;
+  font-size: 13px;
+  transition: background 0.18s, border-color 0.18s, color 0.18s;
+}
+
+:global(.logout-confirm .logout-cancel-button) {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.72);
+}
+
+:global(.logout-confirm .logout-cancel-button:hover),
+:global(.logout-confirm .logout-cancel-button:focus-visible) {
+  border-color: rgba(255, 255, 255, 0.24);
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.94);
+}
+
+:global(.logout-confirm .logout-confirm-button) {
+  border-color: #e11d48;
+  background: #e11d48;
+  color: #fff;
+}
+
+:global(.logout-confirm .logout-confirm-button:hover),
+:global(.logout-confirm .logout-confirm-button:focus-visible) {
+  border-color: #f43f5e;
+  background: #f43f5e;
+  color: #fff;
 }
 
 .active-bar {
