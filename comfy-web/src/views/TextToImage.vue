@@ -5,7 +5,7 @@ import { ref, onMounted, onUnmounted, watch, computed, nextTick } from 'vue'
 // 路由
 import { useRouter } from 'vue-router'
 // Element Plus UI 组件：输入框、下拉选择、滑块、数字输入框
-import { ElInput, ElSelect, ElOption, ElSlider, ElInputNumber, ElMessage } from 'element-plus'
+import { ElDialog, ElInput, ElSelect, ElOption, ElSlider, ElInputNumber, ElMessage } from 'element-plus'
 // Element Plus 图标
 import { Refresh, UploadFilled, Close, Setting } from '@element-plus/icons-vue'
 // 资产选择器：从已有素材库中选图
@@ -357,11 +357,38 @@ const {
   onImageEditorCancel: onRecordImageEditorCancel, closeEditor: closeRecordEditor, getEditedFile,
 } = useRecordEditor(inlineEditorRef)
 
+const showRecordImagePicker = ref(false)
+const pendingEditRecord = ref<GenerationRecord | null>(null)
+const selectedEditImageIndex = ref<number | null>(null)
+
+function closeRecordImagePicker() {
+  showRecordImagePicker.value = false
+  pendingEditRecord.value = null
+  selectedEditImageIndex.value = null
+}
+
+function confirmRecordImageSelection() {
+  const rec = pendingEditRecord.value
+  const index = selectedEditImageIndex.value
+  if (!rec || index === null || !rec.images[index]) return
+
+  const selectedImage = rec.images[index]
+  closeRecordImagePicker()
+  openRecordEditor({ ...rec, images: [selectedImage] })
+}
+
 // 点击历史记录卡片的"继续生图"按钮
 function handleRecordEdit(id: string) {
   const rec = (records.value as GenerationRecord[]).find(r => r.id === id)
   // 只有已完成的记录才能继续生图
   if (!rec || rec.status !== 'done') return
+
+  if (rec.images.length > 1) {
+    pendingEditRecord.value = rec
+    selectedEditImageIndex.value = null
+    showRecordImagePicker.value = true
+    return
+  }
   openRecordEditor(rec)
 }
 
@@ -1207,6 +1234,42 @@ onUnmounted(() => {
       <AssetSidebar v-show="!showRecordEditor" @select="handleAssetSelect" @reuse-params="handleReuseParams" />
     </div>
 
+    <ElDialog
+      v-model="showRecordImagePicker"
+      title="选择要编辑的图片"
+      width="min(720px, calc(100vw - 32px))"
+      align-center
+      @closed="closeRecordImagePicker"
+    >
+      <div class="edit-image-picker">
+        <button
+          v-for="(src, index) in pendingEditRecord?.images || []"
+          :key="`${src}-${index}`"
+          type="button"
+          class="edit-image-option"
+          :class="{ selected: selectedEditImageIndex === index }"
+          :aria-pressed="selectedEditImageIndex === index"
+          @click="selectedEditImageIndex = index"
+        >
+          <img :src="src" :alt="`第 ${index + 1} 张生成结果`" />
+          <span>{{ index + 1 }}</span>
+        </button>
+      </div>
+      <template #footer>
+        <div class="edit-image-picker-footer">
+          <button type="button" class="edit-image-cancel" @click="closeRecordImagePicker">取消</button>
+          <button
+            type="button"
+            class="edit-image-confirm"
+            :disabled="selectedEditImageIndex === null"
+            @click="confirmRecordImageSelection"
+          >
+            编辑所选图片
+          </button>
+        </div>
+      </template>
+    </ElDialog>
+
     <MediaViewer
       :visible="showImageViewer"
       :src="currentPreviewUrl"
@@ -1249,6 +1312,88 @@ onUnmounted(() => {
 @import '../styles/generation-page.css';
 
 /* ── 图片页专属样式 ── */
+
+.edit-image-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  max-height: min(62vh, 560px);
+  overflow-y: auto;
+  padding: 2px;
+}
+
+.edit-image-option {
+  position: relative;
+  aspect-ratio: 1;
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 2px solid rgba(255,255,255,0.1);
+  border-radius: 8px;
+  background: rgba(255,255,255,0.035);
+  cursor: pointer;
+  transition: border-color 0.18s, box-shadow 0.18s, transform 0.18s;
+}
+
+.edit-image-option:hover {
+  border-color: rgba(255,255,255,0.4);
+  transform: translateY(-1px);
+}
+
+.edit-image-option:focus-visible {
+  outline: 2px solid rgba(255,255,255,0.85);
+  outline-offset: 2px;
+}
+
+.edit-image-option.selected {
+  border-color: #60a5fa;
+  box-shadow: 0 0 0 2px rgba(96,165,250,0.2);
+}
+
+.edit-image-option img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+}
+
+.edit-image-option span {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 7px;
+  border-radius: 6px;
+  background: rgba(0,0,0,0.72);
+  color: rgba(255,255,255,0.92);
+  font-size: 12px;
+  line-height: 24px;
+  text-align: center;
+}
+
+.edit-image-picker-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.edit-image-cancel,
+.edit-image-confirm {
+  height: 34px;
+  padding: 0 16px;
+  border-radius: 7px;
+  border: 1px solid rgba(255,255,255,0.12);
+  color: rgba(255,255,255,0.82);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.edit-image-cancel { background: rgba(255,255,255,0.04); }
+.edit-image-confirm { background: #2563eb; border-color: #3b82f6; color: #fff; }
+.edit-image-cancel:hover { background: rgba(255,255,255,0.09); }
+.edit-image-confirm:hover:not(:disabled) { background: #3b82f6; }
+.edit-image-confirm:disabled { opacity: 0.38; cursor: not-allowed; }
 
 .local-tip {
   font-size: 10px;
