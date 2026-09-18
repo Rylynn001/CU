@@ -3,7 +3,7 @@ defineOptions({ name: 'TextToVideo' })
 // Vue 鏍稿績
 import { ref, onMounted, onUnmounted, computed, nextTick, watch } from 'vue'
 // Element Plus UI 缁勪欢
-import { ElInput, ElSelect, ElOption } from 'element-plus'
+import { ElSelect, ElOption } from 'element-plus'
 import { UploadFilled } from '@element-plus/icons-vue'
 // 璧勪骇閫夋嫨鍣ㄥ脊绐?
 import AssetSidebar from '../components/AssetSidebar.vue'
@@ -17,6 +17,7 @@ import ModelViewer from '../components/ModelViewer.vue'
 import FavoriteHeart from '../components/FavoriteHeart.vue'
 import ProjectManager from '../components/ProjectManager.vue'
 import RecordContextMenu from '../components/RecordContextMenu.vue'
+import MentionTextarea from '../components/MentionTextarea.vue'
 // 鍚庣 API 鎺ュ彛
 import { getApiModels, retryHistory, favoriteAsset, type ApiModel } from '../api/apiService'
 // 鍘嗗彶璁板綍绠＄悊
@@ -233,7 +234,7 @@ function handlePanelDragLeave(e: DragEvent) {
 }
 
 // 鈹€鈹€ @mention 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
-const promptInputRef = ref<InstanceType<typeof ElInput> | null>(null)
+const promptInputRef = ref<InstanceType<typeof MentionTextarea> | null>(null)
 const { atMentionActive, atMentionIndex, onPromptKeyup, onPromptKeydown, insertMention } =
   useAtMention(
     () => prompt.value,
@@ -516,6 +517,9 @@ async function setVideoFavorite(rec: VideoRecord, tag: 0 | 1 | 2 | 3 | 4) {
   try {
     await favoriteAsset(rec.outputAssetId, user.id, tag)
     favoritedVideos.value[rec.id] = tag
+    window.dispatchEvent(new CustomEvent('asset-favorite-changed', {
+      detail: { assetId: rec.outputAssetId, tag },
+    }))
   } catch {
     // 闈欓粯澶辫触
   }
@@ -597,7 +601,10 @@ onMounted(async () => {
   try {
     // 鑾峰彇瑙嗛绫诲瀷鐨?API 妯″瀷鍒楄〃
     apiModels.value = await getApiModels('video')
-    if (apiModels.value.length > 0) apiModel.value = apiModels.value[0].id
+    const defaultModel = apiModels.value.find(model =>
+      model.name === 'seedance2.0' || model.description === 'seedance2.0'
+    )
+    if (apiModels.value.length > 0) apiModel.value = (defaultModel || apiModels.value[0]).id
   } catch {}
 
   // 浠庢暟鎹簱鍔犺浇鍘嗗彶璁板綍
@@ -858,10 +865,10 @@ onUnmounted(() => {
             </span>
           </div>
           <div class="prompt-wrap">
-            <ElInput
+            <MentionTextarea
               ref="promptInputRef"
               v-model="prompt"
-              type="textarea" :rows="6"
+              :rows="6"
               :placeholder="activeTab === 'txt2video' ? '输入提示词，描述视频内容、场景、动作...（@ 选择参考素材）' : '描述生成方向...（@ 选择参考素材）'"
               class="prompt-input"
               @keyup="onPromptKeyup"

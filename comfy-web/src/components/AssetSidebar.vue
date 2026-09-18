@@ -743,11 +743,26 @@ async function setFavorite(asset: Asset, tag: 0 | 1 | 2 | 3 | 4) {
   try {
     await favoriteAsset(asset.id, user.id, tag)
     asset.tag = tag
+    window.dispatchEvent(new CustomEvent('asset-favorite-changed', {
+      detail: { assetId: asset.id, tag },
+    }))
     if (favoriteTag.value > 0 && tag !== favoriteTag.value) {
       assets.value = assets.value.filter(a => a.id !== asset.id)
     }
   } catch {
     ElMessage.error('操作失败')
+  }
+}
+
+function handleFavoriteChanged(event: Event) {
+  const detail = (event as CustomEvent<{ assetId?: number; tag?: 0 | 1 | 2 | 3 | 4 }>).detail
+  if (!detail?.assetId || detail.tag === undefined) return
+  const asset = assets.value.find(item => item.id === detail.assetId)
+  if (!asset) return
+  asset.tag = detail.tag
+  if (favoriteTag.value > 0 && detail.tag !== favoriteTag.value) {
+    assets.value = assets.value.filter(item => item.id !== detail.assetId)
+    total.value = Math.max(0, total.value - 1)
   }
 }
 
@@ -962,10 +977,12 @@ onMounted(() => {
     if (!document.hidden) refreshCollaboration(true, true)
   }, COLLABORATION_POLL_INTERVAL)
   window.addEventListener('click', closeContextMenu)
+  window.addEventListener('asset-favorite-changed', handleFavoriteChanged)
 })
 onUnmounted(() => {
   if (collaborationPollTimer !== undefined) window.clearInterval(collaborationPollTimer)
   window.removeEventListener('click', closeContextMenu)
+  window.removeEventListener('asset-favorite-changed', handleFavoriteChanged)
 })
 </script>
 
@@ -993,6 +1010,22 @@ onUnmounted(() => {
           <button class="chip" :class="{ active: activeFilter === 'picture' }" @click="setFilter('picture')">图片</button>
           <button class="chip" :class="{ active: activeFilter === 'video' }" @click="setFilter('video')">视频</button>
         </div>
+        <button
+          type="button"
+          class="sidebar-refresh-btn"
+          :class="{ spinning: loading }"
+          :disabled="loading"
+          title="刷新资产"
+          aria-label="刷新资产"
+          @click="refreshAssets"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+            <path d="M20 11a8.1 8.1 0 0 0-14.8-4L3 10" />
+            <path d="M3 4v6h6" />
+            <path d="M4 13a8.1 8.1 0 0 0 14.8 4L21 14" />
+            <path d="M21 20v-6h-6" />
+          </svg>
+        </button>
         <button
           type="button"
           class="sidebar-upload-btn"
@@ -1902,7 +1935,7 @@ onUnmounted(() => {
 }
 .chip {
   display: flex; align-items: center; gap: 4px;
-  padding: 5px 12px;
+  padding: 5px 9px;
   border-radius: 6px;
   border: none;
   background: transparent;
@@ -1938,10 +1971,10 @@ onUnmounted(() => {
 .fav-chip.active svg { fill: currentColor; }
 
 .sidebar-upload-input { display: none; }
+.sidebar-refresh-btn,
 .sidebar-upload-btn {
   width: 28px;
   height: 28px;
-  margin-left: auto;
   flex: 0 0 28px;
   display: flex;
   align-items: center;
@@ -1953,15 +1986,19 @@ onUnmounted(() => {
   cursor: pointer;
   transition: color 0.2s, background 0.2s, border-color 0.2s;
 }
+.sidebar-upload-btn { margin-left: auto; }
+.sidebar-refresh-btn:hover,
 .sidebar-upload-btn:hover {
   color: var(--color-text);
   background: rgba(255, 255, 255, 0.11);
   border-color: rgba(255, 255, 255, 0.2);
 }
+.sidebar-refresh-btn:disabled,
 .sidebar-upload-btn:disabled {
   opacity: 0.5;
   cursor: wait;
 }
+.sidebar-refresh-btn.spinning svg { animation: spin 0.8s linear infinite; }
 
 /* ── 缩略图网格 ── */
 .thumb-grid {

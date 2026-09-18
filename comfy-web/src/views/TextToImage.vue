@@ -19,6 +19,7 @@ import FavoriteHeart from '../components/FavoriteHeart.vue'
 import ProjectManager from '../components/ProjectManager.vue'
 import MediaViewer from '../components/MediaViewer.vue'
 import RecordContextMenu from '../components/RecordContextMenu.vue'
+import MentionTextarea from '../components/MentionTextarea.vue'
 // 本地 ComfyUI 接口：获取模型列表、采样器信息、提交任务、上传图片
 import { getModels, getKSamplerInfo, submitPrompt, uploadImage, type PromptParams } from '../api/comfyui'
 // WebSocket 连接：实时接收本地 ComfyUI 的生成进度和结果图片
@@ -291,7 +292,7 @@ function handlePanelDragLeave(e: DragEvent) {
 
 // ── @mention ──────────────────────────────────────────────
 // 提示词输入框的 ref，用于 @mention 功能定位光标
-const promptInputRef = ref<InstanceType<typeof ElInput> | null>(null)
+const promptInputRef = ref<InstanceType<typeof MentionTextarea> | null>(null)
 // useAtMention 封装了在提示词中输入 @ 后弹出图片选择下拉的逻辑：
 // atMentionActive - 下拉是否显示
 // atMentionIndex - 当前高亮的选项索引（键盘上下键控制）
@@ -554,6 +555,9 @@ async function setImageFavorite(rec: GenerationRecord, index: number, tag: 0 | 1
     // 更新本地状态（_favoritedImages 是运行时附加的属性，不持久化）
     if (!(rec as any)._favoritedImages) (rec as any)._favoritedImages = {}
     ;(rec as any)._favoritedImages[index] = tag
+    window.dispatchEvent(new CustomEvent('asset-favorite-changed', {
+      detail: { assetId, tag },
+    }))
   } catch {
     // 静默失败
   }
@@ -679,7 +683,10 @@ onMounted(async () => {
   try {
     // 获取后端 API 模型列表（type='image' 只返回图片模型）
     apiModels.value = await getApiModels('image')
-    if (apiModels.value.length > 0) apiModel.value = apiModels.value[0].id  // 默认选第一个
+    const defaultModel = apiModels.value.find(model =>
+      model.name === 'gpt-image-2' || model.description === 'gpt-image-2'
+    )
+    if (apiModels.value.length > 0) apiModel.value = (defaultModel || apiModels.value[0]).id
   } catch {}
 
   // 从数据库加载历史记录，将后端数据格式转换为前端 GenerationRecord 格式
@@ -914,10 +921,10 @@ onUnmounted(() => {
           <!-- prompt -->
           <div class="section-label">{{ activeTab === 'txt2img' ? '描述你想生成的内容' : '描述生成方向' }}</div>
           <div class="prompt-wrap">
-            <ElInput
+            <MentionTextarea
               ref="promptInputRef"
               v-model="form.positive_prompt"
-              type="textarea" :rows="4"
+              :rows="4"
               :placeholder="activeTab === 'txt2img' ? '输入提示词，描述画面内容、风格、光线...（@ 选参考图）' : '描述想要生成的内容方向...（@ 选参考图）'"
               class="prompt-input"
               @keyup="onPromptKeyup"
