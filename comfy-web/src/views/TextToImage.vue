@@ -929,7 +929,11 @@ onUnmounted(() => {
             <div v-if="inputImages.length > 0" class="multi-preview-wrap">
               <div v-for="(img, idx) in inputImages" :key="idx" class="preview-item">
                 <span class="img-label">图{{ idx + 1 }}</span>
-                <img :src="img.preview" class="preview-img" />
+                <img
+                  :src="img.preview"
+                  class="preview-img"
+                  @click="previewImage(img.preview, inputImages.map(item => item.preview))"
+                />
                 <button class="edit-btn" @click="openEditor(idx)" title="编辑图片">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19l7-7-3-3-7 7v3h3z"/><path d="M18 13l1.5-1.5a2.12 2.12 0 0 0-3-3L15 10"/></svg>
                 </button>
@@ -1535,7 +1539,7 @@ onUnmounted(() => {
   border-radius: 10px; overflow: hidden;
   border: 1px solid rgba(255,255,255,0.08);
 }
-.preview-item .preview-img { max-height: 120px; }
+.preview-item .preview-img { max-height: 120px; cursor: pointer; }
 .img-label {
   position: absolute; top: 6px; left: 6px;
   background: rgba(0,0,0,0.65); color: rgba(255,255,255,0.82);

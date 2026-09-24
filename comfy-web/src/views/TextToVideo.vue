@@ -181,12 +181,14 @@ const inputPreviewItems = computed(() => [
     preview,
     index,
     source: 'file' as const,
+    assetId: undefined,
     key: `file-${index}-${preview.url}`,
   })),
   ...selectedAssetPreviews.value.map((preview, index) => ({
     preview,
     index,
     source: 'asset' as const,
+    assetId: preview.id,
     key: `asset-${preview.id}-${preview.url}`,
   })),
 ])
@@ -290,6 +292,17 @@ function openVideo(url: string, dbId?: number) {
   activeVideoDbId.value = dbId
   showImageViewer.value = false
   showVideoPlayer.value = true
+}
+
+function previewInputMedia(item: (typeof inputPreviewItems.value)[number]) {
+  if (item.preview.type === 'video') {
+    openVideo(item.preview.url, item.assetId)
+    return
+  }
+  const images = inputPreviewItems.value
+    .filter(({ preview }) => preview.type === 'image')
+    .map(({ preview }) => preview.url)
+  previewImage(item.preview.url, images)
 }
 
 function closeMediaViewer() {
@@ -823,8 +836,16 @@ onUnmounted(() => {
             <!-- 宸蹭笂浼犳枃浠堕瑙?-->
             <div v-if="inputPreviewItems.length > 0" class="previews-grid">
               <div v-for="(item, displayIndex) in inputPreviewItems" :key="item.key" class="preview-item">
-                <video v-if="item.preview.type === 'video'" :src="item.preview.url" class="preview-media" />
-                <img v-else :src="item.preview.url" class="preview-media" />
+                <video
+                  v-if="item.preview.type === 'video'"
+                  :src="item.preview.url"
+                  class="preview-media"
+                  muted
+                  playsinline
+                  preload="metadata"
+                  @click="previewInputMedia(item)"
+                />
+                <img v-else :src="item.preview.url" class="preview-media" @click="previewInputMedia(item)" />
                 <button v-if="item.preview.type === 'image'" class="edit-btn" @click="openInputEditor(item.source, item.index)" title="编辑图片">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19l7-7-3-3-7 7v3h3z"/><path d="M18 13l1.5-1.5a2.12 2.12 0 0 0-3-3L15 10"/></svg>
                 </button>
@@ -1158,7 +1179,7 @@ onUnmounted(() => {
   background: rgba(0,0,0,0.3);
 }
 
-.preview-media { width: 100%; height: 100%; object-fit: cover; display: block; }
+.preview-media { width: 100%; height: 100%; object-fit: cover; display: block; cursor: pointer; }
 
 .remove-btn {
   position: absolute; top: 4px; right: 4px;
