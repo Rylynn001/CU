@@ -157,7 +157,7 @@ function handleModelCapture(file: File) {
   if (total >= 12) { errorMsg.value = '最多只能上传 12 个素材'; return }
   if (imageCount >= 9) { errorMsg.value = '最多只能上传 9 张图片'; return }
   inputFiles.value.push(file)
-  inputPreviews.value.push({ url: URL.createObjectURL(file), type: 'image' })
+  inputPreviews.value.push({ url: URL.createObjectURL(file), type: file.type.startsWith('video/') ? 'video' : 'image' })
 }
 // useInputMedia 缁熶竴绠＄悊鍥剧敓瑙嗛鐨勮緭鍏ョ礌鏉愶細
 // inputFiles - 鏈湴涓婁紶鐨勬枃浠跺垪琛?
