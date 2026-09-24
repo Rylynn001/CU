@@ -53,7 +53,7 @@ async function loadMembers() {
   if (!props.projectId) return
   membersLoading.value = true
   try {
-    members.value = await listMembers(props.projectId, props.currentUserId)
+    members.value = await listMembers(props.projectId)
   } catch {
     ElMessage.error('加载成员失败')
   } finally {
@@ -81,7 +81,7 @@ async function searchCandidates() {
   candidates.value = []
   candidatesPage.value = 1
   try {
-    const result = await listCandidateUsers(props.projectId, props.currentUserId, searchKeyword.value, 1, candidatesPageSize)
+    const result = await listCandidateUsers(props.projectId, searchKeyword.value, 1, candidatesPageSize)
     candidates.value = result.users
     candidatesTotal.value = result.total
     candidatesPage.value = result.page
@@ -98,7 +98,7 @@ async function loadMoreCandidates() {
   candidatesLoadingMore.value = true
   try {
     const nextPage = candidatesPage.value + 1
-    const result = await listCandidateUsers(props.projectId, props.currentUserId, searchKeyword.value, nextPage, candidatesPageSize)
+    const result = await listCandidateUsers(props.projectId, searchKeyword.value, nextPage, candidatesPageSize)
     const existing = new Set(candidates.value.map(u => u.id))
     candidates.value.push(...result.users.filter(u => !existing.has(u.id)))
     candidatesTotal.value = result.total
@@ -130,7 +130,7 @@ async function handleAddCandidate(u: CandidateUser) {
   if (!props.projectId) return
   addingId.value = u.id
   try {
-    await addMember(props.projectId, props.currentUserId, u.user_name || '', 'member')
+    await addMember(props.projectId, u.user_name || '', 'member')
     ElMessage.success('已添加成员')
     candidates.value = candidates.value.filter(x => x.id !== u.id)
     candidatesTotal.value = Math.max(0, candidatesTotal.value - 1)
@@ -146,7 +146,7 @@ async function handleSetRole(m: ProjectMember, role: MemberRole) {
   if (!props.projectId) return
   if (m.role === role) return
   try {
-    await setMemberRole(props.projectId, props.currentUserId, m.user_id, role)
+    await setMemberRole(props.projectId, m.user_id, role)
     m.role = role
     ElMessage.success('角色已更新')
   } catch (e: any) {
@@ -157,7 +157,7 @@ async function handleSetRole(m: ProjectMember, role: MemberRole) {
 async function handleRemove(m: ProjectMember) {
   if (!props.projectId) return
   try {
-    await removeMember(props.projectId, props.currentUserId, m.user_id)
+    await removeMember(props.projectId, m.user_id)
     members.value = members.value.filter(x => x.user_id !== m.user_id)
     ElMessage.success('已移除成员')
   } catch (e: any) {
@@ -177,7 +177,7 @@ const pendingHasMore = computed(() => pending.value.length < pendingTotal.value)
 async function loadPending() {
   pendingLoading.value = true
   try {
-    const result = await listPendingAssets(props.currentUserId, 1, COLLABORATION_PAGE_SIZE)
+    const result = await listPendingAssets(1, COLLABORATION_PAGE_SIZE)
     pending.value = result.assets
     pendingTotal.value = result.total
     pendingPage.value = 1
@@ -201,7 +201,7 @@ async function handleReview(item: PendingAsset, approve: boolean) {
   reviewingKey.value = key
   try {
     const comment = (reviewComments.value[key] || '').trim() || undefined
-    await reviewAsset(item.category_id, item.assets_id, props.currentUserId, approve, comment)
+    await reviewAsset(item.category_id, item.assets_id, approve, comment)
     pending.value = pending.value.filter(
       x => !(x.category_id === item.category_id && x.assets_id === item.assets_id)
     )
@@ -226,7 +226,7 @@ const mySubmissionsHasMore = computed(() => mySubmissions.value.length < mySubmi
 async function loadMySubmissions() {
   mineLoading.value = true
   try {
-    const result = await listMySubmissions(props.currentUserId, 1, COLLABORATION_PAGE_SIZE)
+    const result = await listMySubmissions(1, COLLABORATION_PAGE_SIZE)
     mySubmissions.value = result.submissions
     mySubmissionsTotal.value = result.total
     mySubmissionsPage.value = 1
@@ -256,7 +256,7 @@ async function handleResubmitSelect(assets: Array<{ id: number }>) {
   resubmitting.value = true
   try {
     const { review_status } = await addAssetToCategory(
-      target.category_id, assets[0].id, props.currentUserId, target.id
+      target.category_id, assets[0].id, target.id
     )
     ElMessage.success(review_status === 'pending' ? '已重新提交，等待管理员审核' : '已重新提交')
     await loadMySubmissions()
@@ -278,7 +278,7 @@ async function openTimeline(categoryId: number, assetsId: number) {
   timelineLoading.value = true
   timeline.value = []
   try {
-    timeline.value = await fetchReviewTimeline(categoryId, assetsId, props.currentUserId)
+    timeline.value = await fetchReviewTimeline(categoryId, assetsId)
   } catch {
     ElMessage.error('加载审核记录失败')
   } finally {
@@ -321,14 +321,14 @@ async function loadMoreCollaboration() {
   try {
     if (activeTab.value === 'pending') {
       const nextPage = pendingPage.value + 1
-      const result = await listPendingAssets(props.currentUserId, nextPage, COLLABORATION_PAGE_SIZE)
+      const result = await listPendingAssets(nextPage, COLLABORATION_PAGE_SIZE)
       const existing = new Set(pending.value.map(item => item.id))
       pending.value.push(...result.assets.filter(item => !existing.has(item.id)))
       pendingTotal.value = result.total
       pendingPage.value = nextPage
     } else {
       const nextPage = mySubmissionsPage.value + 1
-      const result = await listMySubmissions(props.currentUserId, nextPage, COLLABORATION_PAGE_SIZE)
+      const result = await listMySubmissions(nextPage, COLLABORATION_PAGE_SIZE)
       const existing = new Set(mySubmissions.value.map(item => item.id))
       mySubmissions.value.push(...result.submissions.filter(item => !existing.has(item.id)))
       mySubmissionsTotal.value = result.total
