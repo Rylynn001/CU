@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { getAuthHeader } from '../api/apiService'
+import { getAuthHeader, authFetch } from '../api/apiService'
 
 interface ProjectDetail {
   id: number
@@ -41,7 +41,7 @@ async function loadDetail() {
 
   loading.value = true
   try {
-    const res = await fetch(`/api/api-proxy/projects/${props.projectId}`, { headers: getAuthHeader() })
+    const res = await authFetch(`/api/api-proxy/projects/${props.projectId}`, { headers: getAuthHeader() })
     if (!res.ok) throw new Error()
     detail.value = await res.json()
   } catch {

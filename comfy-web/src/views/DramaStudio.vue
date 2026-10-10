@@ -793,7 +793,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { pollTaskUntilDone, uploadInputImage, getApiModels, apiImg2VideoGenerate } from '../api/apiService'
+import { pollTaskUntilDone, uploadInputImage, getApiModels, apiImg2VideoGenerate, authFetch, getAuthHeader } from '../api/apiService'
 import MediaViewer from '../components/MediaViewer.vue'
 import { addSbPendingTask, removeSbPendingTask, resumeSbPendingTasks } from '../composables/useSbTaskPersist'
 import { getCurrentUserId } from '../utils/user'
@@ -923,9 +923,9 @@ async function genImage(
   if (!prompt) { ElMessage.warning(`${label} 缺少描述，无法生成`); return }
   pendingSet.value = new Set([...pendingSet.value, id])
   try {
-    const res = await fetch(`${BASE}/txt2img`, {
+    const res = await authFetch(`${BASE}/txt2img`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token') ?? ''}` },
+      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
       body: JSON.stringify({ model: IMAGE_MODEL_ID, prompt, aspect_ratio: '1:1' }),
     })
     if (!res.ok) throw new Error(await res.text())

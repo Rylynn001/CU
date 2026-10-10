@@ -1,4 +1,4 @@
-import { pollTaskUntilDone } from '../api/apiService'
+import { pollTaskUntilDone, authFetch, getAuthHeader } from '../api/apiService'
 
 interface BaseRecord {
   id: string
@@ -43,7 +43,7 @@ export function useTaskPolling<T extends BaseRecord>(
     try {
       // 先查一次当前状态，避免任务已完成还走完整轮询
       const checkUrl = `/api/api-proxy/task/${record.taskId}`
-      const checkRes = await fetch(checkUrl, { headers: { Authorization: `Bearer ${localStorage.getItem('token') ?? ''}` } })
+      const checkRes = await authFetch(checkUrl, { headers: getAuthHeader() })
       if (checkRes.ok) {
         const checkData = await checkRes.json()
         if (checkData.status === 'completed' && checkData.result) {

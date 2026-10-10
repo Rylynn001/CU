@@ -7,6 +7,21 @@ export const getAuthHeader = (): Record<string, string> => ({
   Authorization: `Bearer ${localStorage.getItem('token') ?? ''}`,
 })
 
+// 统一的 fetch 封装，自动处理 401 错误（可导出给其他模块使用）
+export async function authFetch(url: string, options: RequestInit = {}): Promise<Response> {
+  const res = await fetch(url, options)
+
+  // 检测 401 错误，自动清理 token 并跳转登录页
+  if (res.status === 401) {
+    localStorage.removeItem('token')
+    // 使用 window.location 强制跳转，确保路由守卫生效
+    window.location.hash = '/login'
+    throw new Error('令牌已过期，请重新登录')
+  }
+
+  return res
+}
+
 // ── 类型定义 ──────────────────────────────────────────────────────────────
 
 // API 模型信息
@@ -38,14 +53,14 @@ export interface ApiGenerateResult {
 
 // 获取当前 API 配置（base_url 和是否已设置 key）
 export async function getApiConfig(): Promise<{ base_url: string; has_key: boolean }> {
-  const res = await fetch(`${BASE}/config`)
+  const res = await authFetch(`${BASE}/config`)
   if (!res.ok) throw new Error(`config fetch failed: ${res.status}`)
   return res.json()
 }
 
 // 保存 API 配置（api_key 和/或 base_url）
 export async function saveApiConfig(payload: { api_key?: string; base_url?: string }): Promise<void> {
-  const res = await fetch(`${BASE}/config`, {
+  const res = await authFetch(`${BASE}/config`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -58,7 +73,7 @@ export async function saveApiConfig(payload: { api_key?: string; base_url?: stri
 // 获取可用模型列表，可按 type 过滤（image / video）
 export async function getApiModels(type?: 'image' | 'video'): Promise<ApiModel[]> {
   const url = type ? `${BASE}/models?type=${type}` : `${BASE}/models`
-  const res = await fetch(url)
+  const res = await authFetch(url)
   if (!res.ok) throw new Error(`models fetch failed: ${res.status}`)
   const data = await res.json()
   return data.models || []
@@ -66,7 +81,7 @@ export async function getApiModels(type?: 'image' | 'video'): Promise<ApiModel[]
 
 // 新增模型配置
 export async function addApiModel(model: ApiModel): Promise<void> {
-  const res = await fetch(`${BASE}/models`, {
+  const res = await authFetch(`${BASE}/models`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(model),
@@ -79,7 +94,7 @@ export async function addApiModel(model: ApiModel): Promise<void> {
 
 // 删除模型配置
 export async function deleteApiModel(modelId: string): Promise<void> {
-  const res = await fetch(`${BASE}/models/${encodeURIComponent(modelId)}`, {
+  const res = await authFetch(`${BASE}/models/${encodeURIComponent(modelId)}`, {
     method: 'DELETE',
   })
   if (!res.ok) throw new Error(`delete model failed: ${res.status}`)
@@ -91,7 +106,7 @@ export async function deleteApiModel(modelId: string): Promise<void> {
 export async function uploadInputImage(file: File): Promise<{ id: number; location: string }> {
   const form = new FormData()
   form.append('file', file)
-  const res = await fetch(`${BASE}/upload/file`, { method: 'POST', headers: getAuthHeader(), body: form })
+  const res = await authFetch(`${BASE}/upload/file`, { method: 'POST', headers: getAuthHeader(), body: form })
   if (!res.ok) {
     const text = await res.text()
     throw new Error(text || `upload failed: ${res.status}`)
@@ -104,7 +119,7 @@ export async function uploadInputImage(file: File): Promise<{ id: number; locati
 // 提交图片生成任务
 // 后端可能同步返回图片（images），也可能返回 task_id 表示异步任务
 export async function apiGenerate(params: ApiGenerateParams): Promise<ApiGenerateResult> {
-  const res = await fetch(`${BASE}/txt2img`, {
+  const res = await authFetch(`${BASE}/txt2img`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
     body: JSON.stringify(params),
@@ -157,7 +172,7 @@ export interface ApiVideoResult {
 // 提交文生视频任务
 // 后端可能同步返回 video_url，也可能返回 task_id 表示异步任务
 export async function apiVideoGenerate(params: ApiVideoParams): Promise<ApiVideoResult | { task_id: string; history_id?: number }> {
-  const res = await fetch(`${BASE}/txt2video`, {
+  const res = await authFetch(`${BASE}/txt2video`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
     body: JSON.stringify(params),
@@ -193,7 +208,7 @@ export interface ApiImg2VideoParams {
 
 // 提交图生视频任务，始终返回 task_id（异步）
 export async function apiImg2VideoGenerate(params: ApiImg2VideoParams): Promise<{ task_id: string; history_id?: number }> {
-  const res = await fetch(`${BASE}/img2video`, {
+  const res = await authFetch(`${BASE}/img2video`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
     body: JSON.stringify(params),
@@ -237,7 +252,7 @@ export async function saveHistory(params: {
   message?: string
   model_id?: number
 }): Promise<{ id: number }> {
-  const res = await fetch(`${BASE}/history`, {
+  const res = await authFetch(`${BASE}/history`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
     body: JSON.stringify(params),
@@ -248,7 +263,7 @@ export async function saveHistory(params: {
 
 // 根据资产 id 反查其所属的历史记录（用于资产库右键"定位历史记录"）
 export async function fetchHistoryByAsset(assetId: number): Promise<HistoryRecord> {
-  const res = await fetch(`${BASE}/history/by-asset/${assetId}`, { headers: getAuthHeader() })
+  const res = await authFetch(`${BASE}/history/by-asset/${assetId}`, { headers: getAuthHeader() })
   if (!res.ok) throw new Error(`fetch history by asset failed: ${res.status}`)
   const data = await res.json()
   return data.record
@@ -262,7 +277,7 @@ export async function fetchHistory(
 ): Promise<{ records: HistoryRecord[]; total: number }> {
   let url = `${BASE}/history?page=${page}&page_size=${pageSize}`
   if (type) url += `&type=${type}`
-  const res = await fetch(url, { headers: getAuthHeader() })
+  const res = await authFetch(url, { headers: getAuthHeader() })
   if (!res.ok) throw new Error(`fetch history failed: ${res.status}`)
   const data = await res.json()
   return { records: data.records || [], total: data.total ?? 0 }
@@ -270,19 +285,19 @@ export async function fetchHistory(
 
 // 删除单条历史记录
 export async function deleteHistory(historyId: number): Promise<void> {
-  const res = await fetch(`${BASE}/history/${historyId}`, { method: 'DELETE', headers: getAuthHeader() })
+  const res = await authFetch(`${BASE}/history/${historyId}`, { method: 'DELETE', headers: getAuthHeader() })
   if (!res.ok) throw new Error(`delete history failed: ${res.status}`)
 }
 
 // 清空指定用户的所有历史记录
 export async function clearHistory(): Promise<void> {
-  const res = await fetch(`${BASE}/history`, { method: 'DELETE', headers: getAuthHeader() })
+  const res = await authFetch(`${BASE}/history`, { method: 'DELETE', headers: getAuthHeader() })
   if (!res.ok) throw new Error(`clear history failed: ${res.status}`)
 }
 
 // 重试失败的历史记录：后端读取 payload 重新入队，旧记录软删除
 export async function retryHistory(historyId: number): Promise<{ task_id: string; history_id: number }> {
-  const res = await fetch(`${BASE}/history/${historyId}/retry`, { method: 'POST', headers: getAuthHeader() })
+  const res = await authFetch(`${BASE}/history/${historyId}/retry`, { method: 'POST', headers: getAuthHeader() })
   if (!res.ok) {
     const text = await res.text()
     throw new Error(text || `retry failed: ${res.status}`)
@@ -294,12 +309,12 @@ export async function retryHistory(historyId: number): Promise<{ task_id: string
 
 // 取消正在排队或执行中的任务
 export async function cancelTask(taskId: string): Promise<void> {
-  await fetch(`${BASE}/task/${taskId}/cancel`, { method: 'POST', headers: getAuthHeader() })
+  await authFetch(`${BASE}/task/${taskId}/cancel`, { method: 'POST', headers: getAuthHeader() })
 }
 
 // 将任务插队到队列最前面
 export async function prioritizeTask(taskId: string): Promise<void> {
-  const res = await fetch(`${BASE}/task/${taskId}/priority`, { method: 'POST', headers: getAuthHeader() })
+  const res = await authFetch(`${BASE}/task/${taskId}/priority`, { method: 'POST', headers: getAuthHeader() })
   if (!res.ok) throw new Error('插队失败')
 }
 
@@ -339,7 +354,7 @@ async function pollTaskStatus(taskId: string, expectedType: 'image' | 'video'): 
     const url = `${BASE}/task/${taskId}`
 
     try {
-      const res = await fetch(url, { headers: getAuthHeader() })
+      const res = await authFetch(url, { headers: getAuthHeader() })
       if (!res.ok) {
         const text = await res.text()
         // 404 表示任务不存在或已过期，属于终态，不重试
@@ -395,7 +410,7 @@ async function pollTaskStatus(taskId: string, expectedType: 'image' | 'video'): 
 // ── Assets Favorite ───────────────────────────────────────────────────────
 
 export async function favoriteAsset(assetId: number, tag: 0 | 1 | 2 | 3 | 4): Promise<void> {
-  const res = await fetch(`${BASE}/user/assets/${assetId}/favorite`, {
+  const res = await authFetch(`${BASE}/user/assets/${assetId}/favorite`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
     body: JSON.stringify({ tag }),
@@ -462,7 +477,7 @@ export interface MySubmission {
 export async function addAssetToCategory(
   categoryId: number, assetId: number, resubmitId?: number
 ): Promise<{ review_status: 'approved' | 'pending' }> {
-  const res = await fetch(`${BASE}/categories/${categoryId}/assets`, {
+  const res = await authFetch(`${BASE}/categories/${categoryId}/assets`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
     body: JSON.stringify({ asset_id: assetId, resubmit_id: resubmitId }),
@@ -476,7 +491,7 @@ export async function addAssetToCategory(
 
 // 获取项目成员列表（需当前用户是项目成员）
 export async function listMembers(projectId: number): Promise<ProjectMember[]> {
-  const res = await fetch(`${BASE}/projects/${projectId}/members`, { headers: getAuthHeader() })
+  const res = await authFetch(`${BASE}/projects/${projectId}/members`, { headers: getAuthHeader() })
   if (!res.ok) throw new Error(`list members failed: ${res.status}`)
   const data = await res.json()
   return data.members || []
@@ -503,14 +518,14 @@ export async function listCandidateUsers(
   if (keyword.trim()) {
     params.append('keyword', keyword.trim())
   }
-  const res = await fetch(`${BASE}/projects/${projectId}/candidate-users?${params}`, { headers: getAuthHeader() })
+  const res = await authFetch(`${BASE}/projects/${projectId}/candidate-users?${params}`, { headers: getAuthHeader() })
   if (!res.ok) throw new Error(`list candidate users failed: ${res.status}`)
   return res.json()
 }
 
 // 邀请成员（owner/admin 可操作），按用户名添加
 export async function addMember(projectId: number, username: string, role: MemberRole = 'member'): Promise<void> {
-  const res = await fetch(`${BASE}/projects/${projectId}/members`, {
+  const res = await authFetch(`${BASE}/projects/${projectId}/members`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
     body: JSON.stringify({ username, role }),
@@ -523,7 +538,7 @@ export async function addMember(projectId: number, username: string, role: Membe
 
 // 设置成员角色（owner/admin 可操作）
 export async function setMemberRole(projectId: number, targetUserId: number, role: MemberRole): Promise<void> {
-  const res = await fetch(`${BASE}/projects/${projectId}/members/${targetUserId}`, {
+  const res = await authFetch(`${BASE}/projects/${projectId}/members/${targetUserId}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
     body: JSON.stringify({ role }),
@@ -536,7 +551,7 @@ export async function setMemberRole(projectId: number, targetUserId: number, rol
 
 // 移除成员（owner/admin 可操作）
 export async function removeMember(projectId: number, targetUserId: number): Promise<void> {
-  const res = await fetch(`${BASE}/projects/${projectId}/members/${targetUserId}`, {
+  const res = await authFetch(`${BASE}/projects/${projectId}/members/${targetUserId}`, {
     method: 'DELETE',
     headers: getAuthHeader(),
   })
@@ -550,7 +565,7 @@ export async function removeMember(projectId: number, targetUserId: number): Pro
 export async function listPendingAssets(
   page = 1, pageSize = 50
 ): Promise<{ assets: PendingAsset[]; total: number }> {
-  const res = await fetch(`${BASE}/pending-assets?page=${page}&page_size=${pageSize}`, { headers: getAuthHeader() })
+  const res = await authFetch(`${BASE}/pending-assets?page=${page}&page_size=${pageSize}`, { headers: getAuthHeader() })
   if (!res.ok) throw new Error(`list pending failed: ${res.status}`)
   const data = await res.json()
   return { assets: data.assets || [], total: data.total ?? 0 }
@@ -558,7 +573,7 @@ export async function listPendingAssets(
 
 // 审核素材（通过 / 拒绝），可附评语
 export async function reviewAsset(categoryId: number, assetId: number, approve: boolean, comment?: string): Promise<void> {
-  const res = await fetch(`${BASE}/categories/${categoryId}/assets/${assetId}/review`, {
+  const res = await authFetch(`${BASE}/categories/${categoryId}/assets/${assetId}/review`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
     body: JSON.stringify({ approve, comment }),
@@ -571,7 +586,7 @@ export async function reviewAsset(categoryId: number, assetId: number, approve: 
 
 // 查某素材在某分类的审核时间线（owner/admin 或提交人可查）
 export async function fetchReviewTimeline(categoryId: number, assetId: number): Promise<ReviewEvent[]> {
-  const res = await fetch(`${BASE}/categories/${categoryId}/assets/${assetId}/reviews`, { headers: getAuthHeader() })
+  const res = await authFetch(`${BASE}/categories/${categoryId}/assets/${assetId}/reviews`, { headers: getAuthHeader() })
   if (!res.ok) throw new Error(`fetch timeline failed: ${res.status}`)
   return res.json()
 }
@@ -580,7 +595,7 @@ export async function fetchReviewTimeline(categoryId: number, assetId: number): 
 export async function listMySubmissions(
   page = 1, pageSize = 50
 ): Promise<{ submissions: MySubmission[]; total: number; rejectedTotal: number }> {
-  const res = await fetch(`${BASE}/my-submissions?page=${page}&page_size=${pageSize}`, { headers: getAuthHeader() })
+  const res = await authFetch(`${BASE}/my-submissions?page=${page}&page_size=${pageSize}`, { headers: getAuthHeader() })
   if (!res.ok) throw new Error(`list my submissions failed: ${res.status}`)
   const data = await res.json()
   return {

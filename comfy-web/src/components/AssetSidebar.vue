@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { ElMessage, ElDialog, ElInput } from 'element-plus'
 import {
-  favoriteAsset, fetchHistoryByAsset, uploadInputImage, getAuthHeader,
+  favoriteAsset, fetchHistoryByAsset, uploadInputImage, getAuthHeader, authFetch,
   listPendingAssets, listMySubmissions, reviewAsset, addAssetToCategory, fetchReviewTimeline,
   type PendingAsset, type MySubmission, type ReviewEvent,
 } from '../api/apiService'
@@ -165,8 +165,8 @@ async function refreshCollaboration(silent = false, preserveLoaded = false) {
   if (!silent) collaborationLoading.value = true
   try {
     const [pendingResult, submissionsResult] = await Promise.all([
-      listPendingAssets(user.id, 1, COLLABORATION_PAGE_SIZE),
-      listMySubmissions(user.id, 1, COLLABORATION_PAGE_SIZE),
+      listPendingAssets(1, COLLABORATION_PAGE_SIZE),
+      listMySubmissions(1, COLLABORATION_PAGE_SIZE),
     ])
     if (preserveLoaded) {
       pendingAssets.value = pendingPage.value === 1
@@ -223,14 +223,14 @@ async function loadMoreCollaboration() {
   try {
     if (collaborationTab.value === 'pending') {
       const nextPage = pendingPage.value + 1
-      const result = await listPendingAssets(user.id, nextPage, COLLABORATION_PAGE_SIZE)
+      const result = await listPendingAssets(nextPage, COLLABORATION_PAGE_SIZE)
       const existing = new Set(pendingAssets.value.map(item => `${item.category_id}-${item.assets_id}`))
       pendingAssets.value.push(...result.assets.filter(item => !existing.has(`${item.category_id}-${item.assets_id}`)))
       pendingTotal.value = result.total
       pendingPage.value = nextPage
     } else {
       const nextPage = mySubmissionsPage.value + 1
-      const result = await listMySubmissions(user.id, nextPage, COLLABORATION_PAGE_SIZE)
+      const result = await listMySubmissions(nextPage, COLLABORATION_PAGE_SIZE)
       const existing = new Set(mySubmissions.value.map(item => item.id))
       mySubmissions.value.push(...result.submissions.filter(item => !existing.has(item.id)))
       mySubmissionsTotal.value = result.total
@@ -369,8 +369,7 @@ async function loadAssets(assetType?: 'picture' | 'video') {
     let url = `/api/api-proxy/user/assets?page=1&page_size=${PAGE_SIZE}`
     if (assetType) url += `&asset_type=${assetType}`
     if (favoriteTag.value > 0) url += `&tag=${favoriteTag.value}`
-    const token = localStorage.getItem('token') ?? ''
-    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+    const res = await authFetch(url, { headers: getAuthHeader() })
     if (!res.ok) throw new Error()
     const data = await res.json()
     assets.value = data.assets || []
@@ -447,8 +446,7 @@ async function loadMore() {
     let url = `/api/api-proxy/user/assets?page=${nextPage}&page_size=${PAGE_SIZE}`
     if (assetType) url += `&asset_type=${assetType}`
     if (favoriteTag.value > 0) url += `&tag=${favoriteTag.value}`
-    const token = localStorage.getItem('token') ?? ''
-    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+    const res = await authFetch(url, { headers: getAuthHeader() })
     if (!res.ok) throw new Error()
     const data = await res.json()
     const newAssets = data.assets || []
@@ -482,7 +480,7 @@ async function loadProjects() {
   if (!user) return
   projectsLoading.value = true
   try {
-    const res = await fetch(`/api/api-proxy/projects`, { headers: getAuthHeader() })
+    const res = await authFetch(`/api/api-proxy/projects`, { headers: getAuthHeader() })
     if (!res.ok) throw new Error()
     const data = await res.json()
     projects.value = data.projects || []
@@ -519,7 +517,7 @@ async function loadCategories(p: Project) {
   const user = getUser()
   if (!user) return
   try {
-    const res = await fetch(`/api/api-proxy/projects/${p.id}/categories`, { headers: getAuthHeader() })
+    const res = await authFetch(`/api/api-proxy/projects/${p.id}/categories`, { headers: getAuthHeader() })
     if (!res.ok) throw new Error()
     const data = await res.json()
     p.categories = data.categories || []

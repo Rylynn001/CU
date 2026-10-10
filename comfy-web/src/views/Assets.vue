@@ -6,7 +6,7 @@ import AssetGrid from '../components/AssetGrid.vue'
 import RecordContextMenu from '../components/RecordContextMenu.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import ProjectTeamDialog from '../components/ProjectTeamDialog.vue'
-import { favoriteAsset, fetchReviewTimeline, getAuthHeader } from '../api/apiService'
+import { favoriteAsset, fetchReviewTimeline, getAuthHeader, authFetch } from '../api/apiService'
 import type { MemberRole } from '../api/apiService'
 
 interface Asset {
@@ -200,8 +200,7 @@ async function loadAssets(assetType?: 'picture' | 'video') {
     let url = `/api/api-proxy/user/assets?page=1&page_size=${PAGE_SIZE}`
     if (assetType) url += `&asset_type=${assetType}`
     if (favoriteTag.value > 0) url += `&tag=${favoriteTag.value}`
-    const token = localStorage.getItem('token') ?? ''
-    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+    const res = await authFetch(url, { headers: getAuthHeader() })
     if (!res.ok) throw new Error('加载失败')
     const data = await res.json()
     assets.value = data.assets || []
@@ -223,8 +222,7 @@ async function loadMore() {
     let url = `/api/api-proxy/user/assets?page=${nextPage}&page_size=${PAGE_SIZE}`
     if (assetType) url += `&asset_type=${assetType}`
     if (favoriteTag.value > 0) url += `&tag=${favoriteTag.value}`
-    const token = localStorage.getItem('token') ?? ''
-    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+    const res = await authFetch(url, { headers: getAuthHeader() })
     if (!res.ok) throw new Error('加载失败')
     const data = await res.json()
     assets.value.push(...(data.assets || []))
@@ -243,7 +241,7 @@ async function loadProjects() {
   if (!user) return
   projectsLoading.value = true
   try {
-    const res = await fetch(`/api/api-proxy/projects`, { headers: getAuthHeader() })
+    const res = await authFetch(`/api/api-proxy/projects`, { headers: getAuthHeader() })
     if (!res.ok) throw new Error('加载失败')
     const data = await res.json()
     projects.value = data.projects || []
@@ -284,7 +282,7 @@ async function loadCategories(p: Project) {
   const user = getUser()
   if (!user) return
   try {
-    const res = await fetch(`/api/api-proxy/projects/${p.id}/categories`, { headers: getAuthHeader() })
+    const res = await authFetch(`/api/api-proxy/projects/${p.id}/categories`, { headers: getAuthHeader() })
     if (!res.ok) throw new Error()
     const data = await res.json()
     p.categories = data.categories || []

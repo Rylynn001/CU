@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { favoriteAsset } from '../api/apiService'
+import { favoriteAsset, authFetch, getAuthHeader } from '../api/apiService'
 import FavoriteHeart from './FavoriteHeart.vue'
 
 interface Asset {
@@ -51,8 +51,7 @@ async function loadAssets(assetType?: 'picture' | 'video') {
     let url = `/api/api-proxy/user/assets?page=1&page_size=${PAGE_SIZE}`
     if (assetType) url += `&asset_type=${assetType}`
     if (favoritesOnly.value) url += `&favorite=1`
-    const token = localStorage.getItem('token') ?? ''
-    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+    const res = await authFetch(url, { headers: getAuthHeader() })
     if (!res.ok) throw new Error('加载失败')
     const data = await res.json()
     assets.value = data.assets || []
@@ -75,8 +74,7 @@ async function loadMore() {
     let url = `/api/api-proxy/user/assets?page=${nextPage}&page_size=${PAGE_SIZE}`
     if (assetType) url += `&asset_type=${assetType}`
     if (favoritesOnly.value) url += `&favorite=1`
-    const token = localStorage.getItem('token') ?? ''
-    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+    const res = await authFetch(url, { headers: getAuthHeader() })
     if (!res.ok) throw new Error('加载失败')
     const data = await res.json()
     assets.value.push(...(data.assets || []))
