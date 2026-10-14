@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { ElInput } from 'element-plus'
 
 const props = withDefaults(defineProps<{
@@ -21,26 +21,50 @@ const emit = defineEmits<{
 const inputRef = ref<InstanceType<typeof ElInput> | null>(null)
 const highlightRef = ref<HTMLElement | null>(null)
 const textarea = computed(() => inputRef.value?.textarea)
+const lastScrollTop = ref(0)
+const lastScrollLeft = ref(0)
 
 function escapeHtml(value: string) {
-  return value
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
+  const div = document.createElement('div')
+  div.textContent = value
+  return div.innerHTML
 }
 
-const highlightedText = computed(() => escapeHtml(props.modelValue).replace(
-  /@(视频|图片|图)\d+/g,
-  mention => `<mark class="mention-token ${mention.startsWith('@视频') ? 'video' : 'image'}">${mention}</mark>`,
-))
+const highlightedText = computed(() => {
+  const escaped = escapeHtml(props.modelValue)
+  return escaped.replace(
+    /@(视频|图片|图)\d+/g,
+    mention => `<mark class="mention-token ${mention.startsWith('@视频') ? 'video' : 'image'}">${mention}</mark>`,
+  )
+})
 
 function syncScroll() {
   const input = textarea.value
   const highlight = highlightRef.value
   if (!input || !highlight) return
-  highlight.scrollTop = input.scrollTop
-  highlight.scrollLeft = input.scrollLeft
+  lastScrollTop.value = input.scrollTop
+  lastScrollLeft.value = input.scrollLeft
+  requestAnimationFrame(() => {
+    highlight.scrollTop = input.scrollTop
+    highlight.scrollLeft = input.scrollLeft
+  })
 }
+
+function restoreScroll() {
+  const input = textarea.value
+  const highlight = highlightRef.value
+  if (!input || !highlight) return
+  nextTick(() => {
+    input.scrollTop = lastScrollTop.value
+    input.scrollLeft = lastScrollLeft.value
+    highlight.scrollTop = lastScrollTop.value
+    highlight.scrollLeft = lastScrollLeft.value
+  })
+}
+
+watch(() => props.modelValue, () => {
+  restoreScroll()
+})
 
 onMounted(() => nextTick(() => textarea.value?.addEventListener('scroll', syncScroll)))
 
@@ -89,12 +113,16 @@ defineExpose({ textarea })
   overflow: hidden;
   white-space: pre-wrap;
   overflow-wrap: break-word;
+  word-break: break-word;
   pointer-events: none;
   color: var(--color-text);
   font-family: inherit;
   font-size: var(--el-font-size-base, 14px);
   line-height: 1.5;
   letter-spacing: 0;
+  font-variant-ligatures: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 .mention-highlight :deep(.mention-token) {
@@ -129,6 +157,9 @@ defineExpose({ textarea })
   -webkit-text-fill-color: transparent;
   caret-color: var(--color-text);
   background: transparent;
+  font-variant-ligatures: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 .mention-textarea-input :deep(.el-textarea__inner::placeholder) {

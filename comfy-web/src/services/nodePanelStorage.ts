@@ -3,6 +3,8 @@
 // 后端 API 版本：所有数据通过 /api-proxy/node-boards/* 持久化。
 // 数据格式由旧 localStorage 格式适配为后端表结构。
 
+import { authFetch, getAuthHeader } from '../api/apiService'
+
 // 单个子面板快照
 export interface PanelSnapshot {
   assetIds: number[]
@@ -49,9 +51,13 @@ function getUserId(): number | null {
 }
 
 async function apiFetch(path: string, init?: RequestInit) {
-  const res = await fetch(`/api/api-proxy/${path}`, {
-    headers: { 'Content-Type': 'application/json' },
+  const res = await authFetch(`/api/api-proxy/${path}`, {
     ...init,
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAuthHeader(),
+      ...init?.headers,
+    },
   })
   if (!res.ok) throw new Error(`${res.status} ${await res.text()}`)
   return res.json()

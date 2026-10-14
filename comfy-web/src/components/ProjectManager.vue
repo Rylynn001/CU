@@ -104,10 +104,10 @@ async function handleConfirm() {
 
   processing.value = true
   try {
-    const res = await fetch(`/api/api-proxy/categories/${selectedCategoryId.value}/assets`, {
+    const res = await authFetch(`/api/api-proxy/categories/${selectedCategoryId.value}/assets`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ asset_id: props.assetId, user_id: user.id }),
+      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+      body: JSON.stringify({ asset_id: props.assetId }),
     })
     if (!res.ok) {
       if (res.status === 403) throw new Error('非项目成员，无法提交素材')

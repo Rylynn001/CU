@@ -1,0 +1,68 @@
+===========================================
+       API 接口迁移 - 部署清单
+===========================================
+
+一、完成度
+-----------
+✅ 总接口数: 82 个
+✅ 已实现: 82 个
+✅ 完成率: 100%
+
+二、本次新增功能
+-----------------
+1. TTS 配音 (2 个接口)
+   - POST /api-proxy/characters/{id}/generate-voice-sample
+   - POST /api-proxy/storyboards/{id}/generate-tts
+   
+2. AI Agent (2 个接口)
+   - POST /api-proxy/agent/rewrite
+   - POST /api-proxy/agent/extract
+   
+3. Gecko 集成 (4 个接口)
+   - POST /api-proxy/gecko/init
+   - POST /api-proxy/gecko/tasks
+   - POST /api-proxy/gecko/task-directories
+   - POST /api-proxy/gecko/upload-media
+
+三、变更文件
+-------------
+新增:
+  - background/api/gecko.py
+
+修改:
+  - background/api/dramas.py
+  - background/api/agent.py
+  - background/main.py
+  - background/requirements.txt
+
+四、部署步骤
+-------------
+1. 安装依赖:
+   cd d:/CU/background
+   pip install -r requirements.txt
+
+2. 配置 .env (已配置 MiniMax 和 Qwen):
+   MINIMAX_API_KEY=sk-xxxxx
+   QWEN_API_KEY=sk-xxxxx
+   QWEN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+   QWEN_MODEL=qwen3.5-plus-2026-04-20
+
+3. 启动服务:
+   conda activate comfy311
+   cd d:/CU/background
+   uvicorn main:app --host 0.0.0.0 --port 8000
+
+4. 验证部署:
+   http://localhost:8000/docs
+
+五、测试重点
+-------------
+⚠️ Gecko 功能必须在生产环境测试 (内网 192.168.0.25)
+✅ TTS 和 AI Agent 可在本地测试
+
+六、详细文档
+-------------
+📄 API接口完整实现报告.md - 完整技术文档
+📄 API接口迁移检查报告.md - 接口对照清单
+
+===========================================

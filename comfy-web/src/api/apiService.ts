@@ -3,9 +3,17 @@
 
 const BASE = '/api/api-proxy'
 
-export const getAuthHeader = (): Record<string, string> => ({
-  Authorization: `Bearer ${localStorage.getItem('token') ?? ''}`,
-})
+export const getAuthHeader = (): Record<string, string> => {
+  const token = localStorage.getItem('token')
+  if (!token) {
+    // token 不存在时，跳转登录页
+    window.location.hash = '/login'
+    throw new Error('未登录，请先登录')
+  }
+  return {
+    Authorization: `Bearer ${token}`,
+  }
+}
 
 // 统一的 fetch 封装，自动处理 401 错误（可导出给其他模块使用）
 export async function authFetch(url: string, options: RequestInit = {}): Promise<Response> {

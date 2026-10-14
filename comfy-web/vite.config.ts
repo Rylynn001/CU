@@ -9,7 +9,7 @@ export default defineConfig({
         target: 'http://127.0.0.1:8188',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, ''),
-        // multipart/form-data 直接透传给 ComfyUI。
+        // multipart/form-data 直接透传给后端。
         bypass: (req) => {
           if (req.headers['content-type']?.includes('multipart/form-data')) {
             return null

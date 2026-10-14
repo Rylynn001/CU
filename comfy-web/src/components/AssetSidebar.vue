@@ -328,7 +328,7 @@ async function handleResubmitSelect(selectedAssets: Array<{ id: number }>) {
   resubmitting.value = true
   try {
     const { review_status } = await addAssetToCategory(
-      target.category_id, selectedAssets[0].id, user.id, target.id
+      target.category_id, selectedAssets[0].id, target.id
     )
     ElMessage.success(review_status === 'pending' ? '已重新提交，等待管理员审核' : '已重新提交')
     await loadCollaboration()
