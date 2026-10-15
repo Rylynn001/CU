@@ -1,0 +1,175 @@
+"""Gemini 图片生成 worker"""
+import json
+import uuid
+import base64
+import logging
+import shutil
+import tempfile
+import os
+import pathlib
+import sys
+sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
+
+from config import settings
+from database import execute_query
+from repositories import history_repo
+
+logger = logging.getLogger(__name__)
+
+OUTPUT_DIR = pathlib.Path(settings.OUTPUT_DIR)
+
+
+def _get_redis():
+    """获取 Redis 客户端"""
+    import redis
+    return redis.Redis(
+        host=settings.REDIS_HOST,
+        port=settings.REDIS_PORT,
+        db=settings.REDIS_DB,
+        decode_responses=True
+    )
+
+
+def _save_output_asset(location: str, user_id: int, asset_type: str) -> int:
+    """保存输出资产到数据库"""
+    query = """
+        INSERT INTO assets (location, rfid, asset_type, created_at)
+        VALUES (%s, %s, %s, NOW())
+    """
+    return execute_query(query, (location, user_id, asset_type))
+
+
+def process(task: dict) -> None:
+    task_id = task['task_id']
+    redis_client = _get_redis()
+
+    try:
+        redis_client.setex(f"task:{task_id}:status", 3600, 'processing')
+        logger.info(f'[{task_id}] 正在处理 Gemini 任务')
+
+        from google import genai
+        from google.genai import types as genai_types
+
+        client = genai.Client(
+            vertexai=True,
+            api_key=task['api_key'],
+            http_options={'base_url': task['base_url']}
+        )
+
+        image_b64_list = task.get('image_b64_list', [])
+        prompt = task['prompt']
+        aspect_ratio = task.get('aspect_ratio', '1:1')
+
+        quality_to_resolution = {
+            'low': '1K',
+            'medium': '2K',
+            'high': '4K',
+        }
+        resolution = quality_to_resolution.get(task.get('quality', 'medium'), '2K')
+
+        if image_b64_list:
+            contents = []
+            for i, b64 in enumerate(image_b64_list):
+                contents.append(genai_types.Part.from_text(text=f'图{i+1}：'))
+                contents.append(genai_types.Part.from_bytes(
+                    data=base64.b64decode(b64), mime_type='image/png'
+                ))
+            contents.append(genai_types.Part.from_text(text=prompt))
+        else:
+            contents = prompt
+
+        response = client.models.generate_content(
+            model=task['model'],
+            contents=contents,
+            config=genai_types.GenerateContentConfig(
+                image_config=genai_types.ImageConfig(
+                    aspect_ratio=aspect_ratio,
+                    image_size=resolution,
+                ),
+            ),
+        )
+
+        images = []
+        save_paths = []
+        if hasattr(response, 'parts'):
+            for part in response.parts:
+                if hasattr(part, 'as_image'):
+                    image = part.as_image()
+                    if image:
+                        filename = f'Gemini-{uuid.uuid4().hex}.png'
+                        save_path = OUTPUT_DIR / filename
+                        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
+                            tmp_path = tmp.name
+                        try:
+                            image.save(tmp_path)
+                            shutil.move(tmp_path, str(save_path))
+                        except Exception:
+                            if os.path.exists(tmp_path):
+                                os.unlink(tmp_path)
+                            raise
+                        images.append({'url': f'/api/api-proxy/output/{filename}', 'type': 'image', 'asset_id': None})
+                        save_paths.append(save_path)
+
+        # 只取最后一张（避免返回输入图）
+        result_images = images[-1:] if images else []
+        result_paths = save_paths[-1:] if save_paths else []
+
+        if not result_images:
+            raise Exception('No image generated')
+
+        output_asset_ids = []
+        user_id = task.get('user_id')
+        if user_id and result_paths:
+            try:
+                aid = _save_output_asset(str(result_paths[0]), int(user_id), 'picture')
+                output_asset_ids.append(aid)
+                result_images[0]['asset_id'] = aid
+            except Exception as e:
+                logger.error(f'[{task_id}] 数据库写入失败: {e}')
+
+        type_ = 'img2img' if task.get('input_asset_ids') else 'txt2img'
+        history_id = task.get('history_id')
+        if history_id:
+            history_repo.update_history(
+                history_id=history_id,
+                output_asset_ids=output_asset_ids,
+                status='done',
+            )
+        else:
+            history_id = history_repo.save_history(
+                task_id=task_id,
+                prompt=task.get('prompt', ''),
+                user_id=int(user_id) if user_id else 0,
+                model_id=int(task['model_id']) if task.get('model_id') else None,
+                input_asset_ids=task.get('input_asset_ids', []),
+                output_asset_ids=output_asset_ids,
+                status='done',
+                type_=type_,
+                mode='api',
+            )
+
+        redis_client.setex(f"task:{task_id}:status", 3600, 'completed')
+        redis_client.setex(f"task:{task_id}:result", 3600, json.dumps({'result': result_images, 'history_id': history_id}))
+        logger.info(f'[{task_id}] 已完成，共 {len(result_images)} 张图片')
+
+    except Exception as e:
+        logger.error(f'[{task_id}] 任务失败: {e}')
+        type_ = 'img2img' if task.get('input_asset_ids') else 'txt2img'
+        history_id = task.get('history_id')
+        if history_id:
+            history_repo.update_history(history_id=history_id, output_asset_ids=[], status='error', message=str(e))
+        else:
+            history_repo.save_history(
+                task_id=task_id,
+                prompt=task.get('prompt', ''),
+                user_id=int(task['user_id']) if task.get('user_id') else 0,
+                model_id=int(task['model_id']) if task.get('model_id') else None,
+                input_asset_ids=task.get('input_asset_ids', []),
+                output_asset_ids=[],
+                status='error',
+                type_=type_,
+                mode='api',
+                message=str(e),
+            )
+        redis_client.setex(f"task:{task_id}:status", 3600, 'failed')
+        redis_client.setex(f"task:{task_id}:result", 3600, json.dumps({'error': {'error_message': str(e)}, 'history_id': history_id}))
