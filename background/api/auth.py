@@ -5,8 +5,8 @@ from datetime import datetime, timedelta
 from fastapi import APIRouter, HTTPException, Depends, Header
 from pydantic import BaseModel
 
-from database import execute_query
 from config import settings
+from repositories import auth_repo
 
 router = APIRouter()
 
@@ -62,11 +62,7 @@ async def login(req: LoginRequest):
     if not req.username or not req.password:
         raise HTTPException(status_code=400, detail="用户名和密码不能为空")
 
-    user = execute_query(
-        'SELECT id, user_name, password, real_name FROM sys_user WHERE user_name = %s',
-        (req.username,),
-        fetch_one=True
-    )
+    user = auth_repo.get_user_by_username(req.username)
 
     if not user or not verify_password(req.password, user['password']):
         raise HTTPException(status_code=401, detail="用户名或密码错误")

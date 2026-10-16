@@ -51,7 +51,8 @@ def worker_loop(worker_id: int, redis_client) -> None:
             task_id = task.get('task_id', 'unknown')
             provider = task.get('provider', 'unknown')
 
-            logger.info(f'[Worker-{worker_id}] 正在处理 {task_id}，来自队列 {queue_name}')
+            logger.info(f'[Worker-{worker_id}] 拿到任务: task_id={task_id}, queue={queue_name}, provider={provider}')
+            logger.info(f'[Worker-{worker_id}] 任务完整数据: {json.dumps(task, ensure_ascii=False)[:200]}...')
 
             if queue_name == b'queue:txt2img' or queue_name == 'queue:txt2img':
                 if provider == 'gemini':
@@ -64,11 +65,17 @@ def worker_loop(worker_id: int, redis_client) -> None:
             elif queue_name in (b'queue:txt2video', 'queue:txt2video'):
                 if provider == 'ark':
                     ark_worker.process_txt2video(task)
+                elif provider == 'openai':
+                    # Seedance 等 OpenAI 兼容的视频模型，复用 ark_worker
+                    ark_worker.process_txt2video(task)
                 else:
                     logger.warning(f'[Worker-{worker_id}] 未知视频提供商: {provider}')
 
             elif queue_name in (b'queue:img2video', 'queue:img2video'):
                 if provider == 'ark':
+                    ark_worker.process_img2video(task)
+                elif provider == 'openai':
+                    # Seedance 等 OpenAI 兼容的视频模型，复用 ark_worker
                     ark_worker.process_img2video(task)
                 else:
                     logger.warning(f'[Worker-{worker_id}] 未知图生视频提供商: {provider}')

@@ -9,7 +9,7 @@ from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Depends, Header
 from pydantic import BaseModel
 
-from database import execute_query
+from repositories import generation_repo
 from config import settings
 from .auth import get_current_user
 
@@ -85,18 +85,11 @@ class TaskStatusResponse(BaseModel):
 
 
 def _load_input_assets_as_b64(input_asset_ids: List[int]) -> List[str]:
-    """批量读取参考图文件，返回 base64 列表"""
+    """批量读取参考图文件,返回 base64 列表"""
     if not input_asset_ids:
         return []
 
-    placeholders = ','.join(['%s'] * len(input_asset_ids))
-    assets = execute_query(
-        f"SELECT id, location FROM assets WHERE id IN ({placeholders})",
-        tuple(input_asset_ids),
-        fetch_all=True
-    ) or []
-
-    asset_map = {a['id']: a for a in assets}
+    asset_map = generation_repo.load_input_assets(input_asset_ids)
     result = []
 
     for asset_id in input_asset_ids:
@@ -126,32 +119,18 @@ def _save_history(
     payload: dict
 ) -> int:
     """保存历史记录"""
-    history_id = execute_query(
-        """
-        INSERT INTO history
-        (task_id, prompt, user_id, model_id, status, type, mode, payload, created_at)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
-        """,
-        (task_id, prompt, user_id, model_id, status, type_, mode, json.dumps(payload, ensure_ascii=False))
+    return generation_repo.save_history(
+        task_id=task_id,
+        prompt=prompt,
+        user_id=user_id,
+        model_id=model_id,
+        input_asset_ids=input_asset_ids,
+        output_asset_ids=output_asset_ids,
+        status=status,
+        type_=type_,
+        mode=mode,
+        payload=payload
     )
-
-    # 关联输入资产
-    if input_asset_ids:
-        for asset_id in input_asset_ids:
-            execute_query(
-                'INSERT INTO history_input_assets_rel (history_id, asset_id) VALUES (%s, %s)',
-                (history_id, asset_id)
-            )
-
-    # 关联输出资产
-    if output_asset_ids:
-        for asset_id in output_asset_ids:
-            execute_query(
-                'INSERT INTO history_assets_rel (history_id, asset_id) VALUES (%s, %s)',
-                (history_id, asset_id)
-            )
-
-    return history_id
 
 
 @router.post("/txt2img", response_model=TaskResponse)
@@ -170,11 +149,7 @@ async def txt2img(req: Txt2ImgRequest, user: dict = Depends(get_current_user)):
     image_b64_list = _load_input_assets_as_b64(input_asset_ids) if input_asset_ids else []
 
     # 获取模型信息（需要从数据库查询）
-    model_info = execute_query(
-        "SELECT id, name, provider, rfid FROM api_models WHERE id = %s",
-        (req.model,),
-        fetch_one=True
-    )
+    model_info = generation_repo.get_model_info(req.model)
     if not model_info:
         raise HTTPException(status_code=404, detail=f"model {req.model} not found")
 
@@ -183,6 +158,11 @@ async def txt2img(req: Txt2ImgRequest, user: dict = Depends(get_current_user)):
     provider_config = get_provider_config_by_rfid(model_info['rfid'])
     if not provider_config:
         raise HTTPException(status_code=500, detail=f"provider config not found for model {req.model}")
+
+    # 日志：打印解密后的 provider 配置（api_key 脱敏）
+    api_key_masked = provider_config['api_key'][:8] + '***' if len(provider_config['api_key']) > 8 else '(too short)'
+    logger.info(f'[txt2img] task_id={task_id}, model={model_info["name"]}, provider={model_info["provider"]}, '
+                f'rfid={model_info["rfid"]}, api_key={api_key_masked}, base_url={provider_config["base_url"]}')
 
     # 保存历史记录
     type_ = 'img2img' if input_asset_ids else 'txt2img'
@@ -245,11 +225,7 @@ async def txt2video(req: Txt2VideoRequest, user: dict = Depends(get_current_user
     task_id = str(uuid.uuid4())
 
     # 获取模型信息
-    model_info = execute_query(
-        "SELECT id, name, provider, rfid FROM api_models WHERE id = %s",
-        (req.model,),
-        fetch_one=True
-    )
+    model_info = generation_repo.get_model_info(req.model)
     if not model_info:
         raise HTTPException(status_code=404, detail=f"model {req.model} not found")
 
@@ -258,6 +234,11 @@ async def txt2video(req: Txt2VideoRequest, user: dict = Depends(get_current_user
     provider_config = get_provider_config_by_rfid(model_info['rfid'])
     if not provider_config:
         raise HTTPException(status_code=500, detail=f"provider config not found for model {req.model}")
+
+    # 日志：打印解密后的 provider 配置（api_key 脱敏）
+    api_key_masked = provider_config['api_key'][:8] + '***' if len(provider_config['api_key']) > 8 else '(too short)'
+    logger.info(f'[txt2video] task_id={task_id}, model={model_info["name"]}, provider={model_info["provider"]}, '
+                f'rfid={model_info["rfid"]}, api_key={api_key_masked}, base_url={provider_config["base_url"]}')
 
     # 保存历史记录
     payload = {
@@ -282,23 +263,20 @@ async def txt2video(req: Txt2VideoRequest, user: dict = Depends(get_current_user
         payload=payload
     )
 
-    # 任务入队到 Redis
+    # 任务入队到 Redis（平铺结构，与 ComfyUI 原版一致）
     task_data = {
         'task_id': task_id,
         'history_id': history_id,
-        'type': 'txt2video',
-        'payload': payload,
-        'model_info': {
-            'id': model_info['id'],
-            'name': model_info['name'],
-            'provider': model_info['provider']
-        },
-        # Worker 需要的配置
+        'provider': model_info['provider'],
+        'model': model_info['name'],
+        'model_id': model_info['id'],
+        'prompt': req.prompt,
+        'ratio': req.ratio,
+        'resolution': req.resolution,
+        'duration': req.duration,
+        'user_id': user_id,
         'api_key': provider_config['api_key'],
         'base_url': provider_config['base_url'],
-        'model': model_info['name'],
-        'provider': model_info['provider'],
-        'model_id': model_info['id']
     }
     enqueue_task('queue:txt2video', task_data)
 
@@ -321,11 +299,7 @@ async def img2video(req: Img2VideoRequest, user: dict = Depends(get_current_user
     input_asset_ids = req.input_asset_ids or []
 
     # 获取模型信息
-    model_info = execute_query(
-        "SELECT id, name, provider, rfid FROM api_models WHERE id = %s",
-        (req.model,),
-        fetch_one=True
-    )
+    model_info = generation_repo.get_model_info(req.model)
     if not model_info:
         raise HTTPException(status_code=404, detail=f"model {req.model} not found")
 
@@ -334,6 +308,11 @@ async def img2video(req: Img2VideoRequest, user: dict = Depends(get_current_user
     provider_config = get_provider_config_by_rfid(model_info['rfid'])
     if not provider_config:
         raise HTTPException(status_code=500, detail=f"provider config not found for model {req.model}")
+
+    # 日志：打印解密后的 provider 配置（api_key 脱敏）
+    api_key_masked = provider_config['api_key'][:8] + '***' if len(provider_config['api_key']) > 8 else '(too short)'
+    logger.info(f'[img2video] task_id={task_id}, model={model_info["name"]}, provider={model_info["provider"]}, '
+                f'rfid={model_info["rfid"]}, api_key={api_key_masked}, base_url={provider_config["base_url"]}')
 
     # 保存历史记录
     payload = {
@@ -362,24 +341,21 @@ async def img2video(req: Img2VideoRequest, user: dict = Depends(get_current_user
     # 加载参考图（如果有）
     image_b64_list = _load_input_assets_as_b64(input_asset_ids) if input_asset_ids else []
 
-    # 任务入队到 Redis
+    # 任务入队到 Redis（平铺结构，与 ComfyUI 原版一致）
     task_data = {
         'task_id': task_id,
         'history_id': history_id,
-        'type': 'img2video',
-        'payload': payload,
-        'model_info': {
-            'id': model_info['id'],
-            'name': model_info['name'],
-            'provider': model_info['provider']
-        },
-        'image_b64_list': image_b64_list,
-        # Worker 需要的配置
+        'provider': model_info['provider'],
+        'model': model_info['name'],
+        'model_id': model_info['id'],
+        'prompt': req.prompt,
+        'ratio': req.ratio,
+        'resolution': req.resolution,
+        'duration': req.duration,
+        'user_id': user_id,
         'api_key': provider_config['api_key'],
         'base_url': provider_config['base_url'],
-        'model': model_info['name'],
-        'provider': model_info['provider'],
-        'model_id': model_info['id']
+        'input_asset_ids': input_asset_ids,
     }
     enqueue_task('queue:img2video', task_data)
 

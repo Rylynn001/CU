@@ -3,7 +3,7 @@ from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel
 
 from api.auth import get_current_user
-from database import execute_query, get_db
+from repositories import project_repo
 
 router = APIRouter()
 
@@ -35,17 +35,7 @@ async def get_projects(current_user: dict = Depends(get_current_user)):
     """获取用户项目列表"""
     user_id = current_user['user_id']
 
-    projects = execute_query(
-        '''SELECT p.id, p.name, pm.role, pm.created_at,
-                  (SELECT COUNT(*) FROM project_category pc
-                   WHERE pc.project_id = p.id AND pc.del_flag = 0) AS category_count
-           FROM projects p
-           INNER JOIN project_members pm ON p.id = pm.project_id
-           WHERE pm.user_id = %s AND p.del_flag = 0
-           ORDER BY p.id''',
-        (user_id,),
-        fetch_all=True
-    ) or []
+    projects = project_repo.get_user_projects(user_id)
 
     return {'projects': projects}
 
@@ -59,33 +49,16 @@ async def get_project_detail(
     user_id = current_user['user_id']
 
     # 检查权限
-    member = execute_query(
-        'SELECT role FROM project_members WHERE project_id = %s AND user_id = %s',
-        (project_id, user_id),
-        fetch_one=True
-    )
+    member = project_repo.get_project_member(project_id, user_id)
 
     if not member:
         raise HTTPException(status_code=403, detail='非项目成员或项目不存在')
 
     # 获取项目信息
-    project = execute_query(
-        'SELECT id, name FROM projects WHERE id = %s AND del_flag = 0',
-        (project_id,),
-        fetch_one=True
-    )
+    project = project_repo.get_project_by_id(project_id)
 
     # 获取分类
-    categories = execute_query(
-        '''SELECT pc.id, pc.name,
-                  (SELECT COUNT(*) FROM category_assets ca
-                   WHERE ca.category_id = pc.id) AS asset_count
-           FROM project_category pc
-           WHERE pc.project_id = %s AND pc.del_flag = 0
-           ORDER BY pc.id''',
-        (project_id,),
-        fetch_all=True
-    ) or []
+    categories = project_repo.get_project_categories(project_id)
 
     return {
         'id': project['id'],
@@ -104,25 +77,12 @@ async def get_project_categories(
     user_id = current_user['user_id']
 
     # 检查权限
-    member = execute_query(
-        'SELECT role FROM project_members WHERE project_id = %s AND user_id = %s',
-        (project_id, user_id),
-        fetch_one=True
-    )
+    member = project_repo.get_project_member_role(project_id, user_id)
 
     if not member:
         raise HTTPException(status_code=403, detail='非项目成员')
 
-    categories = execute_query(
-        '''SELECT pc.id, pc.name,
-                  (SELECT COUNT(*) FROM category_assets ca
-                   WHERE ca.category_id = pc.id) AS asset_count
-           FROM project_category pc
-           WHERE pc.project_id = %s AND pc.del_flag = 0
-           ORDER BY pc.id''',
-        (project_id,),
-        fetch_all=True
-    ) or []
+    categories = project_repo.get_project_categories(project_id)
 
     return {'categories': categories}
 
@@ -139,25 +99,13 @@ async def create_project(
         raise HTTPException(status_code=400, detail='name is required')
 
     # 创建项目
-    project_id = execute_query(
-        'INSERT INTO projects (name, del_flag) VALUES (%s, 0)',
-        (req.name.strip(),)
-    )
-
-    # 添加创建者为 owner
-    execute_query(
-        'INSERT INTO project_members (project_id, user_id, role) VALUES (%s, %s, %s)',
-        (project_id, user_id, 'owner')
-    )
+    project_id = project_repo.create_project(req.name.strip(), user_id)
 
     # 创建默认分类
     default_categories = ['待提交', '待审核', '已通过', '未通过']
     category_ids = []
     for cat_name in default_categories:
-        cat_id = execute_query(
-            'INSERT INTO project_category (project_id, name, del_flag) VALUES (%s, %s, 0)',
-            (project_id, cat_name)
-        )
+        cat_id = project_repo.create_category(project_id, cat_name)
         category_ids.append({'id': cat_id, 'name': cat_name})
 
     return {
@@ -177,16 +125,12 @@ async def delete_project(
     user_id = current_user['user_id']
 
     # 检查权限
-    member = execute_query(
-        'SELECT role FROM project_members WHERE project_id = %s AND user_id = %s',
-        (project_id, user_id),
-        fetch_one=True
-    )
+    member = project_repo.get_project_member(project_id, user_id)
 
     if not member or member['role'] != 'owner':
         raise HTTPException(status_code=403, detail='项目不存在或无权限')
 
-    execute_query('UPDATE projects SET del_flag = 1 WHERE id = %s', (project_id,))
+    project_repo.delete_project(project_id)
     return {'ok': True}
 
 
@@ -203,19 +147,12 @@ async def rename_project(
         raise HTTPException(status_code=400, detail='name is required')
 
     # 检查权限
-    member = execute_query(
-        'SELECT role FROM project_members WHERE project_id = %s AND user_id = %s',
-        (project_id, user_id),
-        fetch_one=True
-    )
+    member = project_repo.get_project_member(project_id, user_id)
 
     if not member or member['role'] not in ('owner', 'admin'):
         raise HTTPException(status_code=403, detail='项目不存在或无权限')
 
-    execute_query(
-        'UPDATE projects SET name = %s WHERE id = %s',
-        (req.name.strip(), project_id)
-    )
+    project_repo.update_project_name(project_id, req.name.strip())
 
     return {'ok': True}
 
@@ -226,10 +163,7 @@ async def create_category(req: CategoryCreate):
     if not req.name.strip():
         raise HTTPException(status_code=400, detail='name is required')
 
-    cat_id = execute_query(
-        'INSERT INTO project_category (project_id, name, del_flag) VALUES (%s, %s, 0)',
-        (req.project_id, req.name.strip())
-    )
+    cat_id = project_repo.create_category(req.project_id, req.name.strip())
 
     return {'id': cat_id, 'name': req.name}
 
@@ -237,7 +171,7 @@ async def create_category(req: CategoryCreate):
 @router.delete("/categories/{category_id}")
 async def delete_category(category_id: int):
     """删除分类"""
-    execute_query('UPDATE project_category SET del_flag = 1 WHERE id = %s', (category_id,))
+    project_repo.delete_category(category_id)
     return {'ok': True}
 
 
@@ -247,10 +181,7 @@ async def rename_category(category_id: int, req: CategoryRename):
     if not req.name.strip():
         raise HTTPException(status_code=400, detail='name is required')
 
-    execute_query(
-        'UPDATE project_category SET name = %s WHERE id = %s',
-        (req.name.strip(), category_id)
-    )
+    project_repo.update_category_name(category_id, req.name.strip())
 
     return {'ok': True}
 
@@ -258,14 +189,7 @@ async def rename_category(category_id: int, req: CategoryRename):
 @router.get("/categories/{category_id}/assets")
 async def get_category_assets(category_id: int):
     """获取分类下的资产"""
-    assets = execute_query(
-        '''SELECT a.* FROM assets a
-           INNER JOIN category_assets ca ON a.id = ca.assets_id
-           WHERE ca.category_id = %s
-           ORDER BY ca.created_at DESC''',
-        (category_id,),
-        fetch_all=True
-    ) or []
+    assets = project_repo.get_category_assets(category_id)
 
     return {'assets': assets}
 
@@ -280,22 +204,13 @@ async def add_asset_to_category(
     user_id = current_user['user_id']
 
     # 检查用户是否是项目成员
-    member = execute_query(
-        '''SELECT pm.role FROM project_members pm
-           INNER JOIN project_category c ON pm.project_id = c.project_id
-           WHERE c.id = %s AND pm.user_id = %s''',
-        (category_id, user_id),
-        fetch_one=True
-    )
+    member = project_repo.get_member_role_in_category_project(category_id, user_id)
 
     if not member:
         raise HTTPException(status_code=403, detail='非项目成员')
 
     # 添加资产
-    execute_query(
-        'INSERT INTO category_assets (category_id, assets_id, submitted_by, review_status, created_at) VALUES (%s, %s, %s, %s, NOW())',
-        (category_id, req.asset_id, user_id, 'pending')
-    )
+    project_repo.add_asset_to_category(category_id, req.asset_id, user_id)
 
     return {'ok': True, 'review_status': 'pending'}
 
@@ -303,10 +218,7 @@ async def add_asset_to_category(
 @router.delete("/categories/{category_id}/assets/{asset_id}")
 async def remove_asset_from_category(category_id: int, asset_id: int):
     """从分类移除资产"""
-    execute_query(
-        'DELETE FROM category_assets WHERE category_id = %s AND assets_id = %s',
-        (category_id, asset_id)
-    )
+    project_repo.remove_asset_from_category(category_id, asset_id)
 
     return {'ok': True}
 
@@ -323,48 +235,7 @@ async def list_pending_assets(
     page_size = min(100, max(1, page_size))
     offset = (page - 1) * page_size
 
-    # 总数
-    total = execute_query(
-        '''SELECT COUNT(*) AS cnt
-           FROM category_assets ca
-           JOIN project_category pc ON pc.id = ca.category_id
-           JOIN projects p ON p.id = pc.project_id
-           JOIN project_members pm ON pm.project_id = p.id
-           WHERE ca.review_status = 'pending'
-             AND pm.user_id = %s
-             AND pm.role IN ('owner', 'admin')
-             AND p.del_flag = 0
-             AND pc.del_flag = 0''',
-        (user_id,),
-        fetch_one=True
-    )['cnt']
-
-    # 列表
-    assets = execute_query(
-        '''SELECT ca.id, ca.category_id, ca.assets_id, ca.submitted_by, ca.created_at,
-                  pc.name AS category_name,
-                  p.id AS project_id, p.name AS project_name,
-                  a.location, a.asset_type,
-                  u.user_name AS submitted_by_name,
-                  (SELECT COUNT(*) FROM category_asset_reviews r
-                   WHERE r.category_assets_id = ca.id
-                     AND r.action = 'reject') AS reject_count
-           FROM category_assets ca
-           JOIN project_category pc ON pc.id = ca.category_id
-           JOIN projects p ON p.id = pc.project_id
-           JOIN project_members pm ON pm.project_id = p.id
-           LEFT JOIN assets a ON a.id = ca.assets_id
-           LEFT JOIN sys_user u ON u.id = ca.submitted_by
-           WHERE ca.review_status = 'pending'
-             AND pm.user_id = %s
-             AND pm.role IN ('owner', 'admin')
-             AND p.del_flag = 0
-             AND pc.del_flag = 0
-           ORDER BY ca.created_at DESC, ca.id DESC
-           LIMIT %s OFFSET %s''',
-        (user_id, page_size, offset),
-        fetch_all=True
-    ) or []
+    assets, total = project_repo.get_user_pending_assets(user_id, page_size, offset)
 
     return {'assets': assets, 'total': total, 'page': page, 'page_size': page_size}
 
@@ -381,42 +252,12 @@ async def list_my_submissions(
     page_size = min(100, max(1, page_size))
     offset = (page - 1) * page_size
 
-    # 总数和被驳回数
-    counts = execute_query(
-        '''SELECT COUNT(*) AS cnt,
-                  COALESCE(SUM(CASE WHEN ca.review_status = 'rejected' THEN 1 ELSE 0 END), 0) AS rejected_count
-           FROM category_assets ca
-           JOIN project_category pc ON pc.id = ca.category_id
-           JOIN projects p ON p.id = pc.project_id
-           WHERE ca.submitted_by = %s AND pc.del_flag = 0 AND p.del_flag = 0''',
-        (user_id,),
-        fetch_one=True
-    )
-
-    # 列表
-    submissions = execute_query(
-        '''SELECT ca.id, ca.category_id, ca.assets_id, ca.review_status, ca.created_at,
-                  pc.name AS category_name,
-                  p.id AS project_id, p.name AS project_name,
-                  a.location, a.asset_type,
-                  (SELECT COUNT(*) FROM category_asset_reviews r
-                   WHERE r.category_assets_id = ca.id
-                     AND r.action = 'reject') AS reject_count
-           FROM category_assets ca
-           JOIN project_category pc ON pc.id = ca.category_id
-           JOIN projects p ON p.id = pc.project_id
-           LEFT JOIN assets a ON a.id = ca.assets_id
-           WHERE ca.submitted_by = %s AND pc.del_flag = 0 AND p.del_flag = 0
-           ORDER BY ca.created_at DESC, ca.id DESC
-           LIMIT %s OFFSET %s''',
-        (user_id, page_size, offset),
-        fetch_all=True
-    ) or []
+    submissions, total, rejected_total = project_repo.get_user_submissions(user_id, page_size, offset)
 
     return {
         'submissions': submissions,
-        'total': counts['cnt'],
-        'rejected_total': counts['rejected_count'],
+        'total': total,
+        'rejected_total': rejected_total,
         'page': page,
         'page_size': page_size
     }
@@ -428,16 +269,7 @@ async def get_project_members(
     current_user: dict = Depends(get_current_user)
 ):
     """获取项目成员列表"""
-    members = execute_query(
-        '''SELECT pm.user_id, pm.role, pm.created_at,
-                  u.user_name AS username
-           FROM project_members pm
-           LEFT JOIN sys_user u ON u.id = pm.user_id
-           WHERE pm.project_id = %s
-           ORDER BY pm.created_at''',
-        (project_id,),
-        fetch_all=True
-    ) or []
+    members = project_repo.get_project_members(project_id)
 
     for m in members:
         if m.get('created_at'):
@@ -459,32 +291,20 @@ async def add_project_members(
 ):
     """添加项目成员"""
     # 根据用户名查找用户
-    user = execute_query(
-        'SELECT id, user_name FROM sys_user WHERE user_name = %s',
-        (req.username.strip(),),
-        fetch_one=True
-    )
+    user = project_repo.get_user_by_username(req.username.strip())
     if not user:
         raise HTTPException(status_code=404, detail='用户不存在')
 
     target_user_id = user['id']
 
     # 检查是否已存在
-    existing = execute_query(
-        'SELECT id FROM project_members WHERE project_id = %s AND user_id = %s',
-        (project_id, target_user_id),
-        fetch_one=True
-    )
-    if existing:
+    if project_repo.check_project_member_exists(project_id, target_user_id):
         raise HTTPException(status_code=400, detail='该用户已是项目成员')
 
     if req.role not in ('admin', 'member'):
         raise HTTPException(status_code=400, detail='role 只能是 admin 或 member')
 
-    execute_query(
-        'INSERT INTO project_members (project_id, user_id, role, created_at) VALUES (%s, %s, %s, NOW())',
-        (project_id, target_user_id, req.role)
-    )
+    project_repo.add_project_member(project_id, target_user_id, req.role)
 
     return {'ok': True, 'user_id': target_user_id, 'username': req.username, 'role': req.role}
 
@@ -497,10 +317,7 @@ async def update_project_members(
     current_user: dict = Depends(get_current_user)
 ):
     """更新项目成员角色"""
-    execute_query(
-        'UPDATE project_members SET role = %s WHERE project_id = %s AND user_id = %s',
-        (role, project_id, member_user_id)
-    )
+    project_repo.update_project_member_role(project_id, member_user_id, role)
 
     return {'success': True}
 
@@ -512,10 +329,7 @@ async def remove_project_members(
     current_user: dict = Depends(get_current_user)
 ):
     """移除项目成员"""
-    execute_query(
-        'DELETE FROM project_members WHERE project_id = %s AND user_id = %s',
-        (project_id, member_user_id)
-    )
+    project_repo.remove_project_member(project_id, member_user_id)
 
     return {'success': True}
 
@@ -529,40 +343,11 @@ async def get_candidate_users(
     current_user: dict = Depends(get_current_user)
 ):
     """获取可添加的候选用户（未加入该项目的用户）"""
-    # 构建基础查询条件
-    base_condition = '''WHERE u.id NOT IN (
-        SELECT user_id FROM project_members WHERE project_id = %s
-    )'''
-    params = [project_id]
-
-    # 如果有搜索关键字，添加模糊查询
-    if keyword.strip():
-        base_condition += ' AND (u.real_name LIKE %s OR u.user_name LIKE %s)'
-        like_pattern = f'%{keyword.strip()}%'
-        params.extend([like_pattern, like_pattern])
-
-    # 查询总数
-    total_row = execute_query(
-        f'SELECT COUNT(*) as total FROM sys_user u {base_condition}',
-        tuple(params),
-        fetch_one=True
-    )
-    total = total_row['total'] if total_row else 0
-
-    # 查询分页数据
     page = max(1, page)
     page_size = min(100, max(1, page_size))
     offset = (page - 1) * page_size
 
-    users = execute_query(
-        f'''SELECT u.id, u.user_name, u.real_name
-           FROM sys_user u
-           {base_condition}
-           ORDER BY u.real_name
-           LIMIT %s OFFSET %s''',
-        tuple(params + [page_size, offset]),
-        fetch_all=True
-    ) or []
+    users, total = project_repo.get_candidate_users(project_id, keyword, page_size, offset)
 
     return {'users': users, 'total': total, 'page': page, 'page_size': page_size}
 
@@ -583,24 +368,12 @@ async def review_asset(
     user_id = current_user['user_id']
 
     # 检查权限和状态
-    ca_row = execute_query(
-        '''SELECT ca.id, ca.review_status, p.id AS project_id
-           FROM category_assets ca
-           JOIN categories c ON c.id = ca.category_id
-           JOIN projects p ON p.id = c.project_id
-           WHERE ca.category_id = %s AND ca.assets_id = %s''',
-        (category_id, asset_id),
-        fetch_one=True
-    )
+    ca_row = project_repo.get_category_asset_with_project(category_id, asset_id)
     if not ca_row:
         raise HTTPException(status_code=404, detail='资产不在该分类中')
 
     # 检查用户是否是该项目的 owner 或 admin
-    role_row = execute_query(
-        'SELECT role FROM project_members WHERE project_id = %s AND user_id = %s',
-        (ca_row['project_id'], user_id),
-        fetch_one=True
-    )
+    role_row = project_repo.get_project_member_role(ca_row['project_id'], user_id)
     if not role_row or role_row['role'] not in ('owner', 'admin'):
         raise HTTPException(status_code=403, detail='无权限审核')
 
@@ -611,17 +384,10 @@ async def review_asset(
     new_status = 'approved' if req.approve else 'rejected'
     action = 'approve' if req.approve else 'reject'
 
-    execute_query(
-        'UPDATE category_assets SET review_status = %s WHERE category_id = %s AND assets_id = %s',
-        (new_status, category_id, asset_id)
-    )
+    project_repo.update_category_asset_review_status(category_id, asset_id, new_status)
 
     # 记录审核历史
-    execute_query(
-        '''INSERT INTO category_asset_reviews (category_assets_id, reviewer_id, action, comment, created_at)
-           VALUES (%s, %s, %s, %s, NOW())''',
-        (ca_row['id'], user_id, action, req.comment)
-    )
+    project_repo.insert_category_asset_review(ca_row['id'], user_id, action, req.comment)
 
     return {'ok': True, 'new_status': new_status}
 
@@ -636,43 +402,20 @@ async def get_asset_reviews(
     user_id = current_user['user_id']
 
     # 检查权限：项目 owner/admin 或提交人本人
-    info = execute_query(
-        '''SELECT ca.id, pc.project_id, ca.submitted_by
-           FROM project_category pc
-           JOIN category_assets ca ON ca.category_id = pc.id
-           WHERE pc.id = %s AND ca.assets_id = %s''',
-        (category_id, asset_id),
-        fetch_one=True
-    )
+    info = project_repo.get_category_asset_info(category_id, asset_id)
 
     if not info:
         raise HTTPException(status_code=404, detail='资产不存在')
 
     # 检查权限
-    role = execute_query(
-        'SELECT role FROM project_members WHERE project_id = %s AND user_id = %s',
-        (info['project_id'], user_id),
-        fetch_one=True
-    )
+    role = project_repo.get_project_member_role(info['project_id'], user_id)
 
     # member 角色也能查看（旧版逻辑）
     if not role or (role['role'] not in ('owner', 'admin', 'member') and info['submitted_by'] != user_id):
         raise HTTPException(status_code=403, detail='无权限查看')
 
     # 查询审核时间线
-    reviews = execute_query(
-        '''SELECT r.action, r.comment, r.reviewer_id, r.created_at,
-                  u.user_name AS reviewer_name,
-                  r.assets_id,
-                  a.location, a.asset_type
-           FROM category_asset_reviews r
-           LEFT JOIN sys_user u ON u.id = r.reviewer_id
-           LEFT JOIN assets a ON a.id = r.assets_id
-           WHERE r.category_assets_id = %s
-           ORDER BY r.created_at ASC, r.id ASC''',
-        (info['id'],),
-        fetch_all=True
-    ) or []
+    reviews = project_repo.get_category_asset_reviews(info['id'])
 
     for r in reviews:
         if r.get('created_at'):

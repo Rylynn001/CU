@@ -35,14 +35,34 @@ def process_txt2video(task: dict) -> None:
         redis_client.setex(f"task:{task_id}:status", 3600, 'processing')
         logger.info(f'[{task_id}] 正在处理 Ark 文生视频任务')
 
+        # 更新 history 表状态为 processing
+        history_id = task.get('history_id')
+        if history_id:
+            history_repo.update_history(
+                history_id=history_id,
+                output_asset_ids=[],
+                status='processing',
+            )
+
+        # 日志：记录接收到的任务参数（api_key 脱敏）
+        api_key_masked = task['api_key'][:8] + '***' if len(task.get('api_key', '')) > 8 else '(empty or too short)'
+        logger.info(f'[{task_id}] Worker 收到任务: model={task.get("model")}, '
+                    f'provider={task.get("provider")}, api_key={api_key_masked}, '
+                    f'base_url={task.get("base_url")}, '
+                    f'ratio={task.get("ratio")}, resolution={task.get("resolution")}, '
+                    f'duration={task.get("duration")}, prompt={task.get("prompt", "")[:50]}...')
+
         from openai import OpenAI
 
         client = OpenAI(api_key=task['api_key'], base_url=task['base_url'])
+
+        logger.info(f'[{task_id}] 准备调用 Ark API: POST /contents/generations/tasks')
+
         resp = client.post(
             "/contents/generations/tasks",
             body={
                 "model": task['model'],
-                "content": [{"type": "text", "text": task['prompt']}],
+                "content": [{"type": "text", "text": task.get('prompt', '')}],
                 "ratio": task.get('ratio', '16:9'),
                 "resolution": task.get('resolution', '720p'),
                 "duration": task.get('duration', 8),
@@ -100,6 +120,25 @@ def process_img2video(task: dict) -> None:
         redis_client.setex(f"task:{task_id}:status", 3600, 'processing')
         logger.info(f'[{task_id}] 正在处理 Ark 图生视频任务')
 
+        # 更新 history 表状态为 processing
+        history_id = task.get('history_id')
+        if history_id:
+            history_repo.update_history(
+                history_id=history_id,
+                output_asset_ids=[],
+                status='processing',
+            )
+
+        # 日志：记录接收到的任务参数（api_key 脱敏）
+        api_key_masked = task['api_key'][:8] + '***' if len(task.get('api_key', '')) > 8 else '(empty or too short)'
+        logger.info(f'[{task_id}] Worker 收到任务: model={task.get("model")}, '
+                    f'provider={task.get("provider")}, api_key={api_key_masked}, '
+                    f'base_url={task.get("base_url")}, '
+                    f'ratio={task.get("ratio")}, resolution={task.get("resolution")}, '
+                    f'duration={task.get("duration")}, '
+                    f'input_asset_ids={task.get("input_asset_ids", [])}, '
+                    f'prompt={task.get("prompt", "")[:50]}...')
+
         from volcenginesdkarkruntime import Ark
         import oss2
 
@@ -137,7 +176,9 @@ def process_img2video(task: dict) -> None:
                     logger.info(f'[{task_id}] 资产 {asset_id}({media_type}) 已上传至 OSS: {file_url}')
                     all_media.append({'url': file_url, 'media_type': media_type})
 
-        content = [{"type": "text", "text": task['prompt']}]
+        logger.info(f'[{task_id}] 准备调用 Ark API: content_generation.tasks.create，media 数量={len(all_media)}')
+
+        content = [{"type": "text", "text": task.get('prompt', '')}]
         for media in all_media:
             mt = media['media_type']
             if mt == 'video':

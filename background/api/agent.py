@@ -7,7 +7,6 @@ from pydantic import BaseModel
 
 from .auth import get_current_user
 from config import settings
-from database import execute_query
 
 router = APIRouter()
 logger = logging.getLogger(__name__)

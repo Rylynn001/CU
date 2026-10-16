@@ -76,14 +76,18 @@ def get_provider_config_by_rfid(rfid: int) -> dict | None:
     logger = logging.getLogger(__name__)
     try:
         from repositories.provider_repo import get_provider_by_id
+        from utils.encryption import decrypt_api_key
+
         logger.info(f"正在查询 provider, rfid={rfid}")
         provider = get_provider_by_id(rfid)
         logger.info(f"查询结果: {provider}")
         if provider:
+            decrypted_key = decrypt_api_key(provider['key'])
+            logger.info(f"解密成功，key 长度={len(decrypted_key)}")
             return {
                 'id': provider['id'],
                 'base_url': provider['url'],
-                'api_key': provider['key'],  # 已解密
+                'api_key': decrypted_key,  # 已解密
             }
     except Exception as e:
         logger.error(f"获取 provider 配置失败: {e}", exc_info=True)

@@ -1,9 +1,10 @@
 """历史记录相关路由"""
+from pathlib import Path
 from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel
 
 from api.auth import get_current_user
-from database import execute_query
+from repositories import history_repo
 
 router = APIRouter()
 
@@ -34,36 +35,24 @@ async def save_history(
     output_asset_ids = []
     for url in req.output_urls:
         filename = url.split('/')[-1]
-        asset = execute_query(
-            'SELECT id FROM assets WHERE location LIKE %s AND rfid = %s LIMIT 1',
-            (f'%{filename}', user_id),
-            fetch_one=True
-        )
+        asset = history_repo.find_asset_by_filename_and_user(filename, user_id)
         if asset:
             output_asset_ids.append(asset['id'])
 
     # 保存历史记录
-    history_id = execute_query(
-        '''INSERT INTO history (user_id, prompt, task_id, mode, status, type, message, model_id, created_at)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())''',
-        (user_id, req.prompt, req.task_id, req.mode, req.status, req.type, req.message, req.model_id)
+    history_id = history_repo.save_history(
+        user_id=user_id,
+        prompt=req.prompt,
+        input_asset_ids=req.input_asset_ids or [],
+        output_asset_ids=output_asset_ids,
+        task_id=req.task_id,
+        mode=req.mode,
+        status=req.status,
+        type_=req.type,
+        message=req.message,
+        model_id=req.model_id,
+        payload=None
     )
-
-    # 关联输入资产
-    if req.input_asset_ids:
-        for asset_id in req.input_asset_ids:
-            execute_query(
-                'INSERT INTO history_input_assets_rel (history_id, asset_id) VALUES (%s, %s)',
-                (history_id, asset_id)
-            )
-
-    # 关联输出资产
-    if output_asset_ids:
-        for asset_id in output_asset_ids:
-            execute_query(
-                'INSERT INTO history_assets_rel (history_id, asset_id) VALUES (%s, %s)',
-                (history_id, asset_id)
-            )
 
     return {'id': history_id}
 
@@ -87,29 +76,10 @@ async def get_history(
         params.append(f'%{type}')
 
     # 查询总数
-    total = execute_query(
-        f'SELECT COUNT(*) as cnt FROM history WHERE {where}',
-        tuple(params),
-        fetch_one=True
-    )['cnt']
+    total = history_repo.count_history(user_id, type)
 
     # 查询记录（先分页再 JOIN 资产）
-    rows = execute_query(
-        f"""SELECT h.id, h.task_id, h.prompt, h.mode, h.status, h.type, h.message, h.created_at,
-                   m.description AS model_name,
-                   out_a.id AS out_asset_id, out_a.location AS out_location, out_a.asset_type AS out_type,
-                   in_a.id AS in_asset_id, in_a.location AS in_location
-            FROM (SELECT id FROM history WHERE {where} ORDER BY id DESC LIMIT %s OFFSET %s) AS paged
-            JOIN history h ON h.id = paged.id
-            LEFT JOIN api_models m ON h.model_id = m.id
-            LEFT JOIN history_assets_rel out_r ON h.id = out_r.history_id
-            LEFT JOIN assets out_a ON out_r.asset_id = out_a.id
-            LEFT JOIN history_input_assets_rel in_r ON h.id = in_r.history_id
-            LEFT JOIN assets in_a ON in_r.asset_id = in_a.id
-            ORDER BY h.id DESC, out_a.id, in_a.id""",
-        tuple(params + [page_size, offset]),
-        fetch_all=True
-    ) or []
+    rows = history_repo.list_history_with_assets(user_id, type, page_size, offset)
 
     # 聚合多行为单条记录
     history_map = {}
@@ -132,9 +102,9 @@ async def get_history(
 
         # 添加输出资产（转为 URL 格式）
         if row['out_asset_id'] and not any(o['id'] == row['out_asset_id'] for o in history_map[hid]['output_urls']):
-            filename = row['out_location'].split('/')[-1] if row['out_location'] else ''
-            ext = filename.split('.')[-1].lower() if '.' in filename else ''
-            asset_type = 'video' if ext in ('mp4', 'mov', 'avi', 'webm') else 'image'
+            filename = Path(row['out_location']).name if row['out_location'] else ''
+            ext = Path(filename).suffix.lower()
+            asset_type = 'video' if ext in ('.mp4', '.mov', '.avi', '.webm') else 'image'
             history_map[hid]['output_urls'].append({
                 'url': f'/api/api-proxy/output/{filename}',
                 'type': asset_type,
@@ -144,10 +114,10 @@ async def get_history(
         # 添加输入资产
         if row['in_asset_id']:
             history_map[hid]['input_asset_ids'].add(row['in_asset_id'])
-            filename = row['in_location'].split('/')[-1] if row['in_location'] else ''
+            filename = Path(row['in_location']).name if row['in_location'] else ''
             if not any(i['url'].endswith(filename) for i in history_map[hid]['input_asset_urls']):
-                ext = filename.split('.')[-1].lower() if '.' in filename else ''
-                asset_type = 'video' if ext in ('mp4', 'mov', 'avi', 'webm') else 'image'
+                ext = Path(filename).suffix.lower()
+                asset_type = 'video' if ext in ('.mp4', '.mov', '.avi', '.webm') else 'image'
                 history_map[hid]['input_asset_urls'].append({
                     'url': f'/api/api-proxy/output/{filename}',
                     'type': asset_type
@@ -172,23 +142,7 @@ async def get_history_by_asset(
     import json
 
     # 查询该资产关联的历史记录（包含输入输出资产）
-    rows = execute_query(
-        """SELECT h.id, h.task_id, h.prompt, h.mode, h.status, h.type, h.message, h.payload, h.model_id,
-                  m.description AS model_name,
-                  out_a.id AS out_asset_id, out_a.location AS out_location, out_a.asset_type AS out_type,
-                  in_a.id AS in_asset_id, in_a.location AS in_location
-           FROM history h
-           JOIN history_assets_rel target_r ON h.id = target_r.history_id
-           LEFT JOIN api_models m ON h.model_id = m.id
-           LEFT JOIN history_assets_rel out_r ON h.id = out_r.history_id
-           LEFT JOIN assets out_a ON out_r.asset_id = out_a.id
-           LEFT JOIN history_input_assets_rel in_r ON h.id = in_r.history_id
-           LEFT JOIN assets in_a ON in_r.asset_id = in_a.id
-           WHERE h.user_id = %s AND h.del_flag = 0 AND target_r.asset_id = %s
-           ORDER BY h.id DESC, out_a.id, in_a.id""",
-        (user_id, asset_id),
-        fetch_all=True
-    )
+    rows = history_repo.get_history_by_asset(user_id, asset_id)
 
     if not rows:
         raise HTTPException(status_code=404, detail='未找到该资产对应的历史记录')
@@ -221,9 +175,9 @@ async def get_history_by_asset(
         if row['out_asset_id']:
             out_id = row['out_asset_id']
             if not any(o['id'] == out_id for o in record['output_urls']):
-                filename = row['out_location'].split('/')[-1] if row['out_location'] else ''
-                ext = filename.split('.')[-1].lower() if '.' in filename else ''
-                asset_type = 'video' if ext in ('mp4', 'mov', 'avi', 'webm') else 'image'
+                filename = Path(row['out_location']).name if row['out_location'] else ''
+                ext = Path(filename).suffix.lower()
+                asset_type = 'video' if ext in ('.mp4', '.mov', '.avi', '.webm') else 'image'
                 record['output_urls'].append({
                     'url': f'/api/api-proxy/output/{filename}',
                     'type': asset_type,
@@ -234,10 +188,10 @@ async def get_history_by_asset(
         if row['in_asset_id']:
             in_id = row['in_asset_id']
             record['input_asset_ids'].add(in_id)
-            filename = row['in_location'].split('/')[-1] if row['in_location'] else ''
+            filename = Path(row['in_location']).name if row['in_location'] else ''
             if not any(i['url'].endswith(filename) for i in record['input_asset_urls']):
-                ext = filename.split('.')[-1].lower() if '.' in filename else ''
-                asset_type = 'video' if ext in ('mp4', 'mov', 'avi', 'webm') else 'image'
+                ext = Path(filename).suffix.lower()
+                asset_type = 'video' if ext in ('.mp4', '.mov', '.avi', '.webm') else 'image'
                 record['input_asset_urls'].append({
                     'url': f'/api/api-proxy/output/{filename}',
                     'type': asset_type,
@@ -255,10 +209,7 @@ async def delete_history(
     """删除历史记录"""
     user_id = current_user['user_id']
 
-    result = execute_query(
-        'DELETE FROM history WHERE id = %s AND user_id = %s',
-        (history_id, user_id)
-    )
+    result = history_repo.delete_history(history_id, user_id)
 
     return {'ok': result > 0}
 
@@ -268,10 +219,7 @@ async def clear_history(current_user: dict = Depends(get_current_user)):
     """清空历史记录"""
     user_id = current_user['user_id']
 
-    count = execute_query(
-        'DELETE FROM history WHERE user_id = %s',
-        (user_id,)
-    )
+    count = history_repo.clear_all_history(user_id)
 
     return {'deleted': count}
 
@@ -282,15 +230,17 @@ async def retry_history(
     current_user: dict = Depends(get_current_user)
 ):
     """重试失败的历史记录"""
+    import json
+    import uuid
+    import base64
+    import redis
+    from pathlib import Path
+    from config import settings
+    from repositories import generation_repo
+
     user_id = current_user['user_id']
 
-    # 查询历史记录
-    row = execute_query(
-        'SELECT id, task_id, prompt, type, model_id, payload FROM history WHERE id = %s AND user_id = %s',
-        (history_id, user_id),
-        fetch_one=True
-    )
-
+    row = history_repo.get_history_by_id(history_id, user_id)
     if not row:
         raise HTTPException(status_code=404, detail=f'history {history_id} not found')
 
@@ -298,36 +248,165 @@ async def retry_history(
     if not payload_raw:
         raise HTTPException(status_code=400, detail='该记录没有保存 payload，无法重试')
 
-    import json
-    import uuid
     payload = json.loads(payload_raw) if isinstance(payload_raw, str) else payload_raw
+    type_ = row.get('type', '')
+    model_id = payload.get('model')
+    prompt = payload.get('prompt', '')
+    payload_user_id = payload.get('user_id')
 
-    # 生成新任务 ID
+    # Redis 客户端
+    redis_client = redis.Redis(
+        host=settings.REDIS_HOST,
+        port=settings.REDIS_PORT,
+        db=settings.REDIS_DB,
+        decode_responses=True
+    )
+
+    # 检查 Redis 可用性
+    try:
+        redis_client.ping()
+    except:
+        raise HTTPException(status_code=503, detail='Redis not available')
+
+    provider_id = None
+    from config import get_provider_config_by_rfid
+    model_info = generation_repo.get_model_info(model_id)
+    provider_config = get_provider_config_by_rfid(model_info['rfid'])
+    api_key = provider_config['api_key']
+    base_url = provider_config['base_url']
+    model_name = model_info['name']
+
     new_task_id = str(uuid.uuid4())
 
-    # 获取任务类型
-    type_ = row.get('type', '')
-    input_asset_ids = payload.get('input_asset_ids', [])
+    if type_ in ('txt2img', 'img2img'):
+        queue_name = 'queue:txt2img'
+        if redis_client.llen(queue_name) >= 100:
+            raise HTTPException(status_code=503, detail='系统繁忙，请稍后再试')
 
-    # 创建新的历史记录
-    new_history_id = execute_query(
-        '''INSERT INTO history (user_id, task_id, prompt, mode, status, type, model_id, payload, created_at)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())''',
-        (user_id, new_task_id, row['prompt'], 'api', 'pending', type_, row['model_id'], json.dumps(payload))
-    )
+        input_asset_ids = payload.get('input_asset_ids', [])
 
-    # 复制输入资产关联
-    if input_asset_ids:
-        for asset_id in input_asset_ids:
-            execute_query(
-                'INSERT INTO history_input_assets_rel (history_id, asset_id) VALUES (%s, %s)',
-                (new_history_id, asset_id)
-            )
+        # 加载参考图 base64
+        image_b64_list = []
+        if input_asset_ids:
+            asset_map = generation_repo.load_input_assets(input_asset_ids)
+            for asset_id in input_asset_ids:
+                asset = asset_map.get(asset_id)
+                if asset:
+                    file_path = Path(asset['location'])
+                    if file_path.exists():
+                        image_b64_list.append(base64.b64encode(file_path.read_bytes()).decode())
 
-    # 软删除旧记录
-    execute_query(
-        'UPDATE history SET del_flag = 1 WHERE id = %s',
-        (history_id,)
-    )
+        provider = model_info.get('provider', '')
+        if not provider:
+            raise HTTPException(status_code=400, detail=f'model {model_id} 未配置 provider 字段')
+
+        new_history_id = history_repo.save_history(
+            task_id=new_task_id,
+            prompt=prompt,
+            user_id=int(payload_user_id) if payload_user_id else 0,
+            model_id=int(model_id) if model_id else None,
+            input_asset_ids=input_asset_ids,
+            output_asset_ids=[],
+            status='pending',
+            type_=type_,
+            mode='api',
+            payload=payload,
+        )
+        task_payload = {
+            'task_id': new_task_id,
+            'provider': provider,
+            'model': model_name,
+            'model_id': model_id,
+            'prompt': prompt,
+            'aspect_ratio': payload.get('aspect_ratio', '1:1'),
+            'quality': payload.get('quality', 'medium'),
+            'n': payload.get('n', 1),
+            'user_id': payload_user_id,
+            'api_key': api_key,
+            'base_url': base_url,
+            'image_b64_list': image_b64_list,
+            'input_asset_ids': input_asset_ids,
+            'history_id': new_history_id,
+        }
+        redis_client.lpush(queue_name, json.dumps(task_payload, ensure_ascii=False))
+
+    elif type_ == 'txt2video':
+        queue_name = 'queue:txt2video'
+        if redis_client.llen(queue_name) >= 100:
+            raise HTTPException(status_code=503, detail='系统繁忙，请稍后再试')
+
+        new_history_id = history_repo.save_history(
+            task_id=new_task_id,
+            prompt=prompt,
+            user_id=int(payload_user_id) if payload_user_id else 0,
+            model_id=int(model_id) if model_id else None,
+            input_asset_ids=[],
+            output_asset_ids=[],
+            status='pending',
+            type_='txt2video',
+            mode='api',
+            payload=payload,
+        )
+        task_payload = {
+            'task_id': new_task_id,
+            'provider': 'ark',
+            'model': model_name,
+            'model_id': model_id,
+            'prompt': prompt,
+            'ratio': payload.get('ratio', '16:9'),
+            'resolution': payload.get('resolution', '720p'),
+            'duration': payload.get('duration', 8),
+            'user_id': payload_user_id,
+            'api_key': api_key,
+            'base_url': base_url,
+            'history_id': new_history_id,
+        }
+        redis_client.lpush(queue_name, json.dumps(task_payload, ensure_ascii=False))
+
+    elif type_ == 'img2video':
+        queue_name = 'queue:img2video'
+        if redis_client.llen(queue_name) >= 100:
+            raise HTTPException(status_code=503, detail='系统繁忙，请稍后再试')
+
+        input_asset_ids = payload.get('input_asset_ids', [])
+        new_history_id = history_repo.save_history(
+            task_id=new_task_id,
+            prompt=prompt,
+            user_id=int(payload_user_id) if payload_user_id else 0,
+            model_id=int(model_id) if model_id else None,
+            input_asset_ids=input_asset_ids,
+            output_asset_ids=[],
+            status='pending',
+            type_='img2video',
+            mode='api',
+            payload=payload,
+        )
+        task_payload = {
+            'task_id': new_task_id,
+            'provider': 'ark',
+            'model': model_name,
+            'model_id': model_id,
+            'prompt': prompt,
+            'ratio': payload.get('ratio', '16:9'),
+            'resolution': payload.get('resolution', '720p'),
+            'duration': int(payload.get('duration', 8)),
+            'user_id': payload_user_id,
+            'api_key': api_key,
+            'base_url': base_url,
+            'input_asset_ids': input_asset_ids,
+            'history_id': new_history_id,
+            'input_files': [],
+        }
+        redis_client.lpush(queue_name, json.dumps(task_payload, ensure_ascii=False))
+
+    else:
+        raise HTTPException(status_code=400, detail=f'不支持的任务类型: {type_}')
+
+    redis_client.setex(f'task:{new_task_id}:status', 3600, 'pending')
+    history_repo.soft_delete_history(history_id)
+
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f'[retry] history {history_id} → new task {new_task_id}, type={type_}')
 
     return {'task_id': new_task_id, 'history_id': new_history_id}

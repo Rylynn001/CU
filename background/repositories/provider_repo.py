@@ -1,103 +1,100 @@
-"""Provider 和 Model 数据库操作"""
-from typing import Optional
-from database import get_db
+"""模型提供商相关的数据库操作"""
+import logging
+from database import execute_query
+
+logger = logging.getLogger(__name__)
 
 
-def _decrypt_provider_key(provider: dict) -> dict:
-    """解密 provider 的 key 字段"""
-    if provider and provider.get('key'):
-        try:
-            from utils.encryption import decrypt
-            from config import settings
-            if settings.ENCRYPTION_KEY:
-                provider['key'] = decrypt(settings.ENCRYPTION_KEY.encode(), provider['key'])
-        except Exception:
-            pass
+def get_default_provider():
+    """获取默认提供商配置"""
+    provider = execute_query(
+        'SELECT url, `key` FROM provider WHERE is_default = 1 LIMIT 1',
+        fetch_one=True
+    )
     return provider
 
 
-def get_all_providers() -> list[dict]:
-    with get_db() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM api_providers ORDER BY created_at DESC")
-        return cursor.fetchall()
+def update_provider_key(api_key: str):
+    """更新默认提供商的 API Key"""
+    execute_query(
+        'UPDATE provider SET `key` = %s WHERE is_default = 1',
+        (api_key,)
+    )
 
 
-def get_provider_by_id(provider_id: int) -> Optional[dict]:
-    with get_db() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM api_providers WHERE id = %s", (provider_id,))
-        provider = cursor.fetchone()
-        return _decrypt_provider_key(provider) if provider else None
+def update_provider_url(base_url: str):
+    """更新默认提供商的 Base URL"""
+    execute_query(
+        'UPDATE provider SET url = %s WHERE is_default = 1',
+        (base_url,)
+    )
 
 
-def get_default_provider() -> Optional[dict]:
-    with get_db() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM api_providers ORDER BY id ASC LIMIT 1")
-        return cursor.fetchone()
+def get_all_providers():
+    """获取所有提供商"""
+    providers = execute_query(
+        'SELECT id, name, url, type FROM provider ORDER BY id',
+        fetch_all=True
+    )
+    return providers or []
 
 
-def create_provider(name: str, base_url: str, api_key: str, is_default: bool = False,
-                    is_active: bool = True, description: str = '') -> dict:
-    with get_db() as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            "INSERT INTO api_providers (name, url, `key`, description) VALUES (%s, %s, %s, %s)",
-            (name, base_url, api_key, description)
-        )
-        conn.commit()
-        provider_id = cursor.lastrowid
-    return get_provider_by_id(provider_id)
+def get_provider_models(provider_id: int):
+    """获取指定提供商的模型"""
+    models = execute_query(
+        'SELECT id, rfid, name, description, type, provider FROM api_models WHERE rfid = %s ORDER BY id',
+        (provider_id,),
+        fetch_all=True
+    )
+    return models or []
 
 
-def get_all_models(provider_id: int | None = None) -> list[dict]:
-    with get_db() as conn:
-        cursor = conn.cursor()
-        if provider_id:
-            cursor.execute("SELECT * FROM api_models WHERE rfid = %s ORDER BY id DESC", (provider_id,))
-        else:
-            cursor.execute("SELECT * FROM api_models ORDER BY id DESC")
-        return cursor.fetchall()
+def get_all_models(provider_id: int = None):
+    """获取模型列表"""
+    if provider_id:
+        query = 'SELECT id, rfid, name, description, type, provider FROM api_models WHERE rfid = %s'
+        params = (provider_id,)
+    else:
+        query = 'SELECT id, rfid, name, description, type, provider FROM api_models'
+        params = None
+
+    models = execute_query(query, params, fetch_all=True) or []
+    return models
 
 
-def get_model_by_id(model_id: int) -> Optional[dict]:
-    with get_db() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM api_models WHERE id = %s", (model_id,))
-        return cursor.fetchone()
+def get_default_provider_id():
+    """获取默认提供商ID"""
+    provider = execute_query(
+        'SELECT id FROM provider WHERE is_default = 1 LIMIT 1',
+        fetch_one=True
+    )
+    return provider
 
 
-def get_model_by_name(name: str, provider_id: int | None = None) -> Optional[dict]:
-    with get_db() as conn:
-        cursor = conn.cursor()
-        if provider_id:
-            cursor.execute(
-                "SELECT * FROM api_models WHERE name = %s AND rfid = %s LIMIT 1",
-                (name, provider_id)
-            )
-        else:
-            cursor.execute("SELECT * FROM api_models WHERE name = %s LIMIT 1", (name,))
-        return cursor.fetchone()
+def create_model(provider_id: int, name: str, description: str, model_type: str, provider: str):
+    """新增模型"""
+    model_id = execute_query(
+        '''INSERT INTO api_models (rfid, name, description, type, provider, created_at)
+           VALUES (%s, %s, %s, %s, %s, NOW())''',
+        (provider_id, name, description, model_type, provider)
+    )
+    return model_id
 
 
-def get_model_by_model_id(model_id: str, provider_id: int) -> Optional[dict]:
-    with get_db() as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT * FROM api_models WHERE name = %s AND rfid = %s LIMIT 1",
-            (model_id, provider_id)
-        )
-        return cursor.fetchone()
+def delete_model(model_id: int):
+    """删除模型"""
+    result = execute_query(
+        'DELETE FROM api_models WHERE id = %s',
+        (model_id,)
+    )
+    return result
 
 
-def create_model(provider_id: int, model_id: str, name: str, description: str = None,
-                 model_type: str = 'image', is_active: bool = True, sort_order: int = 0) -> None:
-    with get_db() as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            "INSERT INTO api_models (rfid, name, description, type) VALUES (%s, %s, %s, %s)",
-            (provider_id, model_id, description, model_type)
-        )
-        conn.commit()
-
+def get_provider_by_id(provider_id: int):
+    """根据 provider ID 获取配置（不解密）"""
+    provider = execute_query(
+        'SELECT * FROM api_providers WHERE id = %s LIMIT 1',
+        (provider_id,),
+        fetch_one=True
+    )
+    return provider

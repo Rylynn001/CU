@@ -8,8 +8,8 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from api.auth import get_current_user
-from database import execute_query, get_db
 from config import settings
+from repositories import asset_repo
 
 router = APIRouter()
 
@@ -126,38 +126,11 @@ async def get_user_assets(
     """获取用户资产列表"""
     user_id = current_user['user_id']
     page_size = 30
-    offset = (page - 1) * page_size
 
-    # 构建查询
-    conditions = ['rfid = %s']
-    params = [user_id]
+    # 转换favorite为bool
+    favorite_bool = (favorite == '1')
 
-    if asset_type:
-        conditions.append('asset_type = %s')
-        params.append(asset_type)
-
-    if tag is not None:
-        conditions.append('tag = %s')
-        params.append(tag)
-
-    if favorite == '1':
-        conditions.append('tag > 0')
-
-    where_clause = ' AND '.join(conditions)
-
-    # 查询总数
-    total = execute_query(
-        f'SELECT COUNT(*) as cnt FROM assets WHERE {where_clause}',
-        tuple(params),
-        fetch_one=True
-    )['cnt']
-
-    # 查询数据
-    assets = execute_query(
-        f'SELECT * FROM assets WHERE {where_clause} ORDER BY created_at DESC LIMIT %s OFFSET %s',
-        tuple(params + [page_size, offset]),
-        fetch_all=True
-    ) or []
+    assets, total = asset_repo.get_user_assets(user_id, tag, favorite_bool, page, page_size)
 
     return {'assets': assets, 'total': total, 'page': page, 'page_size': page_size}
 
@@ -174,10 +147,7 @@ async def set_asset_favorite(
     if tag not in (0, 1, 2, 3, 4):
         raise HTTPException(status_code=400, detail='tag 必须是 0-4')
 
-    result = execute_query(
-        'UPDATE assets SET tag = %s WHERE id = %s AND rfid = %s',
-        (tag, asset_id, user_id)
-    )
+    result = asset_repo.update_asset_tag(asset_id, user_id, tag)
 
     if result == 0:
         raise HTTPException(status_code=404, detail='资产不存在或无权限')
@@ -219,10 +189,7 @@ async def upload_file(
         f.write(file_bytes)
 
     # 保存到数据库
-    asset_id = execute_query(
-        'INSERT INTO assets (location, rfid, asset_type, created_at) VALUES (%s, %s, %s, NOW())',
-        (str(file_path), user_id, asset_type)
-    )
+    asset_id = asset_repo.create_asset(str(file_path), user_id, asset_type)
 
     return {'id': asset_id, 'location': str(file_path), 'asset_type': asset_type}
 
@@ -255,17 +222,7 @@ class AssetByIdsRequest(BaseModel):
 @router.post("/assets/by-ids")
 async def get_assets_by_ids(request: AssetByIdsRequest):
     """批量获取资产"""
-    ids = request.ids
-    if not ids:
-        return {'assets': []}
-
-    placeholders = ','.join(['%s'] * len(ids))
-    assets = execute_query(
-        f'SELECT * FROM assets WHERE id IN ({placeholders})',
-        tuple(ids),
-        fetch_all=True
-    ) or []
-
+    assets = asset_repo.get_assets_by_ids(request.ids)
     return {'assets': assets}
 
 
@@ -278,11 +235,7 @@ async def extract_frame(
     """从视频提取帧"""
     user_id = current_user['user_id']
 
-    asset = execute_query(
-        'SELECT * FROM assets WHERE id = %s',
-        (asset_id,),
-        fetch_one=True
-    )
+    asset = asset_repo.get_asset_by_id(asset_id)
 
     if not asset:
         raise HTTPException(status_code=404, detail='资产不存在')
@@ -312,9 +265,6 @@ async def extract_frame(
     except subprocess.CalledProcessError as e:
         raise HTTPException(status_code=500, detail='ffmpeg 抽帧失败')
 
-    new_id = execute_query(
-        'INSERT INTO assets (location, rfid, asset_type, created_at) VALUES (%s, %s, %s, NOW())',
-        (str(out_path), user_id, 'picture')
-    )
+    new_id = asset_repo.create_asset(str(out_path), user_id, 'picture')
 
     return {'ok': True, 'asset_id': new_id, 'filename': out_filename}

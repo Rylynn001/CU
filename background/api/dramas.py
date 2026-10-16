@@ -9,9 +9,9 @@ from fastapi import APIRouter, HTTPException, UploadFile, File, Depends
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from database import execute_query
 from config import settings
 from api.auth import get_current_user
+from repositories import drama_repo
 
 router = APIRouter()
 
@@ -41,32 +41,15 @@ class StoryboardCreate(BaseModel):
 @router.get("/dramas")
 async def list_dramas():
     """获取短剧列表"""
-    dramas = execute_query(
-        '''SELECT d.*,
-              (SELECT COUNT(*) FROM episodes e WHERE e.drama_id=d.id AND e.deleted_at IS NULL) AS episode_count,
-              (SELECT COUNT(*) FROM characters ch WHERE ch.drama_id=d.id AND ch.deleted_at IS NULL) AS character_count,
-              (SELECT COUNT(*) FROM scenes s WHERE s.drama_id=d.id AND s.deleted_at IS NULL) AS scene_count
-           FROM dramas d
-           WHERE d.deleted_at IS NULL
-           ORDER BY d.updated_at DESC''',
-        fetch_all=True
-    ) or []
+    dramas = drama_repo.get_all_dramas()
     return {'items': dramas}
 
 
 @router.post("/dramas")
 async def create_drama(req: DramaCreate):
     """创建短剧"""
-    drama_id = execute_query(
-        '''INSERT INTO dramas (title, description, genre, style, total_episodes, status, created_at, updated_at)
-           VALUES (%s, %s, %s, %s, %s, 'draft', NOW(), NOW())''',
-        (req.title, req.description, req.genre, req.style, req.total_episodes)
-    )
-
-    drama = execute_query(
-        'SELECT * FROM dramas WHERE id = %s',
-        (drama_id,),
-        fetch_one=True
+    drama = drama_repo.create_drama(
+        req.title, req.description, req.genre, req.style, req.total_episodes
     )
     return drama
 
@@ -74,41 +57,15 @@ async def create_drama(req: DramaCreate):
 @router.get("/dramas/{drama_id}")
 async def get_drama(drama_id: int):
     """获取短剧详情"""
-    drama = execute_query(
-        'SELECT * FROM dramas WHERE id = %s AND deleted_at IS NULL',
-        (drama_id,),
-        fetch_one=True
-    )
+    drama = drama_repo.get_drama_by_id(drama_id)
 
     if not drama:
         raise HTTPException(status_code=404, detail='剧集不存在')
 
-    # 获取集数
-    episodes = execute_query(
-        '''SELECT id, episode_number, title, status, script_content IS NOT NULL AS has_script
-           FROM episodes WHERE drama_id = %s AND deleted_at IS NULL
-           ORDER BY episode_number''',
-        (drama_id,),
-        fetch_all=True
-    ) or []
-
-    # 获取角色
-    characters = execute_query(
-        'SELECT id, name, role FROM characters WHERE drama_id = %s AND deleted_at IS NULL',
-        (drama_id,),
-        fetch_all=True
-    ) or []
-
-    # 获取场景
-    scenes = execute_query(
-        'SELECT id, location, time FROM scenes WHERE drama_id = %s AND deleted_at IS NULL',
-        (drama_id,),
-        fetch_all=True
-    ) or []
-
-    drama['episodes'] = episodes
-    drama['characters'] = characters
-    drama['scenes'] = scenes
+    # 获取集数、角色、场景
+    drama['episodes'] = drama_repo.get_drama_episodes(drama_id)
+    drama['characters'] = drama_repo.get_drama_characters(drama_id)
+    drama['scenes'] = drama_repo.get_drama_scenes(drama_id)
 
     return drama
 
@@ -122,22 +79,14 @@ async def update_drama(drama_id: int, data: dict):
     if not updates:
         return {'ok': True}
 
-    sets = ', '.join(f'{k} = %s' for k in updates)
-    execute_query(
-        f'UPDATE dramas SET {sets}, updated_at = NOW() WHERE id = %s AND deleted_at IS NULL',
-        (*updates.values(), drama_id)
-    )
-
+    drama_repo.update_drama(drama_id, updates)
     return {'ok': True}
 
 
 @router.delete("/dramas/{drama_id}")
 async def delete_drama(drama_id: int):
     """删除短剧（软删除）"""
-    result = execute_query(
-        'UPDATE dramas SET deleted_at = NOW() WHERE id = %s AND deleted_at IS NULL',
-        (drama_id,)
-    )
+    result = drama_repo.delete_drama(drama_id)
 
     if not result:
         raise HTTPException(status_code=404, detail='剧集不存在')
@@ -150,16 +99,8 @@ async def delete_drama(drama_id: int):
 @router.post("/episodes")
 async def create_episode(req: EpisodeCreate):
     """创建集"""
-    episode_id = execute_query(
-        '''INSERT INTO episodes (drama_id, episode_number, title, content, status, created_at, updated_at)
-           VALUES (%s, %s, %s, %s, 'draft', NOW(), NOW())''',
-        (req.drama_id, req.episode_number, req.title, req.content)
-    )
-
-    episode = execute_query(
-        'SELECT * FROM episodes WHERE id = %s',
-        (episode_id,),
-        fetch_one=True
+    episode = drama_repo.create_episode(
+        req.drama_id, req.episode_number, req.title, req.content
     )
     return episode
 
@@ -167,11 +108,7 @@ async def create_episode(req: EpisodeCreate):
 @router.get("/episodes/{episode_id}")
 async def get_episode(episode_id: int):
     """获取集详情"""
-    episode = execute_query(
-        'SELECT * FROM episodes WHERE id = %s AND deleted_at IS NULL',
-        (episode_id,),
-        fetch_one=True
-    )
+    episode = drama_repo.get_episode_by_id(episode_id)
 
     if not episode:
         raise HTTPException(status_code=404, detail='集不存在')
@@ -188,22 +125,14 @@ async def update_episode(episode_id: int, data: dict):
     if not updates:
         return {'ok': True}
 
-    sets = ', '.join(f'{k} = %s' for k in updates)
-    execute_query(
-        f'UPDATE episodes SET {sets}, updated_at = NOW() WHERE id = %s AND deleted_at IS NULL',
-        (*updates.values(), episode_id)
-    )
-
+    drama_repo.update_episode(episode_id, updates)
     return {'ok': True}
 
 
 @router.delete("/episodes/{episode_id}")
 async def delete_episode(episode_id: int):
     """删除集（软删除）"""
-    result = execute_query(
-        'UPDATE episodes SET deleted_at = NOW() WHERE id = %s AND deleted_at IS NULL',
-        (episode_id,)
-    )
+    result = drama_repo.delete_episode(episode_id)
 
     if not result:
         raise HTTPException(status_code=404, detail='集不存在')
@@ -214,11 +143,7 @@ async def delete_episode(episode_id: int):
 @router.get("/dramas/{drama_id}/episodes/{episode_number}")
 async def get_episode_by_number(drama_id: int, episode_number: int):
     """根据集数获取集"""
-    episode = execute_query(
-        'SELECT * FROM episodes WHERE drama_id = %s AND episode_number = %s AND deleted_at IS NULL',
-        (drama_id, episode_number),
-        fetch_one=True
-    )
+    episode = drama_repo.get_episode_by_number(drama_id, episode_number)
 
     if not episode:
         raise HTTPException(status_code=404, detail='集不存在')
@@ -229,38 +154,14 @@ async def get_episode_by_number(drama_id: int, episode_number: int):
 @router.get("/episodes/{episode_id}/characters")
 async def get_episode_characters(episode_id: int):
     """获取集的角色列表"""
-    characters = execute_query(
-        '''SELECT ch.*,
-             a.location AS image_url,
-             av.location AS voice_sample_url,
-             t.name AS timbre_name, t.voice_id AS timbre_voice_id
-           FROM characters ch
-           JOIN episode_characters ec ON ec.character_id = ch.id
-           LEFT JOIN assets a ON a.id = ch.asset_id
-           LEFT JOIN ai_voices av ON av.id = ch.voice_sample_id
-           LEFT JOIN timbres t ON t.id = ch.timbre_id
-           WHERE ec.episode_id = %s AND ch.deleted_at IS NULL''',
-        (episode_id,),
-        fetch_all=True
-    ) or []
-
+    characters = drama_repo.get_episode_characters(episode_id)
     return {'items': characters}
 
 
 @router.get("/episodes/{episode_id}/scenes")
 async def get_episode_scenes(episode_id: int):
     """获取集的场景列表"""
-    scenes = execute_query(
-        '''SELECT s.*,
-             a.location AS image_url
-           FROM scenes s
-           JOIN episode_scenes es ON es.scene_id = s.id
-           LEFT JOIN assets a ON a.id = s.asset_id
-           WHERE es.episode_id = %s AND s.deleted_at IS NULL''',
-        (episode_id,),
-        fetch_all=True
-    ) or []
-
+    scenes = drama_repo.get_episode_scenes(episode_id)
     return {'items': scenes}
 
 
@@ -269,41 +170,14 @@ async def get_episode_scenes(episode_id: int):
 @router.get("/episodes/{episode_id}/storyboards")
 async def list_storyboards(episode_id: int):
     """获取分镜列表"""
-    items = execute_query(
-        '''SELECT s.*,
-             IFNULL(GROUP_CONCAT(sc.character_id ORDER BY sc.character_id), '') AS character_ids,
-             fa.location AS first_frame_image,
-             la.location AS last_frame_image,
-             av.location AS tts_audio_url
-           FROM storyboards s
-           LEFT JOIN storyboard_characters sc ON sc.storyboard_id = s.id
-           LEFT JOIN assets fa ON fa.id = s.first_asset_id
-           LEFT JOIN assets la ON la.id = s.last_asset_id
-           LEFT JOIN ai_voices av ON av.id = s.tts_audio_id
-           WHERE s.episode_id = %s AND s.deleted_at IS NULL
-           GROUP BY s.id
-           ORDER BY s.storyboard_number ASC, s.id ASC''',
-        (episode_id,),
-        fetch_all=True
-    ) or []
-
+    items = drama_repo.get_episode_storyboards(episode_id)
     return {'items': items}
 
 
 @router.post("/episodes/{episode_id}/storyboards")
 async def create_storyboard(episode_id: int, req: StoryboardCreate):
     """创建分镜"""
-    storyboard_id = execute_query(
-        '''INSERT INTO storyboards (episode_id, sequence, dialogue, created_at, updated_at)
-           VALUES (%s, %s, %s, NOW(), NOW())''',
-        (episode_id, req.sequence, req.dialogue),
-        return_lastrowid=True
-    )
-
-    storyboard = execute_query(
-        'SELECT * FROM storyboards WHERE id = %s',
-        (storyboard_id,)
-    )
+    storyboard = drama_repo.create_storyboard(episode_id, req.sequence, req.dialogue)
     return storyboard
 
 
@@ -316,22 +190,14 @@ async def update_storyboard(storyboard_id: int, data: dict):
     if not updates:
         return {'ok': True}
 
-    sets = ', '.join(f'{k} = %s' for k in updates)
-    execute_query(
-        f'UPDATE storyboards SET {sets}, updated_at = NOW() WHERE id = %s AND deleted_at IS NULL',
-        (*updates.values(), storyboard_id)
-    )
-
+    drama_repo.update_storyboard(storyboard_id, updates)
     return {'ok': True}
 
 
 @router.delete("/storyboards/{storyboard_id}")
 async def delete_storyboard(storyboard_id: int):
     """删除分镜（软删除）"""
-    result = execute_query(
-        'UPDATE storyboards SET deleted_at = NOW() WHERE id = %s AND deleted_at IS NULL',
-        (storyboard_id,)
-    )
+    result = drama_repo.delete_storyboard(storyboard_id)
 
     if not result:
         raise HTTPException(status_code=404, detail='分镜不存在')
@@ -344,10 +210,7 @@ async def delete_storyboard(storyboard_id: int):
 @router.get("/timbres")
 async def list_timbres():
     """获取音色列表"""
-    items = execute_query(
-        'SELECT * FROM timbres WHERE deleted_at IS NULL ORDER BY id',
-        fetch_all=True
-    ) or []
+    items = drama_repo.get_all_timbres()
     return {'items': items}
 
 
@@ -360,12 +223,7 @@ async def update_character(character_id: int, data: dict):
     if not updates:
         return {'ok': True}
 
-    sets = ', '.join(f'{k} = %s' for k in updates)
-    execute_query(
-        f'UPDATE characters SET {sets}, updated_at = NOW() WHERE id = %s AND deleted_at IS NULL',
-        (*updates.values(), character_id)
-    )
-
+    drama_repo.update_character(character_id, updates)
     return {'ok': True}
 
 
@@ -376,11 +234,7 @@ async def update_character_image(character_id: int, data: dict):
     if not asset_id:
         raise HTTPException(status_code=400, detail='asset_id 为必填项')
 
-    execute_query(
-        'UPDATE characters SET asset_id = %s, updated_at = NOW() WHERE id = %s AND deleted_at IS NULL',
-        (asset_id, character_id)
-    )
-
+    drama_repo.update_character(character_id, {'asset_id': asset_id})
     return {'ok': True}
 
 
@@ -391,11 +245,7 @@ async def update_scene_image(scene_id: int, data: dict):
     if not asset_id:
         raise HTTPException(status_code=400, detail='asset_id 为必填项')
 
-    execute_query(
-        'UPDATE scenes SET asset_id = %s, updated_at = NOW() WHERE id = %s AND deleted_at IS NULL',
-        (asset_id, scene_id)
-    )
-
+    drama_repo.update_scene_image(scene_id, asset_id)
     return {'ok': True}
 
 
@@ -426,16 +276,8 @@ async def compose_storyboard(
     current_user: dict = Depends(get_current_user)
 ):
     """合成单个分镜：将视频和配音合并"""
-    import subprocess
-    import uuid
-    from pathlib import Path
-
     # 查询分镜
-    sb = execute_query(
-        'SELECT id, video_url, tts_audio_id FROM storyboards WHERE id = %s AND deleted_at IS NULL',
-        (storyboard_id,),
-        fetch_one=True
-    )
+    sb = drama_repo.get_storyboard_with_assets(storyboard_id)
     if not sb:
         raise HTTPException(status_code=404, detail='分镜不存在')
 
@@ -459,31 +301,18 @@ async def compose_storyboard(
 
     # 若无配音，直接返回原视频
     if not tts_audio_id:
-        execute_query(
-            'UPDATE storyboards SET composed_video_url = %s WHERE id = %s',
-            (video_url, storyboard_id)
-        )
+        drama_repo.update_storyboard_composed_video(storyboard_id, video_url)
         return {'composed_video_url': video_url}
 
     # 查询配音文件
-    audio = execute_query(
-        'SELECT location FROM ai_voices WHERE id = %s',
-        (tts_audio_id,),
-        fetch_one=True
-    )
-    if not audio:
-        execute_query(
-            'UPDATE storyboards SET composed_video_url = %s WHERE id = %s',
-            (video_url, storyboard_id)
-        )
+    audio_location = drama_repo.get_ai_voice_location(tts_audio_id)
+    if not audio_location:
+        drama_repo.update_storyboard_composed_video(storyboard_id, video_url)
         return {'composed_video_url': video_url}
 
-    audio_path = Path(audio['location'])
+    audio_path = Path(audio_location)
     if not audio_path.exists():
-        execute_query(
-            'UPDATE storyboards SET composed_video_url = %s WHERE id = %s',
-            (video_url, storyboard_id)
-        )
+        drama_repo.update_storyboard_composed_video(storyboard_id, video_url)
         return {'composed_video_url': video_url}
 
     # 使用 ffmpeg 混流
@@ -505,10 +334,7 @@ async def compose_storyboard(
         raise HTTPException(status_code=500, detail='ffmpeg 合成失败')
 
     composed_url = f'/api/api-proxy/output/{out_filename}'
-    execute_query(
-        'UPDATE storyboards SET composed_video_url = %s WHERE id = %s',
-        (composed_url, storyboard_id)
-    )
+    drama_repo.update_storyboard_composed_video(storyboard_id, composed_url)
 
     return {'composed_video_url': composed_url}
 
@@ -519,26 +345,13 @@ async def merge_episode(
     current_user: dict = Depends(get_current_user)
 ):
     """将集内所有已合成镜头按顺序拼接为完整视频"""
-    import subprocess
-    import uuid
-    import tempfile
-    from pathlib import Path
-
     # 查询剧集
-    ep = execute_query(
-        'SELECT id FROM episodes WHERE id = %s AND deleted_at IS NULL',
-        (episode_id,),
-        fetch_one=True
-    )
+    ep = drama_repo.get_episode_by_id(episode_id)
     if not ep:
         raise HTTPException(status_code=404, detail='集不存在')
 
     # 查询所有已合成的分镜
-    sbs = execute_query(
-        'SELECT id, composed_video_url FROM storyboards WHERE episode_id = %s AND deleted_at IS NULL AND composed_video_url IS NOT NULL ORDER BY id',
-        (episode_id,),
-        fetch_all=True
-    ) or []
+    sbs = drama_repo.get_episode_composed_storyboards(episode_id)
 
     if not sbs:
         raise HTTPException(status_code=400, detail='没有已合成的镜头')
@@ -591,10 +404,7 @@ async def merge_episode(
         raise HTTPException(status_code=500, detail='ffmpeg 拼接失败')
 
     merged_url = f'/api/api-proxy/output/{out_filename}'
-    execute_query(
-        'UPDATE episodes SET video_url = %s WHERE id = %s',
-        (merged_url, episode_id)
-    )
+    drama_repo.update_episode_video_url(episode_id, merged_url)
 
     return {'merged_video_url': merged_url}
 
@@ -628,14 +438,8 @@ class VoiceSampleRequest(BaseModel):
 @router.post("/characters/{character_id}/generate-voice-sample")
 async def generate_voice_sample(character_id: int, req: VoiceSampleRequest):
     """为角色生成试听样本，写入 ai_voices 并更新 characters.voice_sample_id"""
-    import httpx
-
     # 查询角色信息
-    character = execute_query(
-        'SELECT id, name, timbre_id FROM characters WHERE id = %s AND deleted_at IS NULL',
-        (character_id,),
-        fetch_one=True
-    )
+    character = drama_repo.get_character_by_id(character_id)
     if not character:
         raise HTTPException(status_code=404, detail='角色不存在')
 
@@ -644,11 +448,7 @@ async def generate_voice_sample(character_id: int, req: VoiceSampleRequest):
         raise HTTPException(status_code=400, detail='角色未分配音色')
 
     # 查询音色配置
-    timbre = execute_query(
-        'SELECT id, voice_id FROM timbres WHERE id = %s',
-        (timbre_id,),
-        fetch_one=True
-    )
+    timbre = drama_repo.get_timbre_by_id(timbre_id)
     if not timbre or not timbre.get('voice_id'):
         raise HTTPException(status_code=400, detail='音色配置无效')
 
@@ -665,17 +465,10 @@ async def generate_voice_sample(character_id: int, req: VoiceSampleRequest):
     )
 
     # 更新角色的 voice_sample_id
-    execute_query(
-        'UPDATE characters SET voice_sample_id = %s WHERE id = %s',
-        (voice_id, character_id)
-    )
+    drama_repo.update_character_voice_sample(character_id, voice_id)
 
     # 返回生成的语音
-    voice = execute_query(
-        'SELECT id, location FROM ai_voices WHERE id = %s',
-        (voice_id,),
-        fetch_one=True
-    )
+    voice = drama_repo.get_ai_voice_by_id(voice_id)
 
     return {'ok': True, 'id': voice_id, 'location': voice['location']}
 
@@ -685,11 +478,7 @@ async def generate_storyboard_tts(storyboard_id: int, req: TTSRequest):
     """为分镜台词生成配音，写入 ai_voices 并更新 storyboards.tts_audio_id"""
 
     # 查询分镜信息
-    sb = execute_query(
-        'SELECT id, episode_id, dialogue FROM storyboards WHERE id = %s',
-        (storyboard_id,),
-        fetch_one=True
-    )
+    sb = drama_repo.get_storyboard_by_id(storyboard_id)
     if not sb:
         raise HTTPException(status_code=404, detail='分镜不存在')
 
@@ -712,15 +501,7 @@ async def generate_storyboard_tts(storyboard_id: int, req: TTSRequest):
     speaker = speaker.strip()
 
     # 查询角色的音色配置
-    char = execute_query(
-        '''SELECT c.id, c.name, t.voice_id as voice_style
-           FROM characters c
-           LEFT JOIN timbres t ON c.timbre_id = t.id
-           WHERE c.episode_id = %s AND c.name = %s AND c.deleted_at IS NULL
-           LIMIT 1''',
-        (sb['episode_id'], speaker),
-        fetch_one=True
-    )
+    char = drama_repo.get_character_by_name(sb['episode_id'], speaker)
 
     if not char or not char.get('voice_style'):
         raise HTTPException(status_code=400, detail=f'找不到角色"{speaker}"的音色，请先分配音色')
@@ -735,17 +516,10 @@ async def generate_storyboard_tts(storyboard_id: int, req: TTSRequest):
     )
 
     # 更新分镜的 tts_audio_id
-    execute_query(
-        'UPDATE storyboards SET tts_audio_id = %s WHERE id = %s',
-        (voice_id, storyboard_id)
-    )
+    drama_repo.update_storyboard_tts_audio(storyboard_id, voice_id)
 
     # 返回生成的语音
-    voice = execute_query(
-        'SELECT id, location FROM ai_voices WHERE id = %s',
-        (voice_id,),
-        fetch_one=True
-    )
+    voice = drama_repo.get_ai_voice_by_id(voice_id)
 
     return {'ok': True, 'id': voice_id, 'location': voice['location']}
 
@@ -809,10 +583,8 @@ async def _call_tts(voice_style: str, name: str, text: str, language: str, chara
     file_path.write_bytes(audio_bytes)
 
     # 写入数据库
-    voice_id = execute_query(
-        '''INSERT INTO ai_voices (location, name, voice_style, language, character_id, created_at)
-           VALUES (%s, %s, %s, %s, %s, NOW())''',
-        (str(file_path), name, voice_style, language, character_id)
+    voice_id = drama_repo.create_ai_voice(
+        str(file_path), name, voice_style, language, character_id
     )
 
     return voice_id

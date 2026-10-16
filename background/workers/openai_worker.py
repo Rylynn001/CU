@@ -47,6 +47,21 @@ def process(task: dict) -> None:
         redis_client.setex(f"task:{task_id}:status", 3600, 'processing')
         logger.info(f'[{task_id}] 正在处理 OpenAI 任务')
 
+        # 更新 history 表状态为 processing
+        history_id = task.get('history_id')
+        if history_id:
+            history_repo.update_history(
+                history_id=history_id,
+                output_asset_ids=[],
+                status='processing',
+            )
+
+        # 日志：记录接收到的任务参数（api_key 脱敏）
+        api_key_masked = task['api_key'][:8] + '***' if len(task.get('api_key', '')) > 8 else '(empty or too short)'
+        logger.info(f'[{task_id}] Worker 收到任务: model={task.get("model")}, '
+                    f'provider={task.get("provider")}, api_key={api_key_masked}, '
+                    f'base_url={task.get("base_url")}, prompt={task.get("prompt", "")[:50]}...')
+
         from openai import OpenAI
 
         client = OpenAI(api_key=task['api_key'], base_url=task['base_url'])
@@ -68,6 +83,7 @@ def process(task: dict) -> None:
         for attempt in range(3):
             try:
                 if image_b64_list:
+                    logger.info(f'[{task_id}] 调用 OpenAI images.edit，参考图数量={len(image_b64_list)}')
                     image_files = []
                     for idx, b64_str in enumerate(image_b64_list):
                         img_bytes = base64.b64decode(b64_str)
@@ -87,6 +103,7 @@ def process(task: dict) -> None:
                         n=n,
                     )
                 else:
+                    logger.info(f'[{task_id}] 调用 OpenAI images.generate，model={task["model"]}, size={size}, quality={quality}, n={n}')
                     response = client.images.generate(
                         model=task['model'],
                         prompt=task['prompt'],
@@ -94,6 +111,7 @@ def process(task: dict) -> None:
                         quality=quality,
                         n=n,
                     )
+                logger.info(f'[{task_id}] OpenAI API 调用成功')
                 break
             except Exception as e:
                 logger.warning(f'[{task_id}] 第 {attempt+1} 次尝试失败: {e}')

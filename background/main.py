@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from config import settings
+from core import setup_exception_handlers
 from api import auth, assets, providers, history, projects, tasks, node_boards, dramas, generation, common
 from api import agent, gecko  # 暂时注释,测试循环导入问题
 
@@ -52,6 +53,9 @@ app = FastAPI(
     version="2.0.0",
     lifespan=lifespan
 )
+
+# 注册全局异常处理器
+setup_exception_handlers(app)
 
 # CORS 中间件
 app.add_middleware(
