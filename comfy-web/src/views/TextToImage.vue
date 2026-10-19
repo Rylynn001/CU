@@ -147,6 +147,9 @@ const { resumeTaskPolling } = useTaskPolling<GenerationRecord>(
   saveRecords,
 )
 
+// 本地生成状态（用于 UI 显示）
+const generating = ref(false)
+
 // 对图片生成任务启动轮询，回调中将结果写入记录
 function pollImage(record: GenerationRecord, userId?: number) {
   return resumeTaskPolling(record, (rec, result) => {
@@ -523,44 +526,9 @@ async function handleGenerate() {
     return
   }
 
-  // 本地 ComfyUI 模式
-  if (!form.value.ckpt_name) { errorMsg.value = '请先选择模型'; return }
-  const record: GenerationRecord = {
-    id: generateUUID(), createdAt: Date.now(),
-    prompt: form.value.positive_prompt, inputPreviews, modelName,
-    mode: 'local', status: 'generating', progress: 0, images: [],
-  }
-  records.value.unshift(record)
-  saveRecords()
-
-  try {
-    if (isImg2Img.value) {
-      const firstImg = inputImages.value[0]
-      if (!firstImg) {
-        record.status = 'error'; record.errorMsg = '请先上传或选择参考图片'; saveRecords(); return
-      }
-      if (firstImg.file) {
-        // 本地文件：先上传到 ComfyUI，获取服务器端文件名
-        form.value.input_image = await uploadImage(firstImg.file)
-      } else if (firstImg.assetLocation) {
-        // 资产库文件：直接使用资产路径
-        form.value.input_image = firstImg.assetLocation
-      } else {
-        record.status = 'error'; record.errorMsg = '请先上传或选择参考图片'; saveRecords(); return
-      }
-    } else {
-      form.value.input_image = undefined  // 文生图模式不需要输入图
-    }
-    // 提交任务到 ComfyUI，返回 prompt_id
-    const res = await submitPrompt(form.value, clientId)
-    // 开始通过 WebSocket 监听该任务的进度
-    startGeneration(res.prompt_id)
-  } catch {
-    errorMsg.value = '提交失败，请检查 ComfyUI 后端'
-    const rec = (records.value as GenerationRecord[]).find(r => r.mode === 'local' && r.status === 'generating')
-    if (rec) { rec.status = 'error'; rec.errorMsg = '提交失败'; saveRecords() }
-    generating.value = false
-  }
+  // 本地图片生成暂未实现
+  errorMsg.value = '本地图片生成暂未实现，请使用 API 调用'
+  generating.value = false
 }
 
 // 下载图片到本地
@@ -587,26 +555,27 @@ async function setImageFavorite(rec: GenerationRecord, index: number, tag: 0 | 1
 }
 
 // ── 本地模式 WebSocket 进度 ───────────────────────────────
+// 本地 ComfyUI 功能已禁用
 // 监听 WebSocket 推送的进度值，更新对应记录的进度条
-watch(progress, (val) => {
-  const rec = (records.value as GenerationRecord[]).find(r => r.mode === 'local' && r.status === 'generating')
-  if (rec) rec.progress = val
-})
+// watch(progress, (val) => {
+//   const rec = (records.value as GenerationRecord[]).find(r => r.mode === 'local' && r.status === 'generating')
+//   if (rec) rec.progress = val
+// })
 
 // 监听 WebSocket 推送的结果图片 URL，生成完成时更新记录状态
-watch(imageUrl, (url) => {
-  if (!url) return
-  const rec = (records.value as GenerationRecord[]).find(r => r.mode === 'local' && r.status === 'generating')
-  if (rec) { rec.images = [url]; rec.status = 'done'; saveRecords() }
-})
+// watch(imageUrl, (url) => {
+//   if (!url) return
+//   const rec = (records.value as GenerationRecord[]).find(r => r.mode === 'local' && r.status === 'generating')
+//   if (rec) { rec.images = [url]; rec.status = 'done'; saveRecords() }
+// })
 
 // 监听生成状态：如果 generating 变为 false 但记录还没有图片，说明超时或失败
-watch(generating, (val) => {
-  if (!val) {
-    const rec = (records.value as GenerationRecord[]).find(r => r.mode === 'local' && r.status === 'generating')
-    if (rec && rec.images.length === 0) { rec.status = 'error'; rec.errorMsg = '生成超时或失败'; saveRecords() }
-  }
-})
+// watch(generating, (val) => {
+//   if (!val) {
+//     const rec = (records.value as GenerationRecord[]).find(r => r.mode === 'local' && r.status === 'generating')
+//     if (rec && rec.images.length === 0) { rec.status = 'error'; rec.errorMsg = '生成超时或失败'; saveRecords() }
+//   }
+// })
 
 // 切换到图生图时自动将降噪强度设为 0.75（保留参考图特征），切回文生图时恢复 1（完全重绘）
 watch(isImg2Img, (val) => { form.value.denoise = val ? 0.75 : 1 })
@@ -889,32 +858,29 @@ onUnmounted(() => {
              @drop.prevent="isPanelDragOver = false; handleAssetDrop($event)">
           <p v-if="errorMsg" class="error-msg">{{ errorMsg }}</p>
 
-          <!-- model source toggle — 已隐藏本地模式 -->
-          <!-- <div class="row-item">
+          <!-- model source toggle -->
+          <div class="row-item">
             <span class="row-label">调用方式</span>
             <div class="source-toggle">
               <button :class="{ active: modelSource === 'local' }" @click="modelSource = 'local'">本地模型</button>
               <button :class="{ active: modelSource === 'api' }" @click="modelSource = 'api'">API 调用</button>
             </div>
-          </div> -->
+          </div>
 
-          <!-- local model select -->
-          <!-- <div v-if="modelSource === 'local'" class="row-item">
-            <span class="row-label">模型</span>
-            <ElSelect v-model="form.ckpt_name" placeholder="选择模型" filterable class="row-select">
-              <ElOption v-for="m in models" :key="m" :label="m" :value="m" />
-            </ElSelect>
-          </div> -->
-          <div v-if="apiModels.length > 0" class="row-item">
+          <!-- API model select -->
+          <div v-if="modelSource === 'api' && apiModels.length > 0" class="row-item">
             <span class="row-label">API 模型</span>
             <ElSelect v-model="apiModel" placeholder="选择模型" class="row-select">
               <ElOption v-for="m in apiModels" :key="m.id" :label="m.description" :value="m.id" />
             </ElSelect>
           </div>
-          <div v-else class="api-tip">
+          <div v-else-if="modelSource === 'api'" class="api-tip">
             <span>请先在</span>
             <router-link to="/models" class="api-tip-link">模型管理</router-link>
             <span>中添加 API 模型</span>
+          </div>
+          <div v-else class="api-tip">
+            <span>本地图片生成暂未实现</span>
           </div>
 
           <div class="divider" />
