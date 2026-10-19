@@ -17,12 +17,12 @@ export default defineConfig({
           }
         },
       },
-      '/ws': {
-        // target: 'ws://127.0.0.1:8000',
-        target: 'ws://127.0.0.1:8188',
-        ws: true,
-        changeOrigin: true,
-      },
+      // '/ws': {
+      //   // target: 'ws://127.0.0.1:8000',
+      //   target: 'ws://127.0.0.1:8188',
+      //   ws: true,
+      //   changeOrigin: true,
+      // },
     },
   },
 })

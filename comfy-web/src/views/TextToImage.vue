@@ -21,9 +21,9 @@ import MediaViewer from '../components/MediaViewer.vue'
 import RecordContextMenu from '../components/RecordContextMenu.vue'
 import MentionTextarea from '../components/MentionTextarea.vue'
 // 本地 ComfyUI 接口：获取模型列表、采样器信息、提交任务、上传图片
-import { getModels, getKSamplerInfo, submitPrompt, uploadImage, type PromptParams } from '../api/comfyui'
+// import { getModels, getKSamplerInfo, submitPrompt, uploadImage, type PromptParams } from '../api/comfyui'
 // WebSocket 连接：实时接收本地 ComfyUI 的生成进度和结果图片
-import { useComfyWebSocket } from '../composables/useComfyWebSocket'
+// import { useComfyWebSocket } from '../composables/useComfyWebSocket'
 // 后端 API 接口：获取 API 模型列表、重试历史任务、收藏资产
 import { getApiModels, retryHistory, favoriteAsset, type ApiModel } from '../api/apiService'
 // 历史记录管理：读写本地存储 + 从数据库加载历史
@@ -55,7 +55,7 @@ const router = useRouter()
 // imageUrl - 生成完成后的图片 URL
 // connect - 建立 WebSocket 连接
 // startGeneration - 开始监听某个任务的进度
-const { clientId, progress, generating, imageUrl, connect, startGeneration } = useComfyWebSocket()
+// const { clientId, progress, generating, imageUrl, connect, startGeneration } = useComfyWebSocket()
 
 // ── 图片预览 ──────────────────────────────────────────────
 // 控制全屏图片预览弹窗的显示/隐藏
@@ -171,7 +171,7 @@ const samplers = ref<string[]>([])
 // 本地 ComfyUI 支持的调度器列表
 const schedulers = ref<string[]>([])
 // 当前调用方式：local（本地 ComfyUI）或 api（后端 API）
-const modelSource = ref<'local' | 'api'>('local')
+const modelSource = ref<'local' | 'api'>('api')  // 默认使用 API 模式
 
 // ── 表单参数 ──────────────────────────────────────────────
 // 当前激活的标签页：文生图 或 图生图
@@ -702,19 +702,19 @@ function handleProjectManagerClose() {
 // ── 初始化 ────────────────────────────────────────────────
 onMounted(async () => {
   // 建立 WebSocket 连接，用于接收本地 ComfyUI 的实时进度
-  connect()
+  // connect()
 
-  try {
-    // 并行请求本地 ComfyUI 的模型列表和采样器信息
-    const [modelList, ksInfo] = await Promise.all([getModels(), getKSamplerInfo()])
-    models.value = modelList
-    samplers.value = ksInfo.samplers
-    schedulers.value = ksInfo.schedulers
-    if (modelList.length > 0) form.value.ckpt_name = modelList[0]  // 默认选第一个模型
-    // else errorMsg.value = '未找到任何 checkpoint 模型'
-  } catch {
-    errorMsg.value = '无法连接 ComfyUI 后端（默认 127.0.0.1:8188）'
-  }
+  // try {
+  //   // 并行请求本地 ComfyUI 的模型列表和采样器信息
+  //   const [modelList, ksInfo] = await Promise.all([getModels(), getKSamplerInfo()])
+  //   models.value = modelList
+  //   samplers.value = ksInfo.samplers
+  //   schedulers.value = ksInfo.schedulers
+  //   if (modelList.length > 0) form.value.ckpt_name = modelList[0]  // 默认选第一个模型
+  //   // else errorMsg.value = '未找到任何 checkpoint 模型'
+  // } catch {
+  //   errorMsg.value = '无法连接 ComfyUI 后端（默认 127.0.0.1:8188）'
+  // }
 
   try {
     // 获取后端 API 模型列表（type='image' 只返回图片模型）
@@ -889,23 +889,23 @@ onUnmounted(() => {
              @drop.prevent="isPanelDragOver = false; handleAssetDrop($event)">
           <p v-if="errorMsg" class="error-msg">{{ errorMsg }}</p>
 
-          <!-- model source toggle — 最顶部 -->
-          <div class="row-item">
+          <!-- model source toggle — 已隐藏本地模式 -->
+          <!-- <div class="row-item">
             <span class="row-label">调用方式</span>
             <div class="source-toggle">
               <button :class="{ active: modelSource === 'local' }" @click="modelSource = 'local'">本地模型</button>
               <button :class="{ active: modelSource === 'api' }" @click="modelSource = 'api'">API 调用</button>
             </div>
-          </div>
+          </div> -->
 
           <!-- local model select -->
-          <div v-if="modelSource === 'local'" class="row-item">
+          <!-- <div v-if="modelSource === 'local'" class="row-item">
             <span class="row-label">模型</span>
             <ElSelect v-model="form.ckpt_name" placeholder="选择模型" filterable class="row-select">
               <ElOption v-for="m in models" :key="m" :label="m" :value="m" />
             </ElSelect>
-          </div>
-          <div v-else-if="apiModels.length > 0" class="row-item">
+          </div> -->
+          <div v-if="apiModels.length > 0" class="row-item">
             <span class="row-label">API 模型</span>
             <ElSelect v-model="apiModel" placeholder="选择模型" class="row-select">
               <ElOption v-for="m in apiModels" :key="m.id" :label="m.description" :value="m.id" />
