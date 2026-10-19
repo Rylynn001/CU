@@ -9,6 +9,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
 from config import settings
 from database import execute_query
 from repositories import history_repo
+from core import parse_provider_error
 
 logger = logging.getLogger(__name__)
 
@@ -86,9 +87,16 @@ def process_txt2video(task: dict) -> None:
         logger.info(f'[{task_id}] Ark 文生视频已提交，等待轮询')
 
     except Exception as e:
-        logger.error(f'[{task_id}] 提交 Ark 文生视频失败: {e}')
+        provider_error = parse_provider_error(e, 'ark')
+
+        logger.error(
+            f'[{task_id}] 提交 Ark 文生视频失败: {provider_error.message}',
+            extra={'detail': provider_error.detail}
+        )
+
         history_id = task.get('history_id')
-        error_message = str(e)
+        error_message = provider_error.message
+
         try:
             if history_id:
                 history_repo.update_history(history_id=history_id, output_asset_ids=[], status='error', message=error_message)
@@ -217,9 +225,16 @@ def process_img2video(task: dict) -> None:
         logger.info(f'[{task_id}] Ark 图生视频已提交，等待轮询')
 
     except Exception as e:
-        logger.error(f'[{task_id}] 提交 Ark 图生视频失败: {e}')
+        provider_error = parse_provider_error(e, 'ark')
+
+        logger.error(
+            f'[{task_id}] 提交 Ark 图生视频失败: {provider_error.message}',
+            extra={'detail': provider_error.detail}
+        )
+
         history_id = task.get('history_id')
-        error_message = str(e)
+        error_message = provider_error.message
+
         try:
             if history_id:
                 history_repo.update_history(history_id=history_id, output_asset_ids=[], status='error', message=error_message)

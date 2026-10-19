@@ -10,6 +10,7 @@ from pydantic import BaseModel
 import redis
 
 from config import settings
+from core import parse_ark_response_error
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -176,15 +177,23 @@ async def _poll_ark_task(task_id: str, remote_id: str, api_key: str, base_url: s
 
         elif remote_status == "failed":
             error_info = result.get("error") if isinstance(result, dict) else None
-            error_msg = (error_info.get("message") if isinstance(error_info, dict) else None) or "Video generation failed"
-            logger.error(f'[轮询] task_id={task_id}, Ark 任务失败: {error_msg}, 完整响应: {result}')
+            error_code = (error_info.get("code") if isinstance(error_info, dict) else None) or ""
+            error_message = (error_info.get("message") if isinstance(error_info, dict) else None) or ""
+
+            # 转换为用户友好提示
+            friendly_error = parse_ark_response_error(error_code, error_message)
+
+            logger.error(
+                f'[轮询] task_id={task_id}, Ark 任务失败: {friendly_error}',
+                extra={'error_code': error_code, 'raw_message': error_message, 'full_response': result}
+            )
 
             # 更新历史记录
             from repositories.history_repo import update_history
             history_id_raw = redis_client.get(f"task:{task_id}:history_id")
             if history_id_raw:
                 history_id = int(history_id_raw)
-                update_history(history_id=history_id, output_asset_ids=[], status='error', message=error_msg)
+                update_history(history_id=history_id, output_asset_ids=[], status='error', message=friendly_error)
                 logger.info(f"[轮询] task_id={task_id}, 已更新 history_id={history_id} 为失败状态")
             else:
                 history_id = None
@@ -194,11 +203,11 @@ async def _poll_ark_task(task_id: str, remote_id: str, api_key: str, base_url: s
             redis_client.setex(
                 f"task:{task_id}:result",
                 3600,
-                json.dumps({'error': {'error_message': error_msg}, 'history_id': history_id})
+                json.dumps({'error': {'error_message': friendly_error}, 'history_id': history_id})
             )
 
             logger.info(f"[轮询] task_id={task_id}, 已标记为 failed")
-            return {'status': 'failed', 'error': {'error_message': error_msg}, 'history_id': history_id}
+            return {'status': 'failed', 'error': {'error_message': friendly_error}, 'history_id': history_id}
 
         else:
             logger.info(f"[轮询] task_id={task_id}, Ark 状态仍为 {remote_status}, 等待下次轮询")

@@ -107,49 +107,6 @@ function handlePageChange(page: number) {
   loadTasks(page)
 }
 
-// ── 任务目录展示 ────────────────────────────────────────────────────────
-const dirPath = ref('')
-const dirLoading = ref(false)
-
-async function handleRowClick(row: GeckoTask) {
-  dirLoading.value = true
-  dirPath.value = ''
-  try {
-    const res = await fetch('/api/api-proxy/gecko/task-directories', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        project_name: row.project_name,
-        task_id: row.task_id,
-        task_type: row.task_type,
-      }),
-    })
-    const data = await res.json()
-    if (!data.success) {
-      ElMessage.error(data.message || '获取任务目录失败')
-      return
-    }
-    dirPath.value = data.message || ''
-    if (!dirPath.value) {
-      ElMessage.warning('未找到对应目录')
-    }
-  } catch (e: any) {
-    ElMessage.error(e.message || '获取任务目录失败')
-  } finally {
-    dirLoading.value = false
-  }
-}
-
-async function copyDirPath() {
-  if (!dirPath.value) return
-  try {
-    await navigator.clipboard.writeText(dirPath.value)
-    ElMessage.success('已复制到剪贴板')
-  } catch (e: any) {
-    ElMessage.error('复制失败')
-  }
-}
-
 onMounted(() => {
   initAccount()
   loadTasks(1)
@@ -167,7 +124,7 @@ onMounted(() => {
 
     <div class="main-content">
       <div class="table-panel">
-        <el-table class="gecko-task-table" :data="tasks" v-loading="tasksLoading" style="width: 100%" highlight-current-row @row-click="handleRowClick">
+        <el-table class="gecko-task-table" :data="tasks" v-loading="tasksLoading" style="width: 100%" highlight-current-row>
           <el-table-column v-for="key in Object.keys(tasks[0] || {})" :key="key" :prop="key" :label="getTaskFieldLabel(key)" min-width="140" show-overflow-tooltip />
         </el-table>
 
@@ -182,16 +139,6 @@ onMounted(() => {
             @current-change="handlePageChange"
           />
         </div>
-      </div>
-
-      <div class="dir-panel">
-        <div class="dir-panel-title">任务目录</div>
-        <div v-if="dirLoading" class="dir-panel-loading">加载中...</div>
-        <template v-else-if="dirPath">
-          <div class="dir-path-text">{{ dirPath }}</div>
-          <button class="copy-btn" @click="copyDirPath">复制路径</button>
-        </template>
-        <div v-else class="dir-panel-empty">点击左侧任务查看目录</div>
       </div>
     </div>
 
@@ -271,51 +218,6 @@ onMounted(() => {
 .table-panel {
   flex: 1;
   min-width: 0;
-}
-
-.dir-panel {
-  width: 320px;
-  flex-shrink: 0;
-  padding: 16px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(9, 12, 18, 0.44);
-}
-
-.dir-panel-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.9);
-  margin-bottom: 12px;
-}
-
-.dir-panel-loading,
-.dir-panel-empty {
-  color: rgba(255, 255, 255, 0.3);
-  font-size: 13px;
-}
-
-.dir-path-text {
-  color: rgba(255, 255, 255, 0.8);
-  font-size: 13px;
-  line-height: 1.6;
-  word-break: break-all;
-  margin-bottom: 12px;
-}
-
-.copy-btn {
-  padding: 6px 16px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.13);
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.8);
-  font-size: 13px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-.copy-btn:hover {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(255, 255, 255, 0.24);
 }
 
 .gecko-task-table {

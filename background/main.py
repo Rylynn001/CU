@@ -10,11 +10,6 @@ from core import setup_exception_handlers
 from api import auth, assets, providers, history, projects, tasks, node_boards, dramas, generation, common
 from api import agent, gecko  # 暂时注释,测试循环导入问题
 
-# 配置日志
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
 logger = logging.getLogger(__name__)
 
 
@@ -41,8 +36,18 @@ def start_workers():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期管理"""
+    # 配置日志轮转（保留最近 3 次启动的日志）
+    from utils.log_rotator import setup_rotating_logger, configure_logging
+    log_file = setup_rotating_logger(log_dir="logs", max_files=3)
+    configure_logging(log_file, level=logging.INFO)
+
     logger.info("FastAPI 应用启动")
     start_workers()
+
+    # 启动 Gecko 定时任务
+    from api.gecko import start_scheduler
+    start_scheduler()
+
     yield
     logger.info("FastAPI 应用关闭")
 
@@ -96,7 +101,7 @@ if __name__ == '__main__':
         "main:app",
         host="0.0.0.0",
         port=8000,
-        reload=True
+        reload=False
     )
 
 

@@ -13,6 +13,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
 from config import settings
 from database import execute_query
 from repositories import history_repo
+from core import parse_provider_error
 
 logger = logging.getLogger(__name__)
 
@@ -180,11 +181,20 @@ def process(task: dict) -> None:
         logger.info(f'[{task_id}] 已完成，共 {len(images)} 张图片')
 
     except Exception as e:
-        logger.error(f'[{task_id}] 任务失败: {e}')
+        provider = task.get('provider', 'openai')
+        provider_error = parse_provider_error(e, provider)
+
+        logger.error(
+            f'[{task_id}] {provider} 任务失败: {provider_error.message}',
+            extra={'detail': provider_error.detail}
+        )
+
         type_ = 'img2img' if task.get('input_asset_ids') else 'txt2img'
         history_id = task.get('history_id')
+        error_message = provider_error.message
+
         if history_id:
-            history_repo.update_history(history_id=history_id, output_asset_ids=[], status='error', message=str(e))
+            history_repo.update_history(history_id=history_id, output_asset_ids=[], status='error', message=error_message)
         else:
             history_repo.save_history(
                 task_id=task_id,
@@ -196,7 +206,7 @@ def process(task: dict) -> None:
                 status='error',
                 type_=type_,
                 mode='api',
-                message=str(e),
+                message=error_message,
             )
         redis_client.setex(f"task:{task_id}:status", 3600, 'failed')
-        redis_client.setex(f"task:{task_id}:result", 3600, json.dumps({'error': {'error_message': str(e)}, 'history_id': history_id}))
+        redis_client.setex(f"task:{task_id}:result", 3600, json.dumps({'error': {'error_message': error_message}, 'history_id': history_id}))

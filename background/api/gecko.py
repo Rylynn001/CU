@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Request, UploadFile, File, Form
 from pydantic import BaseModel
 from typing import List, Optional
 import httpx
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -11,6 +12,9 @@ logger = logging.getLogger(__name__)
 # Gecko API 基础配置
 GECKO_BASE_URL = 'https://192.168.0.25'
 GECKO_TIMEOUT = 60.0
+
+# 定时任务调度器
+scheduler = AsyncIOScheduler()
 
 
 def get_client_ip(request: Request) -> str:
@@ -182,61 +186,6 @@ async def gecko_tasks(request: Request, req: GeckoTasksRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-class TaskDirectoriesRequest(BaseModel):
-    project_name: str
-    task_id: str
-    task_type: str
-
-
-@router.post("/gecko/task-directories")
-async def gecko_task_directories(req: TaskDirectoriesRequest):
-    """
-    获取任务目录结构
-
-    请求体:
-        {
-            "project_name": "项目名称",
-            "task_id": "任务ID",
-            "task_type": "任务类型"
-        }
-
-    返回:
-        {
-            "success": true,
-            "message": "目录信息"
-        }
-    """
-    logger.info(f'[gecko-task-directories] project_name={req.project_name}, task_id={req.task_id}, task_type={req.task_type}')
-
-    try:
-        # 注意：这个接口可能需要根据实际 Gecko API 调整
-        # 目前假设有一个获取任务目录的接口
-        async with httpx.AsyncClient(verify=False, timeout=GECKO_TIMEOUT) as client:
-            resp = await client.post(
-                f'{GECKO_BASE_URL}/api/python-v2/get_task_directories',
-                json={
-                    'project_name': req.project_name,
-                    'task_id': req.task_id,
-                    'task_type': req.task_type
-                }
-            )
-            resp.raise_for_status()
-            result = resp.json()
-
-        logger.info(f'[gecko-task-directories] 响应: {result}')
-        return result
-
-    except httpx.RequestError as e:
-        logger.error(f'[gecko-task-directories] 请求失败: {e}')
-        return {
-            'success': False,
-            'message': f'获取目录失败（{e}）'
-        }
-    except Exception as e:
-        logger.error(f'[gecko-task-directories] 异常: {e}', exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
-
-
 @router.post("/gecko/upload-media")
 async def gecko_upload_media(
     request: Request,
@@ -334,3 +283,31 @@ async def gecko_upload_media(
     except Exception as e:
         logger.error(f'[gecko-upload-media] 异常: {e}', exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ========== 定时任务：每天凌晨1点自动登录 ==========
+@router.post("/gecko/daily-login")
+async def daily_login():
+    """每天凌晨1点执行登录"""
+    try:
+        logger.info('[gecko定时任务] 开始执行每日登录')
+        async with httpx.AsyncClient(verify=False, timeout=10.0) as client:
+            resp = await client.post(
+                'https://192.168.0.25/api/login',
+                json={
+                    'username': 'ai_node_creation_platform',
+                    'password': '9yz4HpTyuBLwroW'
+                }
+            )
+            result = resp.json()
+            logger.info(f'[gecko定时任务] 登录响应: {result}')
+    except Exception as e:
+        logger.error(f'[gecko定时任务] 执行失败: {e}', exc_info=True)
+
+
+# 启动定时任务调度器
+def start_scheduler():
+    """启动定时任务"""
+    scheduler.add_job(daily_login, 'cron', hour=1, minute=0, id='gecko_daily_login')
+    scheduler.start()
+    logger.info('[gecko] 定时任务已启动：每天凌晨1点自动登录')
