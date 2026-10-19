@@ -95,7 +95,7 @@ def process_txt2video(task: dict) -> None:
         )
 
         history_id = task.get('history_id')
-        error_message = provider_error.message
+        error_message = f"{provider_error.message} | {provider_error.detail}"
 
         try:
             if history_id:
@@ -233,7 +233,7 @@ def process_img2video(task: dict) -> None:
         )
 
         history_id = task.get('history_id')
-        error_message = provider_error.message
+        error_message = f"{provider_error.message} | {provider_error.detail}"
 
         try:
             if history_id:

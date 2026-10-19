@@ -163,9 +163,14 @@ async def _poll_ark_task(task_id: str, remote_id: str, api_key: str, base_url: s
 
         elif remote_status == "failed":
             error_info = result.get("error") if isinstance(result, dict) else None
+            error_code = (error_info.get("code") if isinstance(error_info, dict) else None) or ""
             error_msg = (error_info.get("message") if isinstance(error_info, dict) else None) or "Video generation failed"
+
+            # 拼接错误码和错误消息
+            full_error = f"{error_msg} | {error_code}: {error_msg}" if error_code else error_msg
+
             logger.error(f'[{task_id}] Ark 任务失败: {error_msg}，完整响应: {result}')
-            _update_history_from_redis(task_id, [], status='error', message=error_msg)
+            _update_history_from_redis(task_id, [], status='error', message=full_error)
             task_queue.set_status(task_id, 'failed')
             task_queue.set_result(task_id, {'error': {'error_message': error_msg}})
             return web.json_response({'status': 'failed', 'error': {'error_message': error_msg}})

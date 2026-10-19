@@ -191,7 +191,7 @@ def process(task: dict) -> None:
 
         type_ = 'img2img' if task.get('input_asset_ids') else 'txt2img'
         history_id = task.get('history_id')
-        error_message = provider_error.message
+        error_message = f"{provider_error.message} | {provider_error.detail}"
 
         if history_id:
             history_repo.update_history(history_id=history_id, output_asset_ids=[], status='error', message=error_message)

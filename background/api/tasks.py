@@ -183,6 +183,10 @@ async def _poll_ark_task(task_id: str, remote_id: str, api_key: str, base_url: s
             # 转换为用户友好提示
             friendly_error = parse_ark_response_error(error_code, error_message)
 
+            # 拼接友好提示和原始错误
+            raw_error = f"{error_code}: {error_message}" if error_code and error_message else error_message or error_code or "未知错误"
+            full_error_message = f"{friendly_error} | {raw_error}"
+
             logger.error(
                 f'[轮询] task_id={task_id}, Ark 任务失败: {friendly_error}',
                 extra={'error_code': error_code, 'raw_message': error_message, 'full_response': result}
@@ -193,7 +197,7 @@ async def _poll_ark_task(task_id: str, remote_id: str, api_key: str, base_url: s
             history_id_raw = redis_client.get(f"task:{task_id}:history_id")
             if history_id_raw:
                 history_id = int(history_id_raw)
-                update_history(history_id=history_id, output_asset_ids=[], status='error', message=friendly_error)
+                update_history(history_id=history_id, output_asset_ids=[], status='error', message=full_error_message)
                 logger.info(f"[轮询] task_id={task_id}, 已更新 history_id={history_id} 为失败状态")
             else:
                 history_id = None
