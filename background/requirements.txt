@@ -18,6 +18,8 @@ pyjwt==2.9.0
 
 # Utilities
 python-dotenv==1.0.1
+apscheduler==3.10.4
+requests==2.32.3
 
 # AI APIs
 openai==2.32.0
