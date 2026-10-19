@@ -4,7 +4,7 @@ import logging
 import uuid
 import pathlib
 import asyncio
-import aiohttp
+import httpx
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 import redis
@@ -63,14 +63,14 @@ async def _download_video(task_id: str, video_url: str, stored_user_id: str | No
     last_error = None
     for attempt in range(1, max_retries + 1):
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(video_url, timeout=aiohttp.ClientTimeout(total=600)) as resp:
-                    if resp.status != 200:
-                        raise Exception(f'下载视频失败: HTTP {resp.status}')
-                    expected_size = resp.content_length
+            async with httpx.AsyncClient(timeout=600.0) as client:
+                async with client.stream('GET', video_url) as resp:
+                    if resp.status_code != 200:
+                        raise Exception(f'下载视频失败: HTTP {resp.status_code}')
+                    expected_size = int(resp.headers.get('content-length', 0)) or None
                     written = 0
                     with open(save_path, 'wb') as f:
-                        async for chunk in resp.content.iter_chunked(1 << 16):
+                        async for chunk in resp.aiter_bytes(1 << 16):
                             f.write(chunk)
                             written += len(chunk)
             # 校验下载完整性
