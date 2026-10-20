@@ -217,13 +217,15 @@ function showNotice(type: 'success' | 'error' | 'warning', message: string) {
 
 async function doExtract(timeSec: number) {
   if (!props.assetId) throw new Error('无法获取资产ID')
-  const userText = localStorage.getItem('user')
-  if (!userText) throw new Error('请先登录')
-  const user = JSON.parse(userText)
+  const token = localStorage.getItem('token')
+  if (!token) throw new Error('请先登录')
   const response = await fetch('/api/api-proxy/extract-frame', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ asset_id: props.assetId, time_sec: timeSec, user_id: user.id }),
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`
+    },
+    body: JSON.stringify({ asset_id: props.assetId, time_sec: timeSec }),
   })
   if (!response.ok) throw new Error('抽帧失败')
 }

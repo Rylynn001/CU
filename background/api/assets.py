@@ -17,6 +17,7 @@ router = APIRouter()
 # ── 文件服务 ──────────────────────────────────────────────────────────────
 
 @router.get('/output/{filename}')
+@router.head('/output/{filename}')
 async def serve_output_file(filename: str):
     """提供输出文件服务"""
     # 安全检查：防止路径遍历和路径分隔符
@@ -31,6 +32,7 @@ async def serve_output_file(filename: str):
 
 
 @router.get('/view')
+@router.head('/view')
 async def serve_view_file(filename: str, type: str = 'output'):
     """提供文件预览服务(兼容 ComfyUI 的 /view 接口)"""
     # 安全检查：防止路径遍历
@@ -226,14 +228,20 @@ async def get_assets_by_ids(request: AssetByIdsRequest):
     return {'assets': assets}
 
 
+class ExtractFrameRequest(BaseModel):
+    asset_id: int
+    time_sec: float
+
+
 @router.post("/extract-frame")
 async def extract_frame(
-    asset_id: int,
-    time_sec: float,
+    request: ExtractFrameRequest,
     current_user: dict = Depends(get_current_user)
 ):
     """从视频提取帧"""
     user_id = current_user['user_id']
+    asset_id = request.asset_id
+    time_sec = request.time_sec
 
     asset = asset_repo.get_asset_by_id(asset_id)
 
