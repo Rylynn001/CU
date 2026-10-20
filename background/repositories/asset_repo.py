@@ -11,11 +11,15 @@ def save_output_asset(location: str, user_id: int, asset_type: str) -> int:
     return asset_id
 
 
-def get_user_assets(user_id: int, tag: int | None, favorite: bool, page: int, page_size: int):
+def get_user_assets(user_id: int, asset_type: str | None, tag: int | None, favorite: bool, page: int, page_size: int):
     """获取用户资产列表"""
     offset = (page - 1) * page_size
     conditions = ['rfid = %s']
     params = [user_id]
+
+    if asset_type in ('picture', 'video'):
+        conditions.append('asset_type = %s')
+        params.append(asset_type)
 
     if tag is not None:
         conditions.append('tag = %s')

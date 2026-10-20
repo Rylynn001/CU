@@ -130,7 +130,7 @@ async def get_user_assets(
     # 转换favorite为bool
     favorite_bool = (favorite == '1')
 
-    assets, total = asset_repo.get_user_assets(user_id, tag, favorite_bool, page, page_size)
+    assets, total = asset_repo.get_user_assets(user_id, asset_type, tag, favorite_bool, page, page_size)
 
     return {'assets': assets, 'total': total, 'page': page, 'page_size': page_size}
 

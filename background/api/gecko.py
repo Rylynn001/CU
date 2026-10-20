@@ -222,28 +222,26 @@ async def gecko_upload_media(
         raise HTTPException(status_code=400, detail='没有文件')
 
     try:
-        # 构建 multipart/form-data
-        form_data = httpx.FormData()
-
-        # 添加普通字段（注意：eps_name 映射为 sequence_name, shot 映射为 shot_name）
-        form_data.add_field('project_name', project_name)
-        form_data.add_field('sequence_name', eps_name)  # Gecko API 要求的字段名
-        form_data.add_field('shot_name', shot)  # Gecko API 要求的字段名
-        form_data.add_field('user_name', user_name)
+        # 构建普通字段（注意：eps_name 映射为 sequence_name, shot 映射为 shot_name）
+        data = {
+            'project_name': project_name,
+            'sequence_name': eps_name,  # Gecko API 要求的字段名
+            'shot_name': shot,  # Gecko API 要求的字段名
+            'user_name': user_name
+        }
 
         logger.info(f'[gecko-upload-media] 表单字段: project_name={project_name}, sequence_name={eps_name}, shot_name={shot}, user_name={user_name}')
 
-        # 添加文件字段（每个文件都用 'files' 作为字段名，符合多文件上传规范）
+        # 构建文件列表（每个文件都用 'files' 作为字段名，符合多文件上传规范）
+        files_list = []
         for idx, file in enumerate(files):
             file_content = await file.read()
             content_type = file.content_type or 'application/octet-stream'
 
-            form_data.add_field(
+            files_list.append((
                 'files',  # 字段名固定为 'files'
-                file_content,
-                filename=file.filename,
-                content_type=content_type
-            )
+                (file.filename, file_content, content_type)
+            ))
             logger.info(f'[gecko-upload-media] 添加文件[{idx}]: files={file.filename}, size={len(file_content)} bytes, type={content_type}')
 
         # 发送请求到 Gecko API
@@ -251,7 +249,7 @@ async def gecko_upload_media(
         logger.info(f'[gecko-upload-media] 发送请求到: {gecko_url}')
 
         async with httpx.AsyncClient(verify=False, timeout=GECKO_TIMEOUT) as client:
-            resp = await client.post(gecko_url, data=form_data)
+            resp = await client.post(gecko_url, data=data, files=files_list)
             resp.raise_for_status()
             result = resp.json()
 
