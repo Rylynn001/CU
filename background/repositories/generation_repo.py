@@ -30,6 +30,16 @@ def get_model_info(model_id: int):
     return model_info
 
 
+def get_language_model_info(provider: str = 'openai'):
+    """获取语言模型信息（默认 openai）"""
+    model_info = execute_query(
+        "SELECT id, name, provider, rfid FROM api_models WHERE type = %s AND provider = %s LIMIT 1",
+        ('language', provider),
+        fetch_one=True
+    )
+    return model_info
+
+
 def save_history(
     task_id: str,
     prompt: str,

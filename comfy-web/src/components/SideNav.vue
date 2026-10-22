@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
-import { Brush, Film, FolderOpened, House, MagicStick, Moon, Picture, SwitchButton, VideoCamera } from '@element-plus/icons-vue'
+import { Brush, ChatDotRound, Film, FolderOpened, House, MagicStick, Moon, Picture, SwitchButton, VideoCamera } from '@element-plus/icons-vue'
 import { getCurrentUserName } from '../utils/user'
 
 const props = defineProps<{
@@ -26,6 +26,7 @@ const themeMeta = computed(() => ({
 
 const navItems = [
   { path: '/', icon: House, label: '首页' },
+  { path: '/chat', icon: ChatDotRound, label: 'AI 聊天' },
   { path: '/image', icon: Picture, label: '图片生成' },
   { path: '/video', icon: VideoCamera, label: '视频生成' },
   { path: '/drama', icon: Film, label: '导演台' },

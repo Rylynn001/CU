@@ -55,6 +55,7 @@ class Settings(BaseSettings):
         # 使用绝对路径，确保从任何目录启动都能找到 .env 文件
         env_file = Path(__file__).parent / ".env"
         case_sensitive = True
+        extra = "ignore"  # 忽略 .env 中多余的字段
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

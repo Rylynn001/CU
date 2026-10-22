@@ -1,0 +1,145 @@
+comfy-web 前端项目文件清单及 SHA-256 哈希值
+生成时间: 2026-10-21
+========================================
+
+根目录配置文件
+----------------------------------------
+./package.json | 404d35f6de327bbc66ab8de804093369e98fc51c6f62c8cc0cf9bd10658bd87a
+./package-lock.json | cd1eb19affe1d13a42447a9a0e2a88d6b8700b6fe108a9a3d3d2676355def677
+./index.html | d4a596708e215b584a14f52171db09a679a4d9d49f7d8464b335a688aadd74c0
+./vite.config.ts | 09fd38b1eb795f0df2d5004ee9aadf69efa616ca4b2eeca14a7074cc47f2215c
+./tailwind.config.js | 8a3f1afeb6afce5027dcd475656d9a1b91983c4e5702f5ba13ed9352da361834
+./postcss.config.js | 3fc8d1c13ad963bbf7da04d59024d38cc2ad14563b36afd71bc8b43c7148dd25
+./tsconfig.json | 770b4140bbb581e2dfd9ea9946ffc9c75a1d86ba7d2db5f77c83e37cbdf9d808
+./tsconfig.app.json | 57c51b46129f7604f9a92a2b3270fa65c31aaa069d9332f3dffea7aa42a679a8
+./tsconfig.node.json | 90a22c920cbc14624fb4658b58f15c875abf3234224f3933f211849c3ada3242
+
+文档文件
+----------------------------------------
+./README.md | 18ad87a070b3ac9234871af25e054df924132caa484bec862e7538bbdc6e3b0a
+./AGENTS.md | bd0b8da5a5a9f78c3203b85ee3962f380477f72adb5de09b59ffa8b60b52a7ed
+./AI_MASCOT_INPUT.md | 2e2a25229b79a58aef9ab437636c09be22f2809b8b0a15c06de0a72fc5471750
+
+VSCode 配置
+----------------------------------------
+./.vscode/extensions.json | 70d56b550e796e3ea92922763ae03037a1a94596fda9d737982c75f6a20e88dd
+
+源码 - 入口文件
+----------------------------------------
+./src/App.vue | dc4561cb3b79cd7ec7a7cbf3d2a976e4a471581609f2bce4bf4e9a104b31d8e9
+./src/main.ts | 561f6eb6fe02dcd782e92071ccfe0b48de716b4f6ca682d656c517fabb2cb965
+./src/config.ts | e2d9e2ee8f4f5aa73bd354f158e7db153e661bde2e7865b47fc7b7c97d6c9d50
+
+源码 - API 接口层
+----------------------------------------
+./src/api/apiService.ts | 23bc646b337987169a5cfe1ff111d490dd187627a3c162774d41504581dbab6e
+./src/api/comfyui.ts | b5e08e9ad4315828889731455372e793740c9373373c6fb42437cc0331b7a646
+./src/api/workflow.ts | 6125106806c519921711e608efc444dbf44eec047fac988ff13da02b2022f6e0
+
+源码 - Vue 组件
+----------------------------------------
+./src/components/AiMascotInput.vue | f4c17cffd85f10396c8e36f1523300e6240b7923ea459cfc61ab508baceb4efa
+./src/components/AssetGrid.vue | ebcafe36529b5464e812fae4e6e4f3014f5afb00397e45ae3a54cfe47ff2d299
+./src/components/AssetPicker.vue | ee2be46e5367d239b4e6a51de3dd069d920b865f25f85482885bb9f796fc9c76
+./src/components/AssetSidebar.vue | cf9fa718f100bba3f9b94a1d8b9529ca88d07f97b8e65c5b9dc58f928cb72cf2
+./src/components/BoardSelector.vue | d78b389d2ce38f8f471bb59485752ffb76f65acec715e88037e5aa4e1febd458
+./src/components/CircularGallery.vue | 0cec875f9cac6d8cfe962df99d62c8303c8de0ec262d0cea923052472062756b
+./src/components/ConfirmDialog.vue | d3e4fc9195154978baa39d33c3ce7d12db647f78b341f5f4f55cdcf581863361
+./src/components/DotFieldBackground.vue | dfec6f749b7e3047a8d1171be57e5a30d2a7e1f6776c0b309ce88a592c0dead9
+./src/components/EyeLED.vue | bba763878a8e83fbe1a5ded8831312d686bdcf99e7d13babf3cfe122400a2158
+./src/components/FavoriteHeart.vue | 9a6b75fe59a400d19f17af19f0789d564e50679d2ec4141b5a3186b65215afc5
+./src/components/GeckoTaskPicker.vue | c84afa15ce541ae4cf2d8114498dd33f4ba476b05bdf0bc25cff4a3f20faa7af
+./src/components/GlassCard.vue | 095418d14a98aa7b99d0a98d74659406e6cd2fd6e851bd255e5e0e8d51a70ebf
+./src/components/HistoryPanel.vue | 9d022a2752592ed325e6cecc50a188f2ab6d18062dcc1a1d33acedef89b123ef
+./src/components/ImageEditor.vue | f47ed3aba0578b968a127504a3d5c4568c05667051d279b2ff10b2b46def777b
+./src/components/ImageResult.vue | 5b1a90b270db0c8c1d858ea8d561dc2b553c8dc29d66e29807f73a93078e6c42
+./src/components/LightRaysBackground.vue | b00ed3e7c5120bd9c72af747ee59971e19b9eab316f170324327f7916e927a55
+./src/components/LiquidButton.vue | caf87e0ddf7b9d3a0e33d98f19de79d55c424ec280c76251bb8324046c21a717
+./src/components/MediaCoverflow.vue | a226c68985ad3a30909edf190b54f80d4bc1e32f6f08317e8294f9b8bfcc9b8f
+./src/components/MediaViewer.vue | be730c4b65a614ec6c0388df3bf50a3025bc9a5cb0f07e397b47c9fe76f2d3aa
+./src/components/MentionTextarea.vue | 88f478b4a9720a9e40961f2921fc53713bddc5aed393f8796cd3f87f8058b7fb
+./src/components/ModelSelector.vue | 6fb1f8a09bca38ba856ea0689378b1ee67531100ea346170d7c4e0249e755181
+./src/components/ModelViewer.vue | cff658bd94c976a45bc1d7a8f6d9903fd53cddf14e915f16afd5e84ef991e9b3
+./src/components/NodeGenSidePanel.vue | c8e0bd4d79c324f4df19447926f506bbd6b2e1bc09ee1ca71fd5fd39d0b1b157
+./src/components/NodeGenerateDialog.vue | 73faafdbe8a906c07e1aacaf02b5590b84c9b0b10b4d05a9e5875938d45e81fc
+./src/components/PrismBackground.vue | be76ddde38811299ab22f0b2d06985ba43643cc15c48f5525f44362dd0185172
+./src/components/ProjectDetailDialog.vue | b3f36855f078a55eb504632f6678020f822f18aafaebcc2a9496b4556b6c4adb
+./src/components/ProjectManager.vue | e5d53f6941345b65de2a63358585a8309a6a95682e4709055ddfcd91ee7615c2
+./src/components/ProjectTeamDialog.vue | ec1e534d54cc77a849bd4c141312904f5ce3adec55a4b1d4971179d8ad1e0160
+./src/components/RecordCard.vue | 117fc85cd32da24ee3abed2ebaeae5ea992138c3907a0281fac311733dd140ae
+./src/components/RecordContextMenu.vue | 1ccdb116cb5afb19aae49749738fbaa174923e4defc5c7eb315c7b9a521b2d84
+./src/components/RobotBeta.vue | df052f56c3ce6a93d643871b3add089e60e8b307a397a4999ae14bf17c4f5af2
+./src/components/SideNav.vue | 0282ca8bb9bfc2b13492c239fdf623aa7e3a4c72eadd29f57a988c59314d9388
+./src/components/icons.ts | bdf0c1a0f685d62ef62bb7943c0574f7389ce193c61c900a3ac61a3c78fff0ea
+
+源码 - 图标组件
+----------------------------------------
+./src/components/icons/AIProviderIcons.vue | 298a210affd00a28bdaa301737974841c5bc1510e3921897a26867bb7bd317f6
+./src/components/icons/IconComponents.vue | 35d4b59a0735ab398c5117bbd36447b986ca162f14b3917f8bfe4bb5336fc3b6
+
+源码 - Composables（可复用逻辑）
+----------------------------------------
+./src/composables/useAssetFavorites.ts | ac04318c7b6efb178d91cfad4425b64954cc1da856aa52a1543757aeaad7d3a7
+./src/composables/useAtMention.ts | 756223eb50f8f134b9d530adde167de06647cd99531ccc02508700681f11c657
+./src/composables/useComfyWebSocket.ts | a673ab5089664af780939fe58e39b7df8542c31ee5494ac3f93c99a335b0eecc
+./src/composables/useGenerationHistory.ts | 46777d1c3aa2f65fb398a65534a2226206141acae491fb16e1898d1a46c52f28
+./src/composables/useHistoryDb.ts | 7a8147dd2d792ac0e82c5a4f17b708cff5165a3ae882be265c15dc52f6f2beb0
+./src/composables/useImageSizeControl.ts | e273d81dc563fe937f871edb5fda1a01d1d90db9cb5133d84bc9ca3e49af4a75
+./src/composables/useInputMedia.ts | fd836d16de615c21aeaf78c825e396f64790f977f9114f5f5bf361ba710d86a7
+./src/composables/useLocateHistory.ts | cd54edf73352c8bd97998ab4329008406822187fee27634bdf5f27f6d0f7fecd
+./src/composables/useRecordEditor.ts | 3b80e023bd2f9a2cc01e17d961e79c6d6b7737cbef4cfb7f7cd4b4764800ae7c
+./src/composables/useSbTaskPersist.ts | bcac95837397feac5b931114c9f8d0ee3e5ada813818cc305c3c0eb75665f768
+./src/composables/useTaskHistory.ts | 1b7fb1efa1f7a2c37efda7c5c447f3f81072c2ff26bc19e8b02d96f8bb80252c
+./src/composables/useTaskPolling.ts | aaf8d27a80128fbb4e3291631ef453ab535c209ff9c50d0d5b7784310167d71d
+
+源码 - 路由
+----------------------------------------
+./src/router/index.ts | ba090c05ceb282287d9e18b70e00dea954d665fdcc843c0f962bd0a7f5d01471
+
+源码 - 业务服务
+----------------------------------------
+./src/services/imageGenerationService.ts | 247e5574d9984daf4c4aa71fd6b04dd57550c88c10a330a8e45fcc45d655b0b3
+./src/services/nodePanelStorage.ts | 3c3903ed982a4468d701d5373520fdacc9734645ac287cf6ed6c7a5e2496dd4b
+./src/services/videoGenerationService.ts | 37ad1b1ff58c7924fd48a571278f00d63aed0f1c5ba834d16d56d62f53f8db04
+
+源码 - 样式
+----------------------------------------
+./src/styles/generation-page.css | 1d285a1914820ef68841c32557079cbd58e781a86b47789f34d7f27c975f09b1
+./src/styles/global.css | 425df3a0a3ebd5b6397def97687d115a2438b936d06220252fcad6826e151350
+
+源码 - 类型定义
+----------------------------------------
+./src/types/ai-models.ts | 2c8b3ae9f7d6e23b4f4a31ee7f5e1e6c75a2018976d9504ad2c7f7bb06b5d208
+
+源码 - 工具函数
+----------------------------------------
+./src/utils/user.ts | 82b50c5c8b231d6313a04141a232cd76875d5f36f212ed5c78e64c2cb0b65308
+./src/utils/uuid.ts | c92c06ccdf03f9e5ee4f14cb832ffc2012cd7c1426c37f552c6755386645069a
+
+源码 - 页面视图
+----------------------------------------
+./src/views/Assets.vue | fd3fba26a3b0681fd13d342a987dd0afd4961dc429e6e7661506675d2049ee38
+./src/views/Chat.vue | 447e985d002a0c5ceaa830e4d86108682179e37cc6cb395f531806fd1f7c9f89
+./src/views/DramaDetail.vue | 90129accc159c9c84525f70a1f178146c8970f8012f2c6fcb84d6deac3ea5a2c
+./src/views/DramaList.vue | c71e53e5836ad50c10101132d0b3c857cfad3dc34a6e6754d6a0219555d7148d
+./src/views/DramaStudio.vue | bcc968fed7bbb4973b32eb233a25f695f251d90b5330c449c351e06526a31fc3
+./src/views/Gecko.vue | 1ee4b762516d8615f455ffa7984b0493e7089bff279939ccfa684d508f721889
+./src/views/Home.vue | 32bb43157b5ba736c1c41c53743f4f13353a57ffbe031b926461028498f8dea0
+./src/views/Login.vue | ef91fff85cdbe178abbead13c82a0b3c7868d9b374be665251407bbf91da2e7f
+./src/views/ModelManager.vue | e435025018efdba694cfd33557d833cda549bc0752b0174720d8e2954a75e5a5
+./src/views/NodePanel.vue | eada41c7e8a8baf513e349e5797198bfcb64f6bf89faff9f19aa234843cbf61a
+./src/views/TextToImage.vue | e4a3d900e0e2c1d0b501911b224d43bd62fb3a542b362ddc554869f1b6193afd
+./src/views/TextToVideo.vue | 7d617b36e83772f2fb9289706b53951716650d108ff37453b33b2fd5623eebbf
+./src/views/VideoGen.vue | d049b001c92b7b755c70fa43eee3c1119713c230791d167076055f97dc667b39
+
+========================================
+统计信息
+========================================
+配置文件: 9 个
+文档文件: 3 个
+源码文件: 71 个
+  - Vue 组件: 47 个
+  - TypeScript: 23 个
+  - CSS: 2 个
+总计: 84 个文件
+========================================

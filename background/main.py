@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from config import settings
 from core import setup_exception_handlers
 from api import auth, assets, providers, history, projects, tasks, node_boards, dramas, generation, common
-from api import agent, gecko  # 暂时注释,测试循环导入问题
+from api import agent, gecko, workflow  # 添加 workflow 路由
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +84,7 @@ app.include_router(dramas.router, prefix="/api-proxy", tags=["短剧管理"])
 app.include_router(generation.router, prefix="/api-proxy", tags=["图片视频生成"])
 app.include_router(agent.router, prefix="/api-proxy", tags=["AI Agent"])
 app.include_router(gecko.router, prefix="/api-proxy", tags=["Gecko集成"])
+app.include_router(workflow.router, prefix="/api-proxy", tags=["工作流"])
 
 
 @app.get("/")

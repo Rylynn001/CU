@@ -14,6 +14,7 @@ const router = createRouter({
     { path: '/drama', name: 'DramaList', component: () => import('../views/DramaList.vue') },
     { path: '/drama/:id', name: 'DramaDetail', component: () => import('../views/DramaDetail.vue') },
     { path: '/drama/:id/episode/:num', name: 'DramaStudio', component: () => import('../views/DramaStudio.vue') },
+    { path: '/chat', name: 'Chat', component: () => import('../views/Chat.vue') },
   ],
 })
 

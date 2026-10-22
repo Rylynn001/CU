@@ -13,6 +13,8 @@
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.2",
     "@types/three": "^0.184.1",
+    "@vueuse/core": "^15.0.0",
+    "@vueuse/motion": "^3.0.3",
     "element-plus": "^2.13.7",
     "fabric": "^6.9.1",
     "ogl": "^1.0.11",
@@ -22,9 +24,13 @@
     "vue-router": "^4.6.4"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^24.12.2",
     "@vitejs/plugin-vue": "^6.0.5",
     "@vue/tsconfig": "^0.9.1",
+    "autoprefixer": "^10.6.1",
+    "postcss": "^8.5.31",
+    "tailwindcss": "^4.3.3",
     "typescript": "~6.0.2",
     "vite": "^8.0.4",
     "vue-tsc": "^3.2.6"

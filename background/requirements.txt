@@ -33,3 +33,9 @@ Pillow==10.2.0
 
 # OSS
 oss2==2.19.1
+
+# LangGraph
+langgraph>=0.2.0
+langchain-core>=0.3.0
+langchain-openai>=0.2.0
+aiosqlite>=0.20.0
