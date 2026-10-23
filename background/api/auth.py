@@ -3,10 +3,13 @@ import bcrypt
 import jwt
 from datetime import datetime, timedelta
 from fastapi import APIRouter, HTTPException, Depends, Header
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 
 from config import settings
 from repositories import auth_repo
+
+security = HTTPBearer()
 
 router = APIRouter()
 
@@ -43,17 +46,14 @@ def decode_token(token: str) -> dict | None:
         return None
 
 
-async def get_current_user(authorization: str = Header(None)):
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
     """依赖注入：获取当前用户"""
-    if not authorization or not authorization.startswith('Bearer '):
-        raise HTTPException(status_code=401, detail="缺少认证 token")
-
-    token = authorization[7:]
+    token = credentials.credentials
     payload = decode_token(token)
     if not payload:
         raise HTTPException(status_code=401, detail="token 无效或已过期")
 
-    return {'user_id': payload['user_id'], 'username': payload['username']}
+    return {'user_id': payload['user_id'], 'username': payload['username'], 'id': payload['user_id']}
 
 
 @router.post("/login", response_model=LoginResponse)

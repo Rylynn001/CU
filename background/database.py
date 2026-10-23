@@ -34,7 +34,12 @@ def get_db():
 
 
 def execute_query(query: str, params: tuple = None, fetch_one: bool = False, fetch_all: bool = False):
-    """执行查询"""
+    """执行查询
+
+    - fetch_one=True: 返回单行字典
+    - fetch_all=True: 返回列表[字典]
+    - 否则(写操作): 返回 lastrowid(INSERT) 或 rowcount(UPDATE/DELETE)
+    """
     with get_db() as conn:
         with conn.cursor() as cursor:
             cursor.execute(query, params or ())
@@ -44,7 +49,8 @@ def execute_query(query: str, params: tuple = None, fetch_one: bool = False, fet
                 return cursor.fetchall()
             else:
                 conn.commit()
-                return cursor.lastrowid
+                # INSERT 返回 lastrowid,UPDATE/DELETE 返回 rowcount
+                return cursor.lastrowid if cursor.lastrowid else cursor.rowcount
 
 
 def execute_many(query: str, params_list: list):

@@ -17,7 +17,13 @@ export const getAuthHeader = (): Record<string, string> => {
 
 // 统一的 fetch 封装，自动处理 401 错误（可导出给其他模块使用）
 export async function authFetch(url: string, options: RequestInit = {}): Promise<Response> {
-  const res = await fetch(url, options)
+  // 自动附加 Authorization header
+  const headers = {
+    ...options.headers,
+    ...getAuthHeader(),
+  }
+
+  const res = await fetch(url, { ...options, headers })
 
   // 检测 401 错误，自动清理 token 并跳转登录页
   if (res.status === 401) {

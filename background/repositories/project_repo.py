@@ -118,13 +118,49 @@ def get_category_assets(category_id: int) -> list[dict]:
 
 # ========== Category Assets 相关操作 ==========
 
-def add_asset_to_category(category_id: int, asset_id: int, user_id: int) -> None:
-    """添加资产到分类"""
+def add_asset_to_category(category_id: int, asset_id: int, user_id: int) -> str | None:
+    """添加资产到分类。member 提交需审核(返回 'pending'),owner/admin 直接通过(返回 'approved')。
+    返回 None 表示用户不是项目成员。"""
+    role = get_member_role_in_category_project(category_id, user_id)
+    if not role:
+        return None
+
+    review_status = 'approved' if role['role'] in ('owner', 'admin') else 'pending'
+
     execute_query(
         '''INSERT INTO category_assets (category_id, assets_id, submitted_by, review_status, created_at)
            VALUES (%s, %s, %s, %s, NOW())''',
-        (category_id, asset_id, user_id, 'pending')
+        (category_id, asset_id, user_id, review_status)
     )
+    return review_status
+
+
+def resubmit_asset_to_category(
+    category_id: int, asset_id: int, user_id: int, resubmit_id: int
+) -> str | None:
+    """续接一条被驳回的提交记录，更新为新资产并重置为 pending 状态。
+    校验用户是该记录的原提交者且记录状态为 rejected。
+    返回 None 表示无权限或记录不存在/状态不符。"""
+    # 查询原记录
+    ca_row = execute_query(
+        '''SELECT id, submitted_by, review_status FROM category_assets
+           WHERE id = %s AND category_id = %s''',
+        (resubmit_id, category_id),
+        fetch_one=True
+    )
+    if not ca_row:
+        return None
+    if ca_row['submitted_by'] != user_id or ca_row['review_status'] != 'rejected':
+        return None
+
+    # 更新为新资产并重置状态
+    execute_query(
+        '''UPDATE category_assets
+           SET assets_id = %s, review_status = 'pending', created_at = NOW()
+           WHERE id = %s''',
+        (asset_id, resubmit_id)
+    )
+    return 'pending'
 
 
 def remove_asset_from_category(category_id: int, asset_id: int) -> None:
@@ -318,39 +354,70 @@ def get_candidate_users(project_id: int, keyword: str, page_size: int, offset: i
 
 # ========== Review 相关操作 ==========
 
+def review_asset(category_id: int, asset_id: int, user_id: int, approve: bool, comment: str | None = None) -> bool:
+    """审核素材（1:1 复刻 ComfyUI 逻辑）。
+    owner/admin 可操作：通过置 approved，驳回置 rejected（不删行）。
+    每次审核都写入历史，通过和驳回均可附评语。
+    返回 False 表示无权限或该素材不在待审核状态。"""
+    # 反查项目并校验审核人角色
+    role_row = execute_query(
+        '''SELECT pm.role
+           FROM project_category pc
+           JOIN project_members pm ON pm.project_id = pc.project_id
+           WHERE pc.id = %s AND pm.user_id = %s''',
+        (category_id, user_id),
+        fetch_one=True
+    )
+    if not role_row or role_row['role'] not in ('owner', 'admin'):
+        return False
+
+    # 查询 category_assets 记录
+    ca = execute_query(
+        'SELECT id FROM category_assets WHERE category_id = %s AND assets_id = %s',
+        (category_id, asset_id),
+        fetch_one=True
+    )
+    if not ca:
+        return False
+
+    # 更新审核状态（仅当状态为 pending 时）
+    new_status = 'approved' if approve else 'rejected'
+    result = execute_query(
+        '''UPDATE category_assets SET review_status = %s, reviewed_by = %s
+           WHERE id = %s AND review_status = 'pending' ''',
+        (new_status, user_id, ca['id'])
+    )
+
+    # 如果没有更新成功（状态不是 pending），返回 False
+    if result == 0:
+        return False
+
+    # 记录审核历史
+    execute_query(
+        '''INSERT INTO category_asset_reviews
+           (category_assets_id, assets_id, action, comment, reviewer_id, created_at)
+           VALUES (%s, %s, %s, %s, %s, NOW())''',
+        (ca['id'], asset_id, 'approve' if approve else 'reject', comment, user_id)
+    )
+
+    return True
+
+
 def get_category_asset_record(category_id: int, asset_id: int) -> Optional[dict]:
     """获取分类资产记录及项目ID"""
     return execute_query(
-        '''SELECT ca.id, ca.review_status, p.id AS project_id
+        '''SELECT ca.id, ca.review_status, pc.project_id
            FROM category_assets ca
-           JOIN categories c ON c.id = ca.category_id
-           JOIN projects p ON p.id = c.project_id
+           JOIN project_category pc ON pc.id = ca.category_id
            WHERE ca.category_id = %s AND ca.assets_id = %s''',
         (category_id, asset_id),
         fetch_one=True
     )
 
 
-def update_asset_review_status(category_id: int, asset_id: int, new_status: str) -> None:
-    """更新资产审核状态"""
-    execute_query(
-        'UPDATE category_assets SET review_status = %s WHERE category_id = %s AND assets_id = %s',
-        (new_status, category_id, asset_id)
-    )
-
-
-def create_asset_review_record(category_assets_id: int, reviewer_id: int,
-                                action: str, comment: str | None) -> None:
-    """创建资产审核记录"""
-    execute_query(
-        '''INSERT INTO category_asset_reviews (category_assets_id, reviewer_id, action, comment, created_at)
-           VALUES (%s, %s, %s, %s, NOW())''',
-        (category_assets_id, reviewer_id, action, comment)
-    )
-
-
-def get_asset_review_timeline(category_id: int, asset_id: int) -> Optional[tuple[dict, list[dict]]]:
-    """获取资产的审核时间线信息"""
+def get_asset_review_timeline(category_id: int, asset_id: int, user_id: int) -> list[dict] | None:
+    """查某素材在某分类的审核时间线。owner/admin/member 或提交人本人可查，否则 None。
+    每条 submit 记录附带对应的资产 location/asset_type。"""
     # 获取基本信息
     info = execute_query(
         '''SELECT ca.id, pc.project_id, ca.submitted_by
@@ -362,6 +429,12 @@ def get_asset_review_timeline(category_id: int, asset_id: int) -> Optional[tuple
     )
 
     if not info:
+        return None
+
+    # 检查权限
+    role = get_project_member(info['project_id'], user_id)
+    if not role and info['submitted_by'] != user_id:
+        # 既不是成员也不是提交人
         return None
 
     # 查询审核时间线
@@ -379,7 +452,7 @@ def get_asset_review_timeline(category_id: int, asset_id: int) -> Optional[tuple
         fetch_all=True
     ) or []
 
-    return info, reviews
+    return reviews
 
 
 def get_member_role_in_category_project(category_id: int, user_id: int) -> Optional[dict]:

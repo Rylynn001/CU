@@ -256,7 +256,7 @@ async function reviewCollaborationAsset(item: PendingAsset, approve: boolean) {
   reviewingCollaborationKey.value = key
   try {
     const comment = collaborationReviewComments.value[key]?.trim() || undefined
-    await reviewAsset(item.category_id, item.assets_id, user.id, approve, comment)
+    await reviewAsset(item.category_id, item.assets_id, approve, comment)
     pendingAssets.value = pendingAssets.value.filter(x => `${x.category_id}-${x.assets_id}` !== key)
     pendingTotal.value = Math.max(0, pendingTotal.value - 1)
     delete collaborationReviewComments.value[key]

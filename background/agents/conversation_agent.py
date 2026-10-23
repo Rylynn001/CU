@@ -2,9 +2,13 @@
 对话管理 Agent
 """
 import json
-from typing import Dict, Any, List, Optional
+import logging
+import time
+from typing import Dict, Any, List, Optional, Callable, Awaitable
 from openai import AsyncOpenAI
 from graph.states import ConversationState
+
+logger = logging.getLogger(__name__)
 
 
 class ConversationAgent:
@@ -56,32 +60,35 @@ class ConversationAgent:
             "ratio": "视频比例"
         }
 
+    def _model_messages(self, state: ConversationState) -> List[Dict[str, str]]:
+        """保留对话顺序，并将数据库角色转换为模型接口支持的角色。"""
+        return [
+            {"role": "assistant" if msg["role"] == "agent" else msg["role"],
+             "content": msg["content"]}
+            for msg in state["messages"]
+        ]
+
     async def understand_intent(self, state: ConversationState) -> ConversationState:
         """识别用户意图"""
         if state.get("intent"):
             return state
 
-        messages = state["messages"]
-        last_message = messages[-1]["content"] if messages else ""
-
         # 调用 LLM 识别意图
         system_prompt = f"""你是一个意图识别助手。用户的消息可能是以下意图之一：
 {json.dumps(self.intents, ensure_ascii=False, indent=2)}
 
-请分析用户消息，返回 JSON 格式：
-{{"intent": "short_drama/batch_image/single_video/image_to_video/unknown"}}
+请结合完整对话历史理解用户最新消息，返回 JSON 格式：
+{{"intent": "short_drama/batch_image/single_video/image_to_video/unknown", "reply": "仅在 intent 为 unknown 时，对用户最新问题给出自然、简短的直接回应"}}
 
+如果用户回答的是上一轮助手列出的选项编号，应根据上一轮选项判断意图。
+如果用户在询问与你当前模型身份有关的问题，先回答当前模型名：{self.model}；随后自然地提供任务入口，并列出选项：1. 短剧制作，2. 批量生图，3. 单个视频生成，4. 图生视频，方便用户直接回复编号。其他闲聊或不明确请求先自然回应，再简短询问用户要完成什么。
 如果无法确定意图，返回 "unknown"。
 """
 
-        response = await self.client.chat.completions.create(
-            model=self.model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": last_message}
-            ],
-            response_format={"type": "json_object"}
-        )
+        response = await self._create_completion("intent_recognition", [
+            {"role": "system", "content": system_prompt},
+            *self._model_messages(state)
+        ])
 
         result = json.loads(response.choices[0].message.content)
         intent = result.get("intent")
@@ -91,6 +98,7 @@ class ConversationAgent:
             state["current_step"] = "parameter_extraction"
         else:
             state["current_step"] = "intent_clarification"
+            state["reply"] = result.get("reply", "")
 
         return state
 
@@ -114,28 +122,29 @@ class ConversationAgent:
 必填参数：{required_params}
 可选参数：{optional_params}
 
-返回 JSON 格式，只包含已明确提到的参数，未提到的不要猜测：
-{{"参数名": "参数值", ...}}
+当前已收集的参数：{json.dumps(state.get("parameters", {}), ensure_ascii=False)}
+结合助手上一轮的问题理解简短回答；用户明确修改参数时，以最新回答为准。
+助手给出的示例、推荐值和任务选项编号不代表用户已选择的参数。
+
+返回 JSON 格式，parameters 只包含已明确提到或根据最新回答修正的参数，不要猜测：
+{{"parameters": {{"参数名": "参数值"}}, "reply": "自然简短地回应用户，并只追问下一个最重要的缺失信息；如果已经齐全则简短确认"}}
 
 如果参数是文件路径，直接返回路径字符串。
 如果参数是数值，返回数字类型。
 """
 
         # 构建对话历史
-        conversation = []
-        for msg in state["messages"]:
-            conversation.append({"role": msg["role"], "content": msg["content"]})
+        conversation = self._model_messages(state)
 
-        response = await self.client.chat.completions.create(
-            model=self.model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                *conversation
-            ],
-            response_format={"type": "json_object"}
-        )
+        response = await self._create_completion("parameter_extraction", [
+            {"role": "system", "content": system_prompt},
+            *conversation
+        ])
 
         extracted = json.loads(response.choices[0].message.content)
+        if "parameters" in extracted:
+            state["reply"] = extracted.get("reply", "")
+            extracted = extracted["parameters"]
 
         # 更新参数
         if "parameters" not in state:
@@ -145,6 +154,10 @@ class ConversationAgent:
         # 检查缺失的必填参数
         missing = [p for p in required_params if p not in state["parameters"]]
         state["missing_params"] = missing
+        logger.info(
+            "工作流参数整理完成 intent=%s collected_keys=%s missing_required=%s",
+            intent, sorted(state["parameters"].keys()), missing
+        )
 
         if not missing:
             state["current_step"] = "validation"
@@ -152,6 +165,21 @@ class ConversationAgent:
             state["current_step"] = "asking"
 
         return state
+
+    async def _create_completion(self, stage: str, messages: List[Dict[str, str]]):
+        started_at = time.perf_counter()
+        try:
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                response_format={"type": "json_object"}
+            )
+        except Exception:
+            logger.exception("工作流模型调用失败 stage=%s model=%s", stage, self.model)
+            raise
+        elapsed_ms = round((time.perf_counter() - started_at) * 1000)
+        logger.info("工作流模型调用完成 stage=%s model=%s elapsed_ms=%d", stage, self.model, elapsed_ms)
+        return response
 
     async def generate_question(self, state: ConversationState) -> str:
         """生成追问问题"""
@@ -223,7 +251,8 @@ class ConversationAgent:
         return state
 
     async def process(self, message: str, session_id: str, user_id: int,
-                     existing_state: Optional[ConversationState] = None) -> Dict[str, Any]:
+                     existing_state: Optional[ConversationState] = None,
+                     on_progress: Optional[Callable[[str], Awaitable[None]]] = None) -> Dict[str, Any]:
         """处理用户消息"""
 
         # 初始化或恢复状态
@@ -243,13 +272,18 @@ class ConversationAgent:
 
         # 添加用户消息
         state["messages"].append({"role": "user", "content": message})
+        # 每条新消息都重新提取、验证，不能沿用上轮的追问或就绪标记。
+        state["current_step"] = "parameter_extraction" if state.get("intent") else "intent_recognition"
+        state["workflow_ready"] = False
 
         # 执行对话流程
         if state["current_step"] == "intent_recognition":
+            if on_progress:
+                await on_progress("正在结合对话上下文识别你的请求")
             state = await self.understand_intent(state)
 
         if state["current_step"] == "intent_clarification":
-            reply = "请问你想做什么？\n1. 短剧制作（从剧本到视频）\n2. 批量生图\n3. 单个视频生成\n4. 图生视频"
+            reply = state.get("reply") or "你想完成哪类任务？例如短剧制作、批量生图、视频生成或图生视频。"
             state["messages"].append({"role": "agent", "content": reply})
             return {
                 "reply": reply,
@@ -258,7 +292,14 @@ class ConversationAgent:
             }
 
         if state["current_step"] == "parameter_extraction":
+            if on_progress:
+                await on_progress("正在结合历史消息整理已提供的信息")
             state = await self.extract_parameters(state)
+
+        if state["current_step"] == "validation":
+            if on_progress:
+                await on_progress("正在检查必填参数和取值")
+            state = await self.validate_parameters(state)
 
         if state["current_step"] == "asking":
             # 检查是否有验证错误
@@ -267,7 +308,7 @@ class ConversationAgent:
                 reply = "参数验证失败：\n" + "\n".join(f"- {e}" for e in errors)
                 del state["parameters"]["_validation_errors"]
             else:
-                reply = await self.generate_question(state)
+                reply = state.get("reply") or await self.generate_question(state)
 
             state["messages"].append({"role": "agent", "content": reply})
             return {
@@ -276,17 +317,10 @@ class ConversationAgent:
                 "workflow_ready": False
             }
 
-        if state["current_step"] == "validation":
-            state = await self.validate_parameters(state)
-
-            if not state["workflow_ready"]:
-                # 验证失败，返回错误消息
-                return await self.process("", session_id, user_id, state)
-
         # 参数收集完成
         if state["workflow_ready"]:
             intent_name = self.intents[state["intent"]]["name"]
-            reply = f"好的，参数已收集完成。准备为你生成【{intent_name}】工作流..."
+            reply = state.get("reply") or f"好的，参数已收集完成。准备为你生成【{intent_name}】工作流..."
 
             state["messages"].append({"role": "agent", "content": reply})
 

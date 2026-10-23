@@ -17,15 +17,13 @@ class WorkflowRepository:
         """创建工作流会话"""
         session_id = str(uuid.uuid4())
 
-        with get_db() as conn:
-            execute_query(
-                conn,
-                """
-                INSERT INTO workflow_sessions (id, user_id, intent, parameters, status)
-                VALUES (%s, %s, %s, %s, 'collecting')
-                """,
-                (session_id, user_id, intent, json.dumps(parameters) if parameters else None)
-            )
+        execute_query(
+            """
+            INSERT INTO workflow_sessions (id, user_id, intent, parameters, status)
+            VALUES (%s, %s, %s, %s, 'collecting')
+            """,
+            (session_id, user_id, intent, json.dumps(parameters) if parameters else None)
+        )
 
         return session_id
 
@@ -69,25 +67,21 @@ class WorkflowRepository:
 
         values.append(session_id)
 
-        with get_db() as conn:
-            execute_query(
-                conn,
-                f"UPDATE workflow_sessions SET {', '.join(updates)} WHERE id = %s",
-                tuple(values)
-            )
+        execute_query(
+            f"UPDATE workflow_sessions SET {', '.join(updates)} WHERE id = %s",
+            tuple(values)
+        )
 
     @staticmethod
     def add_conversation(session_id: str, role: str, message: str):
         """添加对话记录"""
-        with get_db() as conn:
-            execute_query(
-                conn,
-                """
-                INSERT INTO workflow_conversations (session_id, role, message)
-                VALUES (%s, %s, %s)
-                """,
-                (session_id, role, message)
-            )
+        execute_query(
+            """
+            INSERT INTO workflow_conversations (session_id, role, message)
+            VALUES (%s, %s, %s)
+            """,
+            (session_id, role, message)
+        )
 
     @staticmethod
     def get_conversations(session_id: str) -> List[Dict[str, Any]]:
@@ -99,7 +93,7 @@ class WorkflowRepository:
                 SELECT role, message, created_at
                 FROM workflow_conversations
                 WHERE session_id = %s
-                ORDER BY created_at ASC
+                ORDER BY created_at ASC, id ASC
                 """,
                 (session_id,)
             )
@@ -107,15 +101,16 @@ class WorkflowRepository:
 
     @staticmethod
     def get_user_sessions(user_id: int, limit: int = 10) -> List[Dict[str, Any]]:
-        """获取用户的会话列表"""
+        """获取用户的会话列表（只返回有对话内容的会话）"""
         with get_db() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                SELECT id, intent, status, created_at, updated_at
-                FROM workflow_sessions
-                WHERE user_id = %s
-                ORDER BY created_at DESC
+                SELECT DISTINCT s.id, s.intent, s.status, s.created_at, s.updated_at
+                FROM workflow_sessions s
+                INNER JOIN workflow_conversations c ON s.id = c.session_id
+                WHERE s.user_id = %s
+                ORDER BY s.updated_at DESC
                 LIMIT %s
                 """,
                 (user_id, limit)
@@ -127,15 +122,13 @@ class WorkflowRepository:
         """创建执行记录"""
         execution_id = str(uuid.uuid4())
 
-        with get_db() as conn:
-            execute_query(
-                conn,
-                """
-                INSERT INTO workflow_executions (id, session_id, workflow_definition, status)
-                VALUES (%s, %s, %s, 'running')
-                """,
-                (execution_id, session_id, json.dumps(workflow_definition))
-            )
+        execute_query(
+            """
+            INSERT INTO workflow_executions (id, session_id, workflow_definition, status)
+            VALUES (%s, %s, %s, 'running')
+            """,
+            (execution_id, session_id, json.dumps(workflow_definition))
+        )
 
         return execution_id
 
@@ -175,12 +168,10 @@ class WorkflowRepository:
 
         values.append(execution_id)
 
-        with get_db() as conn:
-            execute_query(
-                conn,
-                f"UPDATE workflow_executions SET {', '.join(updates)} WHERE id = %s",
-                tuple(values)
-            )
+        execute_query(
+            f"UPDATE workflow_executions SET {', '.join(updates)} WHERE id = %s",
+            tuple(values)
+        )
 
     @staticmethod
     def get_execution(execution_id: str) -> Optional[Dict[str, Any]]:
@@ -206,31 +197,27 @@ class WorkflowRepository:
         """创建审核任务"""
         review_id = str(uuid.uuid4())
 
-        with get_db() as conn:
-            execute_query(
-                conn,
-                """
-                INSERT INTO workflow_reviews (id, execution_id, node_name, review_data, status)
-                VALUES (%s, %s, %s, %s, 'pending')
-                """,
-                (review_id, execution_id, node_name, json.dumps(review_data))
-            )
+        execute_query(
+            """
+            INSERT INTO workflow_reviews (id, execution_id, node_name, review_data, status)
+            VALUES (%s, %s, %s, %s, 'pending')
+            """,
+            (review_id, execution_id, node_name, json.dumps(review_data))
+        )
 
         return review_id
 
     @staticmethod
     def update_review(review_id: str, status: str, feedback: Optional[str] = None):
         """更新审核状态"""
-        with get_db() as conn:
-            execute_query(
-                conn,
-                """
-                UPDATE workflow_reviews
-                SET status = %s, feedback = %s, reviewed_at = NOW()
-                WHERE id = %s
-                """,
-                (status, feedback, review_id)
-            )
+        execute_query(
+            """
+            UPDATE workflow_reviews
+            SET status = %s, feedback = %s, reviewed_at = NOW()
+            WHERE id = %s
+            """,
+            (status, feedback, review_id)
+        )
 
     @staticmethod
     def get_review(review_id: str) -> Optional[Dict[str, Any]]:

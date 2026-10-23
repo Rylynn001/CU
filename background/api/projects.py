@@ -77,7 +77,7 @@ async def get_project_categories(
     user_id = current_user['user_id']
 
     # 检查权限
-    member = project_repo.get_project_member_role(project_id, user_id)
+    member = project_repo.get_project_member(project_id, user_id)
 
     if not member:
         raise HTTPException(status_code=403, detail='非项目成员')
@@ -202,6 +202,7 @@ async def add_asset_to_category(
 ):
     """添加资产到分类"""
     user_id = current_user['user_id']
+    resubmit_id = req.resubmit_id
 
     # 检查用户是否是项目成员
     member = project_repo.get_member_role_in_category_project(category_id, user_id)
@@ -209,10 +210,22 @@ async def add_asset_to_category(
     if not member:
         raise HTTPException(status_code=403, detail='非项目成员')
 
-    # 添加资产
-    project_repo.add_asset_to_category(category_id, req.asset_id, user_id)
+    # 添加资产(支持续接被驳回的提交记录)
+    if resubmit_id:
+        # 续接逻辑:更新现有记录
+        review_status = project_repo.resubmit_asset_to_category(
+            category_id, req.asset_id, user_id, resubmit_id
+        )
+    else:
+        # 全新提交
+        review_status = project_repo.add_asset_to_category(
+            category_id, req.asset_id, user_id
+        )
 
-    return {'ok': True, 'review_status': 'pending'}
+    if review_status is None:
+        raise HTTPException(status_code=403, detail='非项目成员或无权续接该提交记录')
+
+    return {'ok': True, 'review_status': review_status}
 
 
 @router.delete("/categories/{category_id}/assets/{asset_id}")
@@ -367,29 +380,13 @@ async def review_asset(
     """审核资产（approve/reject）"""
     user_id = current_user['user_id']
 
-    # 检查权限和状态
-    ca_row = project_repo.get_category_asset_with_project(category_id, asset_id)
-    if not ca_row:
-        raise HTTPException(status_code=404, detail='资产不在该分类中')
+    # 调用 repo 层的审核逻辑（包含所有权限检查和状态更新）
+    ok = project_repo.review_asset(category_id, asset_id, user_id, req.approve, req.comment)
 
-    # 检查用户是否是该项目的 owner 或 admin
-    role_row = project_repo.get_project_member_role(ca_row['project_id'], user_id)
-    if not role_row or role_row['role'] not in ('owner', 'admin'):
-        raise HTTPException(status_code=403, detail='无权限审核')
+    if not ok:
+        raise HTTPException(status_code=403, detail='无权限审核或该素材不在待审核状态')
 
-    if ca_row['review_status'] != 'pending':
-        raise HTTPException(status_code=400, detail='该素材不在待审核状态')
-
-    # 更新审核状态
-    new_status = 'approved' if req.approve else 'rejected'
-    action = 'approve' if req.approve else 'reject'
-
-    project_repo.update_category_asset_review_status(category_id, asset_id, new_status)
-
-    # 记录审核历史
-    project_repo.insert_category_asset_review(ca_row['id'], user_id, action, req.comment)
-
-    return {'ok': True, 'new_status': new_status}
+    return {'ok': True}
 
 
 @router.get("/categories/{category_id}/assets/{asset_id}/reviews")
@@ -401,24 +398,15 @@ async def get_asset_reviews(
     """获取资产的审核时间线（含权限检查）"""
     user_id = current_user['user_id']
 
-    # 检查权限：项目 owner/admin 或提交人本人
-    info = project_repo.get_category_asset_info(category_id, asset_id)
+    # 调用 repo 层,包含完整的权限校验
+    result = project_repo.get_asset_review_timeline(category_id, asset_id, user_id)
 
-    if not info:
-        raise HTTPException(status_code=404, detail='资产不存在')
-
-    # 检查权限
-    role = project_repo.get_project_member_role(info['project_id'], user_id)
-
-    # member 角色也能查看（旧版逻辑）
-    if not role or (role['role'] not in ('owner', 'admin', 'member') and info['submitted_by'] != user_id):
+    if result is None:
         raise HTTPException(status_code=403, detail='无权限查看')
 
-    # 查询审核时间线
-    reviews = project_repo.get_category_asset_reviews(info['id'])
-
-    for r in reviews:
+    # 格式化时间
+    for r in result:
         if r.get('created_at'):
             r['created_at'] = r['created_at'].strftime('%Y-%m-%d %H:%M:%S')
 
-    return reviews
+    return result
