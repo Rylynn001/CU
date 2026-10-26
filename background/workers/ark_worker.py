@@ -1,14 +1,13 @@
-"""Ark (火山引擎) 视频生成 worker - 只提交任务，不轮询"""
+"""Ark (火山引擎) 视频生成 async worker"""
 import json
-import time
 import logging
 import pathlib
 import sys
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
 
 from config import settings
-from database import execute_query
-from repositories import history_repo
+from database_worker import execute_query
+from repositories import history_repo_worker
 from core import parse_provider_error
 
 logger = logging.getLogger(__name__)
@@ -17,7 +16,7 @@ OUTPUT_DIR = pathlib.Path(settings.OUTPUT_DIR)
 
 
 def _get_redis():
-    """获取 Redis 客户端"""
+    """获取同步 Redis 客户端"""
     import redis
     return redis.Redis(
         host=settings.REDIS_HOST,
@@ -27,8 +26,8 @@ def _get_redis():
     )
 
 
-def process_txt2video(task: dict) -> None:
-    """提交文生视频任务到 Ark，保存 remote_id 等待轮询"""
+async def process_txt2video(task: dict) -> None:
+    """异步提交文生视频任务到 Ark"""
     task_id = task['task_id']
     redis_client = _get_redis()
 
@@ -36,16 +35,14 @@ def process_txt2video(task: dict) -> None:
         redis_client.setex(f"task:{task_id}:status", 3600, 'processing')
         logger.info(f'[{task_id}] 正在处理 Ark 文生视频任务')
 
-        # 更新 history 表状态为 processing
         history_id = task.get('history_id')
         if history_id:
-            history_repo.update_history(
+            await history_repo_worker.update_history(
                 history_id=history_id,
                 output_asset_ids=[],
                 status='processing',
             )
 
-        # 日志：记录接收到的任务参数（api_key 脱敏）
         api_key_masked = task['api_key'][:8] + '***' if len(task.get('api_key', '')) > 8 else '(empty or too short)'
         logger.info(f'[{task_id}] Worker 收到任务: model={task.get("model")}, '
                     f'provider={task.get("provider")}, api_key={api_key_masked}, '
@@ -53,23 +50,33 @@ def process_txt2video(task: dict) -> None:
                     f'ratio={task.get("ratio")}, resolution={task.get("resolution")}, '
                     f'duration={task.get("duration")}, prompt={task.get("prompt", "")[:50]}...')
 
-        from openai import OpenAI
+        from openai import AsyncOpenAI
+        import httpx
 
-        client = OpenAI(api_key=task['api_key'], base_url=task['base_url'])
+        client = AsyncOpenAI(
+            api_key=task['api_key'],
+            base_url=task['base_url'],
+            http_client=httpx.AsyncClient(timeout=120.0)
+        )
 
         logger.info(f'[{task_id}] 准备调用 Ark API: POST /contents/generations/tasks')
 
-        resp = client.post(
-            "/contents/generations/tasks",
-            body={
-                "model": task['model'],
-                "content": [{"type": "text", "text": task.get('prompt', '')}],
-                "ratio": task.get('ratio', '16:9'),
-                "resolution": task.get('resolution', '720p'),
-                "duration": task.get('duration', 8),
-            },
-            cast_to=object
-        )
+        # OpenAI SDK 的 post 方法暂无 async 版本，使用 httpx 直接调用
+        import httpx
+        async with httpx.AsyncClient(timeout=120.0) as http_client:
+            resp_raw = await http_client.post(
+                f"{task['base_url']}/contents/generations/tasks",
+                headers={"Authorization": f"Bearer {task['api_key']}", "Content-Type": "application/json"},
+                json={
+                    "model": task['model'],
+                    "content": [{"type": "text", "text": task.get('prompt', '')}],
+                    "ratio": task.get('ratio', '16:9'),
+                    "resolution": task.get('resolution', '720p'),
+                    "duration": task.get('duration', 8),
+                }
+            )
+            resp_raw.raise_for_status()
+            resp = resp_raw.json()
 
         remote_task_id = resp["id"]
         logger.info(f'[{task_id}] Ark 文生视频任务已创建: {remote_task_id}')
@@ -99,9 +106,9 @@ def process_txt2video(task: dict) -> None:
 
         try:
             if history_id:
-                history_repo.update_history(history_id=history_id, output_asset_ids=[], status='error', message=error_message)
+                await history_repo_worker.update_history(history_id=history_id, output_asset_ids=[], status='error', message=error_message)
             else:
-                history_repo.save_history(
+                await history_repo_worker.save_history(
                     task_id=task_id,
                     prompt=task.get('prompt', ''),
                     user_id=int(task['user_id']) if task.get('user_id') else 0,
@@ -119,8 +126,8 @@ def process_txt2video(task: dict) -> None:
         redis_client.setex(f"task:{task_id}:result", 3600, json.dumps({'error': {'error_message': error_message}, 'history_id': history_id}))
 
 
-def process_img2video(task: dict) -> None:
-    """提交图生视频任务到 Ark，保存 remote_id 等待轮询"""
+async def process_img2video(task: dict) -> None:
+    """异步提交图生视频任务到 Ark"""
     task_id = task['task_id']
     redis_client = _get_redis()
 
@@ -128,16 +135,14 @@ def process_img2video(task: dict) -> None:
         redis_client.setex(f"task:{task_id}:status", 3600, 'processing')
         logger.info(f'[{task_id}] 正在处理 Ark 图生视频任务')
 
-        # 更新 history 表状态为 processing
         history_id = task.get('history_id')
         if history_id:
-            history_repo.update_history(
+            await history_repo_worker.update_history(
                 history_id=history_id,
                 output_asset_ids=[],
                 status='processing',
             )
 
-        # 日志：记录接收到的任务参数（api_key 脱敏）
         api_key_masked = task['api_key'][:8] + '***' if len(task.get('api_key', '')) > 8 else '(empty or too short)'
         logger.info(f'[{task_id}] Worker 收到任务: model={task.get("model")}, '
                     f'provider={task.get("provider")}, api_key={api_key_masked}, '
@@ -147,8 +152,11 @@ def process_img2video(task: dict) -> None:
                     f'input_asset_ids={task.get("input_asset_ids", [])}, '
                     f'prompt={task.get("prompt", "")[:50]}...')
 
+        # volcenginesdkarkruntime 暂无 async 版本，使用 asyncio.to_thread
+        import asyncio
         from volcenginesdkarkruntime import Ark
         import oss2
+        import time
 
         client = Ark(api_key=task['api_key'])
 
@@ -165,7 +173,7 @@ def process_img2video(task: dict) -> None:
         if input_asset_ids:
             for asset_id in input_asset_ids:
                 query = 'SELECT location FROM assets WHERE id = %s'
-                result = execute_query(query, (asset_id,))
+                result = await execute_query(query, (asset_id,), fetch_all=True)
                 if result:
                     location = result[0]['location']
                     file_path = pathlib.Path(location)
@@ -179,7 +187,10 @@ def process_img2video(task: dict) -> None:
                     else:
                         media_type = 'image'
                     object_name = f"seedance/{int(time.time())}_{asset_id}.{ext}"
-                    bucket.put_object(object_name, file_data)
+
+                    # OSS 上传使用 asyncio.to_thread
+                    await asyncio.to_thread(bucket.put_object, object_name, file_data)
+
                     file_url = f"https://{settings.OSS_BUCKET_NAME}.{settings.OSS_ENDPOINT.replace('https://', '')}/{object_name}"
                     logger.info(f'[{task_id}] 资产 {asset_id}({media_type}) 已上传至 OSS: {file_url}')
                     all_media.append({'url': file_url, 'media_type': media_type})
@@ -198,7 +209,9 @@ def process_img2video(task: dict) -> None:
             else:
                 raise ValueError(f'不支持的资产类型: {mt}，asset url: {media["url"]}')
 
-        resp = client.content_generation.tasks.create(
+        # Ark SDK 调用使用 asyncio.to_thread
+        resp = await asyncio.to_thread(
+            client.content_generation.tasks.create,
             model=task['model'],
             content=content,
             duration=task.get('duration', 8),
@@ -237,9 +250,9 @@ def process_img2video(task: dict) -> None:
 
         try:
             if history_id:
-                history_repo.update_history(history_id=history_id, output_asset_ids=[], status='error', message=error_message)
+                await history_repo_worker.update_history(history_id=history_id, output_asset_ids=[], status='error', message=error_message)
             else:
-                history_repo.save_history(
+                await history_repo_worker.save_history(
                     task_id=task_id,
                     prompt=task.get('prompt', ''),
                     user_id=int(task['user_id']) if task.get('user_id') else 0,

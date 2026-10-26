@@ -1,4 +1,4 @@
-"""Gemini 图片生成 worker"""
+"""Gemini 图片生成 async worker"""
 import json
 import uuid
 import base64
@@ -11,8 +11,8 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
 
 from config import settings
-from database import execute_query
-from repositories import history_repo
+from database_worker import execute_query
+from repositories import history_repo_worker
 from core import parse_provider_error
 
 logger = logging.getLogger(__name__)
@@ -21,7 +21,7 @@ OUTPUT_DIR = pathlib.Path(settings.OUTPUT_DIR)
 
 
 def _get_redis():
-    """获取 Redis 客户端"""
+    """获取同步 Redis 客户端"""
     import redis
     return redis.Redis(
         host=settings.REDIS_HOST,
@@ -31,21 +31,17 @@ def _get_redis():
     )
 
 
-def _save_output_asset(location: str, user_id: int, asset_type: str) -> int:
+async def _save_output_asset(location: str, user_id: int, asset_type: str) -> int:
     """保存输出资产到数据库"""
     query = """
         INSERT INTO assets (location, rfid, asset_type, created_at)
         VALUES (%s, %s, %s, NOW())
     """
-    return execute_query(query, (location, user_id, asset_type))
+    return await execute_query(query, (location, user_id, asset_type))
 
 
-def process(task: dict) -> None:
-    """处理 Gemini 文生图任务。
-
-    这个函数是 Redis worker 调用 Gemini 图片模型的实际入口；
-    对话 Agent 只负责提交任务，不会在请求线程里直接生成图片。
-    """
+async def process(task: dict) -> None:
+    """异步处理 Gemini 文生图任务"""
     task_id = task['task_id']
     redis_client = _get_redis()
 
@@ -84,9 +80,11 @@ def process(task: dict) -> None:
         else:
             contents = prompt
 
-        # =====【真正调用 Gemini 图片模型】=====
-        # 这里才把用户 prompt 发送给 Gemini 图片生成接口。
-        response = client.models.generate_content(
+        # Gemini SDK 暂无官方 async 支持，使用同步调用
+        # 实际 IO 时间占比小，主要瓶颈在 API 服务端生成
+        import asyncio
+        response = await asyncio.to_thread(
+            client.models.generate_content,
             model=task['model'],
             contents=contents,
             config=genai_types.GenerateContentConfig(
@@ -97,7 +95,6 @@ def process(task: dict) -> None:
             ),
         )
 
-        # 从 Gemini 返回内容中提取图片并保存到本地输出目录。
         images = []
         save_paths = []
         if hasattr(response, 'parts'):
@@ -119,7 +116,6 @@ def process(task: dict) -> None:
                         images.append({'url': f'/api/api-proxy/output/{filename}', 'type': 'image', 'asset_id': None})
                         save_paths.append(save_path)
 
-        # 只取最后一张（避免返回输入图）
         result_images = images[-1:] if images else []
         result_paths = save_paths[-1:] if save_paths else []
 
@@ -130,7 +126,7 @@ def process(task: dict) -> None:
         user_id = task.get('user_id')
         if user_id and result_paths:
             try:
-                aid = _save_output_asset(str(result_paths[0]), int(user_id), 'picture')
+                aid = await _save_output_asset(str(result_paths[0]), int(user_id), 'picture')
                 output_asset_ids.append(aid)
                 result_images[0]['asset_id'] = aid
             except Exception as e:
@@ -138,16 +134,14 @@ def process(task: dict) -> None:
 
         type_ = 'img2img' if task.get('input_asset_ids') else 'txt2img'
         history_id = task.get('history_id')
-        # =====【标记生成完成】=====
-        # worker 完成后更新 history 和 Redis，前端下一次轮询即可看到图片。
         if history_id:
-            history_repo.update_history(
+            await history_repo_worker.update_history(
                 history_id=history_id,
                 output_asset_ids=output_asset_ids,
                 status='done',
             )
         else:
-            history_id = history_repo.save_history(
+            history_id = await history_repo_worker.save_history(
                 task_id=task_id,
                 prompt=task.get('prompt', ''),
                 user_id=int(user_id) if user_id else 0,
@@ -164,7 +158,6 @@ def process(task: dict) -> None:
         logger.info(f'[{task_id}] 已完成，共 {len(result_images)} 张图片')
 
     except Exception as e:
-        # 出错时记录失败状态和错误信息，不让任务一直停留在 processing。
         provider_error = parse_provider_error(e, 'gemini')
 
         logger.error(
@@ -177,9 +170,9 @@ def process(task: dict) -> None:
         error_message = f"{provider_error.message} | {provider_error.detail}"
 
         if history_id:
-            history_repo.update_history(history_id=history_id, output_asset_ids=[], status='error', message=error_message)
+            await history_repo_worker.update_history(history_id=history_id, output_asset_ids=[], status='error', message=error_message)
         else:
-            history_repo.save_history(
+            await history_repo_worker.save_history(
                 task_id=task_id,
                 prompt=task.get('prompt', ''),
                 user_id=int(task['user_id']) if task.get('user_id') else 0,

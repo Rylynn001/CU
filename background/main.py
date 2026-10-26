@@ -14,23 +14,24 @@ logger = logging.getLogger(__name__)
 
 
 def start_workers():
-    """启动 worker 线程"""
-    from worker import worker_loop, _get_redis
+    """启动 worker（协程版本）"""
+    import asyncio
+    from worker import main as worker_main
 
-    redis_client = _get_redis()
-    num_workers = settings.WORKER_COUNT
-    logger.info(f'正在启动 {num_workers} 个 worker 线程...')
+    logger.info('正在启动 worker...')
 
-    for i in range(num_workers):
-        t = threading.Thread(
-            target=worker_loop,
-            args=(i + 1, redis_client),
-            daemon=True,
-            name=f'Worker-{i+1}',
-        )
-        t.start()
+    def run_async_workers():
+        """在独立线程中运行异步事件循环"""
+        asyncio.run(worker_main())
 
-    logger.info(f'{num_workers} 个 worker 已启动')
+    t = threading.Thread(
+        target=run_async_workers,
+        daemon=True,
+        name='WorkerThread',
+    )
+    t.start()
+
+    logger.info('worker 已启动')
 
 
 @asynccontextmanager

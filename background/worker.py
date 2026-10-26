@@ -1,15 +1,13 @@
 """
-Redis Worker - 处理异步任务队列
+Redis Worker - 异步处理任务队列
 启动方式: python worker.py
 """
 import json
-import time
 import logging
-import threading
+import asyncio
 import sys
 import pathlib
 
-# 添加项目根目录到 Python 路径
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 
 from config import settings
@@ -22,32 +20,30 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def _get_redis():
-    """获取 Redis 客户端"""
+def _get_redis_sync():
+    """获取同步 Redis 客户端（用于 brpop）"""
     import redis
     return redis.Redis(
         host=settings.REDIS_HOST,
         port=settings.REDIS_PORT,
         db=settings.REDIS_DB,
-        decode_responses=False  # 接收字节以兼容队列名判断
+        decode_responses=False
     )
 
 
-def worker_loop(worker_id: int, redis_client) -> None:
-    """单个 worker 线程主循环。
-
-    ``generation.py`` 只负责把任务放入 Redis；真正调用 OpenAI/Gemini 的地方在
-    ``workers/openai_worker.py`` 和 ``workers/gemini_worker.py``。本函数负责取任务并分发。
-    """
+async def worker_loop(worker_id: int) -> None:
+    """单个 worker 协程主循环"""
     logger.info(f'[Worker-{worker_id}] 已启动')
+    redis_client = _get_redis_sync()
 
     while True:
         try:
-            # =====【worker 取任务】=====
-            # brpop 会阻塞等待 API 提交的 queue:txt2img 任务。
-            result = redis_client.brpop(
+            # brpop 仍用同步（Redis 阻塞操作无法完全异步化）
+            # 用 asyncio.to_thread 避免阻塞事件循环
+            result = await asyncio.to_thread(
+                redis_client.brpop,
                 ['queue:txt2img', 'queue:txt2video', 'queue:img2video'],
-                timeout=1
+                1
             )
             if not result:
                 continue
@@ -58,67 +54,51 @@ def worker_loop(worker_id: int, redis_client) -> None:
             provider = task.get('provider', 'unknown')
 
             logger.info(f'[Worker-{worker_id}] 拿到任务: task_id={task_id}, queue={queue_name}, provider={provider}')
-            logger.info(f'[Worker-{worker_id}] 任务完整数据: {json.dumps(task, ensure_ascii=False)[:200]}...')
 
-            # =====【按提供商分发图片任务】=====
-            # 同一个 txt2img 队列，根据 provider 进入不同的图片 worker。
+            # 异步处理任务
             if queue_name == b'queue:txt2img' or queue_name == 'queue:txt2img':
                 if provider == 'gemini':
-                    gemini_worker.process(task)
+                    await gemini_worker.process(task)
                 elif provider == 'openai':
-                    openai_worker.process(task)
+                    await openai_worker.process(task)
                 else:
                     logger.warning(f'[Worker-{worker_id}] 未知提供商: {provider}')
 
             elif queue_name in (b'queue:txt2video', 'queue:txt2video'):
-                if provider == 'ark':
-                    ark_worker.process_txt2video(task)
-                elif provider == 'openai':
-                    # Seedance 等 OpenAI 兼容的视频模型，复用 ark_worker
-                    ark_worker.process_txt2video(task)
+                if provider in ('ark', 'openai'):
+                    await ark_worker.process_txt2video(task)
                 else:
                     logger.warning(f'[Worker-{worker_id}] 未知视频提供商: {provider}')
 
             elif queue_name in (b'queue:img2video', 'queue:img2video'):
-                if provider == 'ark':
-                    ark_worker.process_img2video(task)
-                elif provider == 'openai':
-                    # Seedance 等 OpenAI 兼容的视频模型，复用 ark_worker
-                    ark_worker.process_img2video(task)
+                if provider in ('ark', 'openai'):
+                    await ark_worker.process_img2video(task)
                 else:
                     logger.warning(f'[Worker-{worker_id}] 未知图生视频提供商: {provider}')
 
-        except KeyboardInterrupt:
-            logger.info(f'[Worker-{worker_id}] 已被用户停止')
+        except asyncio.CancelledError:
+            logger.info(f'[Worker-{worker_id}] 协程被取消')
             break
         except Exception as e:
-            logger.error(f'[Worker-{worker_id}] 错误: {e}')
-            time.sleep(1)
+            logger.error(f'[Worker-{worker_id}] 错误: {e}', exc_info=True)
+            await asyncio.sleep(1)
 
 
-def main():
-    redis_client = _get_redis()
+async def main():
     num_workers = settings.WORKER_COUNT
-    logger.info(f'正在启动 {num_workers} 个 worker 线程...')
+    logger.info(f'正在启动 {num_workers} 个异步 worker...')
 
-    threads = []
-    for i in range(num_workers):
-        t = threading.Thread(
-            target=worker_loop,
-            args=(i + 1, redis_client),
-            daemon=True,
-            name=f'Worker-{i+1}',
-        )
-        t.start()
-        threads.append(t)
+    tasks = [asyncio.create_task(worker_loop(i + 1)) for i in range(num_workers)]
 
-    logger.info(f'{num_workers} 个 worker 已启动，等待任务...')
+    logger.info(f'{num_workers} 个异步 worker 已启动，等待任务...')
     try:
-        for t in threads:
-            t.join()
+        await asyncio.gather(*tasks)
     except KeyboardInterrupt:
-        logger.info('主线程已被用户停止')
+        logger.info('收到停止信号，正在关闭...')
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 if __name__ == '__main__':
-    main()
+    asyncio.run(main())
