@@ -1,6 +1,7 @@
-"""对话可调用的图片工具，复用现有文生图接口和执行表。
+"""
+对话可调用的图片工具，复用现有文生图接口和执行表。
 
-本文件是“语言模型决定调用工具”与“后端真实执行动作”之间的桥梁：
+本文件是”语言模型决定调用工具”与”后端真实执行动作”之间的桥梁：
 
     list_image_models -> 查询 api_models
     txt2img           -> 校验模型和参数 -> 调用 api.generation.txt2img
@@ -14,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from api.generation import Txt2ImgRequest, Txt2VideoRequest, txt2img, txt2video
 from repositories import asset_repo, history_repo, provider_repo
 from repositories.workflow_repo import WorkflowRepository
+from services.seedance_tool import SeedancePromptTool
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +77,7 @@ class WorkflowImageTools:
         self.models = None
         self.video_models = None
         self.submitted = []
+        self.seedance = SeedancePromptTool()
 
         self.tools = {
             "list_image_models": {
@@ -165,6 +168,30 @@ class WorkflowImageTools:
                 },
                 "keywords": ["生成历史", "任务历史", "历史记录", "之前生成", "生成记录", "my history", "generation history"],
             },
+            "generate_seedance_prompt": {
+                "type": "function",
+                "function": {
+                    "name": "generate_seedance_prompt",
+                    "description": "生成符合字节跳动即梦(Seedance)平台规范的专业视频提示词。此工具包含完整的平台规则、时间戳分镜、运镜编码、美学约束等专业方法论。用户提到视频提示词、视频脚本、短剧、分镜等需求时必须调用此工具，不能自行生成。支持 2.0(15秒) 和 2.5(30秒直出,最长180秒)版本。",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "request": {"type": "string", "description": "用户的视频创意需求描述"},
+                            "version": {"type": "string", "enum": ["2.0", "2.5"], "default": "2.5", "description": "Seedance版本"},
+                            "duration": {"type": "integer", "minimum": 4, "maximum": 180, "description": "目标时长(秒)"},
+                            "aspect_ratio": {"type": "string", "enum": ["16:9", "9:16", "1:1", "4:3", "3:4"], "default": "16:9"},
+                        },
+                        "required": ["request"],
+                        "additionalProperties": False,
+                    },
+                },
+                "keywords": [
+                    "seedance", "即梦", "视频提示词", "短剧", "视频生成", "AI视频",
+                    "小云雀", "豆包", "30秒视频", "长视频", "视频脚本",
+                    "运镜", "镜头", "分镜", "剪辑", "图生视频", "赛博朋克",
+                    "时间戳", "剪辑节奏", "视频创作"
+                ],
+            },
         }
         self.handlers = {
             "list_image_models": lambda args: self.execute("list_image_models", args),
@@ -173,6 +200,7 @@ class WorkflowImageTools:
             "txt2video": self._txt2video,
             "list_my_images": self._list_my_images,
             "list_my_generation_history": self._list_my_generation_history,
+            "generate_seedance_prompt": self._generate_seedance_prompt,
         }
 
     def discover(self, query: str) -> list[dict]:
@@ -254,6 +282,56 @@ class WorkflowImageTools:
                 filename = Path(row["out_location"]).name if row.get("out_location") else ""
                 item["outputs"].append({"asset_id": row["out_asset_id"], "url": f"/api/api-proxy/output/{filename}"})
         return {"page": page, "records": list(records.values())}
+
+    async def _generate_seedance_prompt(self, arguments: dict) -> dict:
+        """生成 Seedance 视频提示词
+
+        这个方法返回指令文本,让对话模型根据 skill 规则生成提示词。
+        实际的提示词生成由对话模型完成,不是直接调用外部脚本。
+        """
+        request = arguments.get("request", "")
+        version = arguments.get("version", "2.5")
+        duration = arguments.get("duration")
+        aspect_ratio = arguments.get("aspect_ratio", "16:9")
+
+        if not request:
+            return {"error": "缺少 request 参数"}
+
+        # 判断版本
+        if not version:
+            version = self.seedance.determine_version(request)
+
+        # 判断路径
+        path = self.seedance.determine_path(
+            user_message=request,
+            duration=duration
+        )
+
+        # 生成指令
+        instruction = self.seedance.generate_prompt_instruction(
+            user_request=request,
+            path=path,
+            version=version,
+            duration=duration,
+            aspect_ratio=aspect_ratio
+        )
+
+        return {
+            "instruction": instruction,
+            "path": path,
+            "version": version,
+            "aspect_ratio": aspect_ratio,
+            "duration": duration,
+            "message": f"""已生成 Seedance 视频提示词生成指令(路径 {path}, 版本 {version})。
+
+请根据指令生成符合规范的提示词,然后:
+
+**后续操作**:
+1. 如果需要生成首帧图/角色图,请先调用 discover_tools 查找 'list_image_models',然后用 'txt2img' 生成
+2. 如果需要生成视频,请先调用 discover_tools 查找 'list_video_models',然后用 'txt2video' 生成
+
+注意: txt2img 和 txt2video 调用前必须先查询对应的模型列表。"""
+        }
 
     async def execute(self, name: str, arguments: dict) -> dict:
         """执行语言模型请求的工具。

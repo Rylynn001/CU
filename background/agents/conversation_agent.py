@@ -60,8 +60,23 @@ class ConversationAgent:
         state["messages"].append({"role": "user", "content": message})
         system_prompt = f"""你是一个可以使用后端能力的创作助手，当前对话模型是 {self.model}。
 结合完整历史理解用户的简短回答和选项编号，自然地回应、回答问题；不要无条件展示菜单或按固定表单逐项追问。
-首轮只提供了工具发现入口。需要读取或改变后端数据时，先按用户语义调用 discover_tools 寻找相关能力；发现结果会在后续请求中提供，不能猜工具名或假称执行。
-只有用户明确要求执行生成、查询、修改等动作时才调用对应工具；普通问题直接回答。工具返回错误时说明错误，不要编造成功结果。
+
+**工具使用规则**：
+首轮只提供了工具发现入口。当用户需要以下任何能力时，先调用 discover_tools 寻找相关工具：
+1. 数据操作：读取或改变后端数据（查询模型、生成图片/视频、查询历史等）
+2. 专业内容生成：需要遵循特定平台规范的提示词生成（如 Seedance/即梦视频提示词、图生视频提示词等）
+3. 复杂格式转换：需要专业知识的内容转换（如分镜脚本、运镜描述等）
+
+发现结果会在后续请求中提供，不能猜工具名或假称执行。
+只有用户明确要求执行生成、查询、修改等动作，或请求专业格式内容时才调用对应工具；普通问题直接回答。
+工具返回错误时说明错误，不要编造成功结果。
+
+**生成工作流**：
+- 当生成视频提示词后，主动询问用户是否需要实际生成图片或视频
+- 图片生成流程：list_image_models → 确认模型 → txt2img
+- 视频生成流程：list_video_models → 确认模型 → txt2video
+- 不要假设用户已有模型选择，必须先查询模型列表
+
 生成、查询工具只能访问当前用户允许的数据。未从工具结果中确认的模型、图片和任务都不能当作真实数据。
 历史收集的参数（仅供理解，不能据此假定工具已经执行）：{json.dumps(state.get('parameters', {}), ensure_ascii=False)}
 该会话已经提交的真实任务：{json.dumps(executions or [], ensure_ascii=False, default=str)}
@@ -87,12 +102,30 @@ class ConversationAgent:
             )
             content = ""
             calls = {}
+
+            # 检测是否需要强制工具调用
+            force_tool_choice = None
+            if turn == 0:
+                # 第一轮:检查消息中是否包含专业内容生成的关键词
+                message_lower = message.lower()
+                content_keywords = [
+                    "seedance", "即梦", "视频提示词", "视频脚本",
+                    "分镜", "运镜", "剪辑节奏", "时间戳"
+                ]
+                if any(kw in message_lower for kw in content_keywords):
+                    force_tool_choice = {"type": "function", "function": {"name": "discover_tools"}}
+                    logger.info(
+                        "检测到专业内容关键词，强制调用 discover_tools request_id=%s keywords=%s",
+                        request_id, [kw for kw in content_keywords if kw in message_lower]
+                    )
+
             try:
                 # =====【语言模型调用入口】=====
                 # 程序在这里把“系统规则 + 完整历史 + 工具定义”发给语言模型。
                 # stream=True 表示模型不会一次性返回完整结果，而是分片返回。
                 stream = await self.client.chat.completions.create(
                     model=self.model, messages=messages, tools=request_tools,
+                    tool_choice=force_tool_choice,  # 可能强制调用
                     parallel_tool_calls=False, stream=True,
                 )
                 try:
