@@ -135,25 +135,32 @@ def _save_history(
 
 @router.post("/txt2img", response_model=TaskResponse)
 async def txt2img(req: Txt2ImgRequest, user: dict = Depends(get_current_user)):
-    """文生图接口"""
+    """文生图接口。
+
+    这是后端真正创建图片任务的接口。被对话 Agent 调用时，参数已经由
+    services/workflow_image_tools.py 校验过一次；这里仍然按普通 API 再校验和查询，
+    因为接口不能假设调用方一定可信。
+    """
     user_id = user['user_id']
 
     if not req.prompt:
         raise HTTPException(status_code=400, detail="prompt is required")
 
-    # 生成任务 ID
+    # =====【生成任务编号】=====
+    # 这个 task_id 用于后续查询任务状态和关联 history。
     task_id = str(uuid.uuid4())
 
     # 加载参考图（如果有）
     input_asset_ids = req.input_asset_ids or []
     image_b64_list = _load_input_assets_as_b64(input_asset_ids) if input_asset_ids else []
 
-    # 获取模型信息（需要从数据库查询）
+    # =====【读取图片模型配置】=====
+    # req.model 是 api_models.id。这里根据编号读取真实模型名称、提供商和 rfid。
     model_info = generation_repo.get_model_info(req.model)
     if not model_info:
         raise HTTPException(status_code=404, detail=f"model {req.model} not found")
 
-    # 获取 provider 配置（解密后的 api_key 和 base_url）
+    # 根据模型的 rfid 读取对应供应商配置；密钥不会返回给前端。
     from config import get_provider_config_by_rfid
     provider_config = get_provider_config_by_rfid(model_info['rfid'])
     if not provider_config:
@@ -164,7 +171,8 @@ async def txt2img(req: Txt2ImgRequest, user: dict = Depends(get_current_user)):
     logger.info(f'[txt2img] task_id={task_id}, model={model_info["name"]}, provider={model_info["provider"]}, '
                 f'rfid={model_info["rfid"]}, api_key={api_key_masked}, base_url={provider_config["base_url"]}')
 
-    # 保存历史记录
+    # =====【保存生成历史】=====
+    # 先写 history，状态为 pending。worker 完成后会把它改成 done/error。
     type_ = 'img2img' if input_asset_ids else 'txt2img'
     payload = {
         'model': req.model,
@@ -189,7 +197,8 @@ async def txt2img(req: Txt2ImgRequest, user: dict = Depends(get_current_user)):
         payload=payload
     )
 
-    # 任务入队到 Redis（完全参考 ComfyUI 原实现的平铺结构）
+    # =====【提交到 Redis 队列】=====
+    # 这里不是直接调用 OpenAI/Gemini，而是把任务交给后台 worker 异步处理。
     task_data = {
         'task_id': task_id,
         'provider': model_info['provider'],
@@ -210,6 +219,7 @@ async def txt2img(req: Txt2ImgRequest, user: dict = Depends(get_current_user)):
 
     logger.info(f'[txt2img] 任务已创建: {task_id}')
 
+    # 返回到 WorkflowImageTools，再返回到 ConversationAgent，最后进入 SSE done 事件。
     return TaskResponse(task_id=task_id, history_id=history_id)
 
 

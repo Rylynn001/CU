@@ -41,6 +41,11 @@ def _save_output_asset(location: str, user_id: int, asset_type: str) -> int:
 
 
 def process(task: dict) -> None:
+    """处理 Gemini 文生图任务。
+
+    这个函数是 Redis worker 调用 Gemini 图片模型的实际入口；
+    对话 Agent 只负责提交任务，不会在请求线程里直接生成图片。
+    """
     task_id = task['task_id']
     redis_client = _get_redis()
 
@@ -79,6 +84,8 @@ def process(task: dict) -> None:
         else:
             contents = prompt
 
+        # =====【真正调用 Gemini 图片模型】=====
+        # 这里才把用户 prompt 发送给 Gemini 图片生成接口。
         response = client.models.generate_content(
             model=task['model'],
             contents=contents,
@@ -90,6 +97,7 @@ def process(task: dict) -> None:
             ),
         )
 
+        # 从 Gemini 返回内容中提取图片并保存到本地输出目录。
         images = []
         save_paths = []
         if hasattr(response, 'parts'):
@@ -130,6 +138,8 @@ def process(task: dict) -> None:
 
         type_ = 'img2img' if task.get('input_asset_ids') else 'txt2img'
         history_id = task.get('history_id')
+        # =====【标记生成完成】=====
+        # worker 完成后更新 history 和 Redis，前端下一次轮询即可看到图片。
         if history_id:
             history_repo.update_history(
                 history_id=history_id,
@@ -154,6 +164,7 @@ def process(task: dict) -> None:
         logger.info(f'[{task_id}] 已完成，共 {len(result_images)} 张图片')
 
     except Exception as e:
+        # 出错时记录失败状态和错误信息，不让任务一直停留在 processing。
         provider_error = parse_provider_error(e, 'gemini')
 
         logger.error(

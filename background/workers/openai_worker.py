@@ -41,6 +41,11 @@ def _save_output_asset(location: str, user_id: int, asset_type: str) -> int:
 
 
 def process(task: dict) -> None:
+    """处理 OpenAI 文生图任务。
+
+    这是 Redis worker 取到任务后，真正向图片供应商 API 请求出图的位置；
+    它和 ConversationAgent 调用的“语言模型”不是同一个请求。
+    """
     task_id = task['task_id']
     redis_client = _get_redis()
 
@@ -80,6 +85,9 @@ def process(task: dict) -> None:
         size = aspect_ratio_to_size.get(task.get('aspect_ratio', '1:1'), '1024x1024')
         quality = task.get('quality', 'medium')
 
+        # =====【真正调用图片生成模型】=====
+        # 与上游的 chat.completions.create 不同，这里调用的是 images.generate。
+        # 用户提示词、图片模型名和尺寸等来自 generation.txt2img 写进 Redis 的任务数据。
         response = None
         for attempt in range(3):
             try:
@@ -121,6 +129,7 @@ def process(task: dict) -> None:
                 else:
                     raise
 
+        # 图片 API 返回后，解码图片并写入 OUTPUT_DIR，稍后把文件登记到 assets 表。
         images = []
         save_paths = []
 
@@ -157,6 +166,8 @@ def process(task: dict) -> None:
 
         type_ = 'img2img' if task.get('input_asset_ids') else 'txt2img'
         history_id = task.get('history_id')
+        # =====【标记生成完成】=====
+        # 更新 history 为 done，并把 Redis 状态设为 completed；会话详情接口随后据此返回图片。
         if history_id:
             history_repo.update_history(
                 history_id=history_id,
@@ -181,6 +192,7 @@ def process(task: dict) -> None:
         logger.info(f'[{task_id}] 已完成，共 {len(images)} 张图片')
 
     except Exception as e:
+        # 出错时记录 history.error 和 Redis failed，前端轮询会看到失败原因。
         provider = task.get('provider', 'openai')
         provider_error = parse_provider_error(e, provider)
 

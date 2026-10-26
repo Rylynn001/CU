@@ -34,11 +34,17 @@ def _get_redis():
 
 
 def worker_loop(worker_id: int, redis_client) -> None:
-    """单个 worker 线程主循环"""
+    """单个 worker 线程主循环。
+
+    ``generation.py`` 只负责把任务放入 Redis；真正调用 OpenAI/Gemini 的地方在
+    ``workers/openai_worker.py`` 和 ``workers/gemini_worker.py``。本函数负责取任务并分发。
+    """
     logger.info(f'[Worker-{worker_id}] 已启动')
 
     while True:
         try:
+            # =====【worker 取任务】=====
+            # brpop 会阻塞等待 API 提交的 queue:txt2img 任务。
             result = redis_client.brpop(
                 ['queue:txt2img', 'queue:txt2video', 'queue:img2video'],
                 timeout=1
@@ -54,6 +60,8 @@ def worker_loop(worker_id: int, redis_client) -> None:
             logger.info(f'[Worker-{worker_id}] 拿到任务: task_id={task_id}, queue={queue_name}, provider={provider}')
             logger.info(f'[Worker-{worker_id}] 任务完整数据: {json.dumps(task, ensure_ascii=False)[:200]}...')
 
+            # =====【按提供商分发图片任务】=====
+            # 同一个 txt2img 队列，根据 provider 进入不同的图片 worker。
             if queue_name == b'queue:txt2img' or queue_name == 'queue:txt2img':
                 if provider == 'gemini':
                     gemini_worker.process(task)

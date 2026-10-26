@@ -1,339 +1,204 @@
-"""
-对话管理 Agent
+"""根据对话调用模型查询、图片生成工具。
+
+阅读本文件时，先记住三个位置：
+
+1. ``client.chat.completions.create`` 是发起语言模型请求的入口。
+2. ``async for chunk in stream`` 是读取语言模型流式返回的入口。
+3. ``tool_executor(name, arguments)`` 是模型要求调用后端工具的入口。
+
+语言模型负责理解用户意图和选择工具；后端工具负责查数据库、校验参数和提交任务。
 """
 import json
 import logging
 import time
-from typing import Dict, Any, List, Optional, Callable, Awaitable
+from typing import Any, Awaitable, Callable, Dict, Optional
+
 from openai import AsyncOpenAI
 from graph.states import ConversationState
 
 logger = logging.getLogger(__name__)
 
+DISCOVER_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "discover_tools",
+        "description": "根据用户当前需求，在后端能力目录中查找相关工具。请用自然语言描述要完成的事，不要猜测工具名。",
+        "parameters": {
+            "type": "object",
+            "properties": {"query": {"type": "string", "description": "用户想完成的事情或要查询的信息"}},
+            "required": ["query"],
+            "additionalProperties": False,
+        },
+    },
+}
+
 
 class ConversationAgent:
-    """对话管理 Agent，负责多轮对话收集参数"""
-
     def __init__(self, api_key: str, base_url: Optional[str] = None, model: str = "gpt-4"):
         self.client = AsyncOpenAI(api_key=api_key, base_url=base_url)
         self.model = model
 
-        # 意图定义
-        self.intents = {
-            "short_drama": {
-                "name": "短剧制作",
-                "required_params": ["script_path_or_content", "shot_count", "video_duration", "model"],
-                "optional_params": ["aspect_ratio", "resolution", "style"]
-            },
-            "batch_image": {
-                "name": "批量生图",
-                "required_params": ["prompts", "count", "model"],
-                "optional_params": ["aspect_ratio", "style", "reference_image"]
-            },
-            "single_video": {
-                "name": "单个视频生成",
-                "required_params": ["prompt", "duration", "model"],
-                "optional_params": ["resolution", "ratio", "reference_image"]
-            },
-            "image_to_video": {
-                "name": "图生视频",
-                "required_params": ["image_path_or_id", "duration", "model"],
-                "optional_params": ["prompt", "resolution"]
-            }
+    async def process(
+        self, message: str, session_id: Optional[str], user_id: int,
+        existing_state: Optional[ConversationState] = None,
+        on_progress: Optional[Callable[[str], Awaitable[None]]] = None,
+        on_delta: Optional[Callable[[str], Awaitable[None]]] = None,
+        tool_executor: Optional[Callable[[str, dict], Awaitable[dict]]] = None,
+        tool_discoverer: Optional[Callable[[str], list]] = None,
+        executions: Optional[list] = None,
+        request_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        # 这里的 state 是本轮对话的上下文。已有会话会带着数据库历史进入；
+        # 新会话则从空消息开始。模型能否理解“2”“openai”“1”等简短回答，
+        # 取决于这里是否把前几轮消息一起传给它。
+        state = existing_state or {
+            "session_id": session_id, "user_id": user_id, "messages": [],
+            "intent": None, "parameters": {}, "missing_params": [],
+            "workflow_ready": False, "current_step": "conversation",
         }
-
-        # 参数说明
-        self.param_descriptions = {
-            "script_path_or_content": "剧本文件路径或文本内容",
-            "shot_count": "需要生成的分镜数量（如 10）",
-            "video_duration": "每个视频的时长（秒，如 5）",
-            "model": "使用的模型（ark/openai/gemini）",
-            "prompts": "提示词列表或单个提示词",
-            "count": "生成数量",
-            "prompt": "生成提示词",
-            "duration": "视频时长（秒）",
-            "aspect_ratio": "宽高比（如 16:9, 9:16, 1:1）",
-            "resolution": "分辨率（如 1080p, 720p）",
-            "style": "风格描述",
-            "reference_image": "参考图片路径或 ID",
-            "image_path_or_id": "图片文件路径或资产 ID",
-            "ratio": "视频比例"
-        }
-
-    def _model_messages(self, state: ConversationState) -> List[Dict[str, str]]:
-        """保留对话顺序，并将数据库角色转换为模型接口支持的角色。"""
-        return [
-            {"role": "assistant" if msg["role"] == "agent" else msg["role"],
-             "content": msg["content"]}
+        # 先把当前用户消息加入上下文，再连同历史消息一起发送给语言模型。
+        state["messages"].append({"role": "user", "content": message})
+        system_prompt = f"""你是一个可以使用后端能力的创作助手，当前对话模型是 {self.model}。
+结合完整历史理解用户的简短回答和选项编号，自然地回应、回答问题；不要无条件展示菜单或按固定表单逐项追问。
+首轮只提供了工具发现入口。需要读取或改变后端数据时，先按用户语义调用 discover_tools 寻找相关能力；发现结果会在后续请求中提供，不能猜工具名或假称执行。
+只有用户明确要求执行生成、查询、修改等动作时才调用对应工具；普通问题直接回答。工具返回错误时说明错误，不要编造成功结果。
+生成、查询工具只能访问当前用户允许的数据。未从工具结果中确认的模型、图片和任务都不能当作真实数据。
+历史收集的参数（仅供理解，不能据此假定工具已经执行）：{json.dumps(state.get('parameters', {}), ensure_ascii=False)}
+该会话已经提交的真实任务：{json.dumps(executions or [], ensure_ascii=False, default=str)}
+"""
+        messages = [{"role": "system", "content": system_prompt}] + [
+            {"role": "assistant" if msg["role"] == "agent" else msg["role"], "content": msg["content"]}
             for msg in state["messages"]
         ]
-
-    async def understand_intent(self, state: ConversationState) -> ConversationState:
-        """识别用户意图"""
-        if state.get("intent"):
-            return state
-
-        # 调用 LLM 识别意图
-        system_prompt = f"""你是一个意图识别助手。用户的消息可能是以下意图之一：
-{json.dumps(self.intents, ensure_ascii=False, indent=2)}
-
-请结合完整对话历史理解用户最新消息，返回 JSON 格式：
-{{"intent": "short_drama/batch_image/single_video/image_to_video/unknown", "reply": "仅在 intent 为 unknown 时，对用户最新问题给出自然、简短的直接回应"}}
-
-如果用户回答的是上一轮助手列出的选项编号，应根据上一轮选项判断意图。
-如果用户在询问与你当前模型身份有关的问题，先回答当前模型名：{self.model}；随后自然地提供任务入口，并列出选项：1. 短剧制作，2. 批量生图，3. 单个视频生成，4. 图生视频，方便用户直接回复编号。其他闲聊或不明确请求先自然回应，再简短询问用户要完成什么。
-如果无法确定意图，返回 "unknown"。
-"""
-
-        response = await self._create_completion("intent_recognition", [
-            {"role": "system", "content": system_prompt},
-            *self._model_messages(state)
-        ])
-
-        result = json.loads(response.choices[0].message.content)
-        intent = result.get("intent")
-
-        if intent and intent in self.intents:
-            state["intent"] = intent
-            state["current_step"] = "parameter_extraction"
-        else:
-            state["current_step"] = "intent_clarification"
-            state["reply"] = result.get("reply", "")
-
-        return state
-
-    async def extract_parameters(self, state: ConversationState) -> ConversationState:
-        """从对话历史中提取参数"""
-        intent = state.get("intent")
-        if not intent:
-            return state
-
-        intent_config = self.intents[intent]
-        required_params = intent_config["required_params"]
-        optional_params = intent_config["optional_params"]
-        all_params = required_params + optional_params
-
-        # 构建提取提示词
-        param_schema = {param: self.param_descriptions.get(param, "") for param in all_params}
-
-        system_prompt = f"""你是一个参数提取助手。从对话历史中提取以下参数：
-{json.dumps(param_schema, ensure_ascii=False, indent=2)}
-
-必填参数：{required_params}
-可选参数：{optional_params}
-
-当前已收集的参数：{json.dumps(state.get("parameters", {}), ensure_ascii=False)}
-结合助手上一轮的问题理解简短回答；用户明确修改参数时，以最新回答为准。
-助手给出的示例、推荐值和任务选项编号不代表用户已选择的参数。
-
-返回 JSON 格式，parameters 只包含已明确提到或根据最新回答修正的参数，不要猜测：
-{{"parameters": {{"参数名": "参数值"}}, "reply": "自然简短地回应用户，并只追问下一个最重要的缺失信息；如果已经齐全则简短确认"}}
-
-如果参数是文件路径，直接返回路径字符串。
-如果参数是数值，返回数字类型。
-"""
-
-        # 构建对话历史
-        conversation = self._model_messages(state)
-
-        response = await self._create_completion("parameter_extraction", [
-            {"role": "system", "content": system_prompt},
-            *conversation
-        ])
-
-        extracted = json.loads(response.choices[0].message.content)
-        if "parameters" in extracted:
-            state["reply"] = extracted.get("reply", "")
-            extracted = extracted["parameters"]
-
-        # 更新参数
-        if "parameters" not in state:
-            state["parameters"] = {}
-        state["parameters"].update(extracted)
-
-        # 检查缺失的必填参数
-        missing = [p for p in required_params if p not in state["parameters"]]
-        state["missing_params"] = missing
-        logger.info(
-            "工作流参数整理完成 intent=%s collected_keys=%s missing_required=%s",
-            intent, sorted(state["parameters"].keys()), missing
-        )
-
-        if not missing:
-            state["current_step"] = "validation"
-        else:
-            state["current_step"] = "asking"
-
-        return state
-
-    async def _create_completion(self, stage: str, messages: List[Dict[str, str]]):
-        started_at = time.perf_counter()
-        try:
-            response = await self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                response_format={"type": "json_object"}
+        reply_parts = []
+        submitted = []
+        available_tools = {}
+        # 一轮用户消息可能需要多次模型请求：
+        # 第一次请求可能要求查询模型，工具返回后再请求一次，最后生成自然语言回复。
+        for turn in range(8):
+            if on_progress:
+                await on_progress("正在结合上下文处理请求" if turn == 0 else "正在根据工具结果继续处理")
+            started_at = time.perf_counter()
+            request_tools = [DISCOVER_TOOL, *available_tools.values()]
+            tool_names = [tool["function"]["name"] for tool in request_tools]
+            logger.info(
+                "对话模型开始 request_id=%s model=%s session_id=%s round=%s messages=%s provided_tools=%s",
+                request_id, self.model, session_id, turn, len(messages), tool_names,
             )
-        except Exception:
-            logger.exception("工作流模型调用失败 stage=%s model=%s", stage, self.model)
-            raise
-        elapsed_ms = round((time.perf_counter() - started_at) * 1000)
-        logger.info("工作流模型调用完成 stage=%s model=%s elapsed_ms=%d", stage, self.model, elapsed_ms)
-        return response
-
-    async def generate_question(self, state: ConversationState) -> str:
-        """生成追问问题"""
-        missing_params = state.get("missing_params", [])
-        if not missing_params:
-            return ""
-
-        # 询问第一个缺失参数
-        next_param = missing_params[0]
-        param_desc = self.param_descriptions.get(next_param, next_param)
-
-        intent = state.get("intent")
-        intent_name = self.intents[intent]["name"] if intent else "任务"
-
-        # 根据参数类型生成合适的问题
-        questions = {
-            "script_path_or_content": "请提供剧本文件路径，或者直接粘贴剧本内容",
-            "shot_count": "需要生成多少个分镜？",
-            "video_duration": "每个视频片段的时长是多少秒？（推荐 5-10 秒）",
-            "model": "使用哪个模型？\n- ark：质量高但较慢\n- openai：平衡质量和速度\n- gemini：速度快成本低",
-            "prompts": "请提供生成提示词（多个提示词用换行分隔）",
-            "count": "需要生成多少张图片？",
-            "prompt": "请描述你想生成的内容",
-            "duration": "视频时长是多少秒？",
-            "image_path_or_id": "请提供图片文件路径或资产 ID",
-        }
-
-        question = questions.get(next_param, f"请提供{param_desc}")
-
-        return question
-
-    async def validate_parameters(self, state: ConversationState) -> ConversationState:
-        """验证参数合理性"""
-        parameters = state.get("parameters", {})
-        errors = []
-
-        # 验证 shot_count
-        if "shot_count" in parameters:
+            content = ""
+            calls = {}
             try:
-                count = int(parameters["shot_count"])
-                if count <= 0 or count > 100:
-                    errors.append("分镜数量应在 1-100 之间")
-            except ValueError:
-                errors.append("分镜数量应为整数")
-
-        # 验证 video_duration
-        if "video_duration" in parameters:
-            try:
-                duration = float(parameters["video_duration"])
-                if duration <= 0 or duration > 60:
-                    errors.append("视频时长应在 0-60 秒之间")
-            except ValueError:
-                errors.append("视频时长应为数字")
-
-        # 验证 model
-        if "model" in parameters:
-            valid_models = ["ark", "openai", "gemini", "seedance"]
-            if parameters["model"] not in valid_models:
-                errors.append(f"模型应为：{', '.join(valid_models)}")
-
-        if errors:
-            state["current_step"] = "asking"
-            state["missing_params"] = ["validation_error"]
-            state["parameters"]["_validation_errors"] = errors
+                # =====【语言模型调用入口】=====
+                # 程序在这里把“系统规则 + 完整历史 + 工具定义”发给语言模型。
+                # stream=True 表示模型不会一次性返回完整结果，而是分片返回。
+                stream = await self.client.chat.completions.create(
+                    model=self.model, messages=messages, tools=request_tools,
+                    parallel_tool_calls=False, stream=True,
+                )
+                try:
+                    # =====【语言模型返回读取位置】=====
+                    # 每个 chunk 都是模型返回的一小段内容。
+                    # chunk.choices[0].delta.content 是普通文字；
+                    # delta.tool_calls 是模型要求调用工具的内容。
+                    async for chunk in stream:
+                        if not chunk.choices:
+                            continue
+                        delta = chunk.choices[0].delta
+                        # 模型正在输出给用户看的文字，例如“我先查询可用模型”。
+                        if delta.content:
+                            content += delta.content
+                            reply_parts.append(delta.content)
+                            if on_delta:
+                                await on_delta(delta.content)
+                        # 模型也可能不输出文字，而是输出工具调用。
+                        # 工具调用参数可能被拆成多个 chunk，所以先按 index 拼接起来。
+                        for call in delta.tool_calls or []:
+                            item = calls.setdefault(call.index, {"id": "", "type": "function", "function": {"name": "", "arguments": ""}})
+                            if call.id:
+                                item["id"] = call.id
+                            if call.function:
+                                item["function"]["name"] += call.function.name or ""
+                                item["function"]["arguments"] += call.function.arguments or ""
+                finally:
+                    await stream.close()
+            except Exception:
+                logger.exception("对话模型失败 request_id=%s session_id=%s round=%s", request_id, session_id, turn)
+                if not submitted:
+                    raise
+                text = "生成任务已提交，请查看任务进度。回复服务暂时不可用，不影响已提交的任务。"
+                reply_parts.append(text)
+                if on_delta:
+                    await on_delta(text)
+                break
+            logger.info(
+                "对话模型完成 request_id=%s session_id=%s round=%s tool_count=%s elapsed_ms=%s response=%s",
+                request_id, session_id, turn, len(calls),
+                round((time.perf_counter() - started_at) * 1000),
+                json.dumps(content, ensure_ascii=False),
+            )
+            if not calls:
+                break
+            # 把模型刚才的工具调用原样放回上下文，下一次模型请求才能知道自己调用过什么。
+            messages.append({"role": "assistant", "content": content or None, "tool_calls": list(calls.values())})
+            for call in calls.values():
+                name = call["function"]["name"]
+                logger.info(
+                    "对话模型请求调用工具 request_id=%s session_id=%s round=%s tool=%s arguments=%s",
+                    request_id, session_id, turn, name, call["function"]["arguments"],
+                )
+                if on_progress:
+                    await on_progress("正在查找适用工具" if name == "discover_tools" else f"正在执行工具：{name}")
+                try:
+                    arguments = json.loads(call["function"]["arguments"])
+                    if name == "discover_tools":
+                        if not tool_discoverer:
+                            raise ValueError("当前未配置工具发现目录")
+                        found_tools = tool_discoverer(arguments["query"])
+                        for found in found_tools:
+                            schema = {"type": found["type"], "function": found["function"]}
+                            available_tools[found["function"]["name"]] = schema
+                        result = {
+                            "available_tools": [
+                                {"name": found["function"]["name"], "description": found["function"]["description"]}
+                                for found in found_tools
+                            ]
+                        }
+                    else:
+                        if name not in available_tools:
+                            raise ValueError("工具尚未通过发现步骤加载")
+                        if not tool_executor:
+                            raise ValueError("当前未配置工具执行器")
+                        result = await tool_executor(name, arguments)
+                except Exception as error:
+                    logger.exception("对话工具失败 request_id=%s session_id=%s tool=%s", request_id, session_id, name)
+                    result = {"error": getattr(error, "detail", None) or str(error)}
+                logger.info(
+                    "对话工具返回 request_id=%s session_id=%s tool=%s result=%s",
+                    request_id, session_id, name, json.dumps(result, ensure_ascii=False, default=str),
+                )
+                if name in ("txt2img", "txt2video") and result.get("task_id"):
+                    submitted.append(result)
+                    if name == "txt2img":
+                        state["intent"] = "batch_image"
+                        state["parameters"] = result["parameters"]
+                    else:
+                        state["intent"] = "text_to_video"
+                        state["parameters"] = result["parameters"]
+                # 工具结果也要放回上下文，让语言模型根据真实数据库/接口结果继续回答。
+                messages.append({"role": "tool", "tool_call_id": call["id"], "content": json.dumps(result, ensure_ascii=False, default=str)})
         else:
-            state["workflow_ready"] = True
-            state["current_step"] = "ready"
+            text = "本次工具调用次数已达上限，请稍后继续。"
+            reply_parts.append(text)
+            if on_delta:
+                await on_delta(text)
 
-        return state
-
-    async def process(self, message: str, session_id: str, user_id: int,
-                     existing_state: Optional[ConversationState] = None,
-                     on_progress: Optional[Callable[[str], Awaitable[None]]] = None) -> Dict[str, Any]:
-        """处理用户消息"""
-
-        # 初始化或恢复状态
-        if existing_state:
-            state = existing_state
-        else:
-            state: ConversationState = {
-                "session_id": session_id,
-                "user_id": user_id,
-                "messages": [],
-                "intent": None,
-                "parameters": {},
-                "missing_params": [],
-                "workflow_ready": False,
-                "current_step": "intent_recognition"
-            }
-
-        # 添加用户消息
-        state["messages"].append({"role": "user", "content": message})
-        # 每条新消息都重新提取、验证，不能沿用上轮的追问或就绪标记。
-        state["current_step"] = "parameter_extraction" if state.get("intent") else "intent_recognition"
-        state["workflow_ready"] = False
-
-        # 执行对话流程
-        if state["current_step"] == "intent_recognition":
-            if on_progress:
-                await on_progress("正在结合对话上下文识别你的请求")
-            state = await self.understand_intent(state)
-
-        if state["current_step"] == "intent_clarification":
-            reply = state.get("reply") or "你想完成哪类任务？例如短剧制作、批量生图、视频生成或图生视频。"
-            state["messages"].append({"role": "agent", "content": reply})
-            return {
-                "reply": reply,
-                "state": state,
-                "workflow_ready": False
-            }
-
-        if state["current_step"] == "parameter_extraction":
-            if on_progress:
-                await on_progress("正在结合历史消息整理已提供的信息")
-            state = await self.extract_parameters(state)
-
-        if state["current_step"] == "validation":
-            if on_progress:
-                await on_progress("正在检查必填参数和取值")
-            state = await self.validate_parameters(state)
-
-        if state["current_step"] == "asking":
-            # 检查是否有验证错误
-            if "_validation_errors" in state["parameters"]:
-                errors = state["parameters"]["_validation_errors"]
-                reply = "参数验证失败：\n" + "\n".join(f"- {e}" for e in errors)
-                del state["parameters"]["_validation_errors"]
-            else:
-                reply = state.get("reply") or await self.generate_question(state)
-
-            state["messages"].append({"role": "agent", "content": reply})
-            return {
-                "reply": reply,
-                "state": state,
-                "workflow_ready": False
-            }
-
-        # 参数收集完成
-        if state["workflow_ready"]:
-            intent_name = self.intents[state["intent"]]["name"]
-            reply = state.get("reply") or f"好的，参数已收集完成。准备为你生成【{intent_name}】工作流..."
-
-            state["messages"].append({"role": "agent", "content": reply})
-
-            return {
-                "reply": reply,
-                "state": state,
-                "workflow_ready": True,
-                "intent": state["intent"],
-                "parameters": state["parameters"]
-            }
-
-        return {
-            "reply": "继续...",
-            "state": state,
-            "workflow_ready": False
-        }
+        # 这里是本轮模型最终给用户看的文字。工具调用本身不是回复，
+        # 只有模型在工具结果之后生成的文字才会进入 reply。
+        reply = "".join(reply_parts).strip()
+        if not reply:
+            reply = "生成任务已提交，请查看下方进度。" if submitted else "本次未提交生成任务，请补充你的需求。"
+            if on_delta:
+                await on_delta(reply)
+        state["messages"].append({"role": "agent", "content": reply})
+        state["workflow_ready"] = bool(submitted)
+        return {"reply": reply, "state": state, "workflow_ready": bool(submitted), "tasks": submitted}

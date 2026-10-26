@@ -11,6 +11,7 @@ export interface WorkflowMessageResponse {
   intent?: string | null
   parameters?: Record<string, unknown> | null
   workflow_ready: boolean
+  tasks: WorkflowTask[]
 }
 
 export interface LanguageModel {
@@ -40,6 +41,18 @@ export interface SessionDetail {
   parameters: any
   status: string
   conversations: ConversationMessage[]
+  tasks: WorkflowTask[]
+}
+
+export interface WorkflowTask {
+  task_id: string
+  execution_id: string
+  status: 'running' | 'completed' | 'failed' | string
+  stage?: string
+  error?: string
+  model_name?: string
+  parameters: { prompt?: string; n?: number }
+  images: Array<{ url: string; asset_id: number }>
 }
 
 /**
@@ -51,25 +64,6 @@ export async function getLanguageModels(): Promise<LanguageModel[]> {
   })
   const data = await res.json()
   return data.models || []
-}
-
-/**
- * 发送工作流消息
- */
-export async function sendWorkflowMessage(data: WorkflowMessageRequest): Promise<WorkflowMessageResponse> {
-  const res = await authFetch('/api/api-proxy/workflow/chat', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(data),
-  })
-  if (!res.ok) {
-    const error = await res.json().catch(() => null)
-    const detail = typeof error?.detail === 'string' ? error.detail : `请求失败（${res.status}）`
-    throw new Error(detail)
-  }
-  return res.json()
 }
 
 /**

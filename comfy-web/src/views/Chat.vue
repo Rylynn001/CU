@@ -73,6 +73,25 @@
               <div class="message-time">{{ formatTime(msg.created_at) }}</div>
             </div>
           </div>
+          <section v-for="task in activeTasks" :key="task.execution_id" class="task-result">
+            <div class="task-heading">
+              <strong>{{ task.model_name || (task.media_type === 'video' ? '视频生成' : '图片生成') }}</strong>
+              <span class="task-status" :class="task.status">{{ getTaskStatusText(task) }}</span>
+            </div>
+            <div class="task-prompt">{{ task.parameters?.prompt }}</div>
+            <div v-if="task.status === 'running'" class="task-meta">
+              任务编号：{{ task.task_id }}<span v-if="task.stage"> · {{ task.stage }}</span>
+            </div>
+            <div v-if="task.status === 'failed'" class="task-error">{{ task.error || '生成失败' }}</div>
+            <div v-if="task.images?.length" class="task-images">
+              <a v-for="image in task.images" :key="image.asset_id" :href="image.url" target="_blank" rel="noreferrer">
+                <img :src="image.url" :alt="task.parameters?.prompt || '生成图片'" />
+              </a>
+            </div>
+            <div v-if="task.videos?.length" class="task-images">
+              <video v-for="video in task.videos" :key="video.asset_id" :src="video.url" controls />
+            </div>
+          </section>
         </div>
 
         <div class="input-container">
@@ -93,7 +112,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import AiMascotInput from '@/components/AiMascotInput.vue'
 import type { ChatSubmitData, AIModel } from '@/types/ai-models'
 import {
@@ -102,6 +121,7 @@ import {
   getUserSessions,
   getSessionHistory,
   type WorkflowSession,
+  type WorkflowTask,
   type ConversationMessage,
 } from '@/api/workflow'
 
@@ -113,6 +133,8 @@ const isLoadingModels = ref(true)
 const currentSessionId = ref<string | undefined>(undefined)
 const sessions = ref<WorkflowSession[]>([])
 const messagesContainer = ref<HTMLElement | null>(null)
+const activeTasks = ref<WorkflowTask[]>([])
+let taskPoller: ReturnType<typeof setInterval> | undefined
 
 // 状态文本映射
 function getStatusText(status: string): string {
@@ -126,6 +148,13 @@ function getStatusText(status: string): string {
     failed: '失败',
   }
   return statusMap[status] || status
+}
+
+function getTaskStatusText(task: WorkflowTask): string {
+  if (task.status === 'running') return '生成中'
+  if (task.status === 'completed') return '已完成'
+  if (task.status === 'failed') return '失败'
+  return task.status
 }
 
 // 时间格式化
@@ -245,10 +274,12 @@ async function loadSessionDetail(sessionId: string) {
   try {
     const detail = await getSessionHistory(sessionId)
     messages.value = detail.conversations as any
+    activeTasks.value = detail.tasks || []
     scrollToBottom()
   } catch (error) {
     console.error('加载会话详情失败:', error)
     messages.value = []
+    activeTasks.value = []
   }
 }
 
@@ -264,6 +295,7 @@ function createNewSession() {
   if (isProcessing.value) return
   currentSessionId.value = undefined
   messages.value = []
+  activeTasks.value = []
 }
 
 // 处理消息提交
@@ -300,6 +332,7 @@ const handleSubmit = async (data: ChatSubmitData) => {
         scrollToBottom()
       },
     )
+    activeTasks.value = response.tasks || []
 
     // 更新 session_id
     if (response.session_id && response.session_id !== currentSessionId.value) {
@@ -342,6 +375,21 @@ onMounted(async () => {
     currentSessionId.value = latestSession.id
     await loadSessionDetail(latestSession.id)
   }
+
+  taskPoller = setInterval(async () => {
+    if (!currentSessionId.value || !activeTasks.value.some((task) => task.status === 'running')) return
+    try {
+      const detail = await getSessionHistory(currentSessionId.value)
+      activeTasks.value = detail.tasks || []
+      await loadSessions()
+    } catch (error) {
+      console.error('刷新图片任务状态失败:', error)
+    }
+  }, 3000)
+})
+
+onUnmounted(() => {
+  if (taskPoller) clearInterval(taskPoller)
 })
 </script>
 
@@ -598,6 +646,23 @@ onMounted(async () => {
   color: rgba(248, 250, 252, 0.4);
   padding: 0 0.5rem;
 }
+
+.task-result {
+  margin-left: 3.5rem;
+  padding: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0.5rem;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.task-heading { display: flex; justify-content: space-between; gap: 1rem; }
+.task-status { color: #38bdf8; }
+.task-status.completed { color: #22c55e; }
+.task-status.failed, .task-error { color: #f87171; }
+.task-prompt, .task-meta { margin-top: 0.5rem; color: rgba(255, 255, 255, 0.65); }
+.task-images { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 0.75rem; }
+.task-images img { display: block; width: min(100%, 320px); max-height: 320px; object-fit: contain; border-radius: 4px; }
+.task-images video { display: block; width: min(100%, 480px); max-height: 320px; border-radius: 4px; }
 
 .input-container {
   padding: 1.5rem;

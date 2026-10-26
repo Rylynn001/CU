@@ -29,7 +29,7 @@ class WorkflowRepository:
 
     @staticmethod
     def get_session(session_id: str) -> Optional[Dict[str, Any]]:
-        """获取会话"""
+        """从 workflow_sessions 读取会话主记录（用户、意图、参数和状态）。"""
         with get_db() as conn:
             cursor = conn.cursor()
             cursor.execute(
@@ -74,7 +74,7 @@ class WorkflowRepository:
 
     @staticmethod
     def add_conversation(session_id: str, role: str, message: str):
-        """添加对话记录"""
+        """向 workflow_conversations 写入一条用户或 Agent 消息。"""
         execute_query(
             """
             INSERT INTO workflow_conversations (session_id, role, message)
@@ -85,7 +85,7 @@ class WorkflowRepository:
 
     @staticmethod
     def get_conversations(session_id: str) -> List[Dict[str, Any]]:
-        """获取对话历史"""
+        """按时间顺序读取 workflow_conversations，供下一轮模型恢复上下文。"""
         with get_db() as conn:
             cursor = conn.cursor()
             cursor.execute(
@@ -118,8 +118,40 @@ class WorkflowRepository:
             return cursor.fetchall()
 
     @staticmethod
+    def get_session_executions(session_id: str) -> List[Dict[str, Any]]:
+        """从 workflow_executions 加载会话提交过的任务。
+
+        workflow_definition 保存本次任务参数，result 保存 task_id、history_id 等返回结果；
+        对话 Agent 用这些数据避免把已提交任务误当成尚未执行。
+        """
+        rows = execute_query(
+            "SELECT * FROM workflow_executions WHERE session_id = %s ORDER BY started_at ASC, id ASC",
+            (session_id,), fetch_all=True
+        ) or []
+        for row in rows:
+            for key in ("workflow_definition", "result"):
+                row[key] = json.loads(row[key]) if row[key] else {}
+        return rows
+
+    @staticmethod
+    def get_generation_result(history_id: int, user_id: int):
+        """从 history 和关联的 assets 读取最终状态与图片地址。
+
+        history_assets_rel 是 history 与 assets 的关联表；按 user_id 限定所有者，
+        避免通过会话任务读取其他用户的生成结果。
+        """
+        return execute_query(
+            """SELECT h.status, h.message, a.id AS asset_id, a.location
+               FROM history h
+               LEFT JOIN history_assets_rel r ON r.history_id = h.id
+               LEFT JOIN assets a ON a.id = r.asset_id
+               WHERE h.id = %s AND h.user_id = %s""",
+            (history_id, user_id), fetch_all=True
+        ) or []
+
+    @staticmethod
     def create_execution(session_id: str, workflow_definition: Dict[str, Any]) -> str:
-        """创建执行记录"""
+        """向 workflow_executions 写入一次工具任务的初始执行记录。"""
         execution_id = str(uuid.uuid4())
 
         execute_query(
@@ -136,7 +168,7 @@ class WorkflowRepository:
     def update_execution(execution_id: str, current_node: Optional[str] = None,
                         status: Optional[str] = None, progress: Optional[float] = None,
                         result: Optional[Dict[str, Any]] = None, error: Optional[str] = None):
-        """更新执行状态"""
+        """更新 workflow_executions 中的执行节点、状态、结果或错误。"""
         updates = []
         values = []
 

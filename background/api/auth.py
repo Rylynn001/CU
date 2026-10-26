@@ -47,7 +47,11 @@ def decode_token(token: str) -> dict | None:
 
 
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    """依赖注入：获取当前用户"""
+    """依赖注入：获取当前用户。
+
+    workflow.chat_stream 在进入业务逻辑前会先经过这里：读取请求头中的 Bearer token，
+    解码出 user_id，后续会话和生成历史查询都使用这个用户身份做权限校验。
+    """
     token = credentials.credentials
     payload = decode_token(token)
     if not payload:
