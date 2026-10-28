@@ -793,7 +793,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { pollTaskUntilDone, uploadInputImage, getApiModels, apiImg2VideoGenerate, authFetch, getAuthHeader } from '../api/apiService'
+import { pollTaskUntilDone, uploadInputImage, getApiModels, apiVideoGenerate, authFetch, getAuthHeader } from '../api/apiService'
 import MediaViewer from '../components/MediaViewer.vue'
 import { addSbPendingTask, removeSbPendingTask, resumeSbPendingTasks } from '../composables/useSbTaskPersist'
 import { getCurrentUserId } from '../utils/user'
@@ -1520,7 +1520,7 @@ async function genVideo(sb: any) {
       } catch (_) { /* 音频获取失败不阻断 */ }
     }
 
-    const { task_id } = await apiImg2VideoGenerate({
+    const { task_id } = await apiVideoGenerate({
       model: videoModelId.value,
       prompt,
       ratio: '16:9',

@@ -51,16 +51,7 @@ class Txt2ImgRequest(BaseModel):
 
 
 class Txt2VideoRequest(BaseModel):
-    """文生视频请求"""
-    model: int
-    prompt: str
-    ratio: str = "16:9"
-    resolution: str = "720p"
-    duration: int = 8
-
-
-class Img2VideoRequest(BaseModel):
-    """图生视频请求"""
+    """文生视频请求(支持图生视频)"""
     model: int
     prompt: str
     ratio: str = "16:9"
@@ -225,79 +216,7 @@ async def txt2img(req: Txt2ImgRequest, user: dict = Depends(get_current_user)):
 
 @router.post("/txt2video", response_model=TaskResponse)
 async def txt2video(req: Txt2VideoRequest, user: dict = Depends(get_current_user)):
-    """文生视频接口"""
-    user_id = user['user_id']
-
-    if not req.prompt:
-        raise HTTPException(status_code=400, detail="prompt is required")
-
-    # 生成任务 ID
-    task_id = str(uuid.uuid4())
-
-    # 获取模型信息
-    model_info = generation_repo.get_model_info(req.model)
-    if not model_info:
-        raise HTTPException(status_code=404, detail=f"model {req.model} not found")
-
-    # 获取 provider 配置
-    from config import get_provider_config_by_rfid
-    provider_config = get_provider_config_by_rfid(model_info['rfid'])
-    if not provider_config:
-        raise HTTPException(status_code=500, detail=f"provider config not found for model {req.model}")
-
-    # 日志：打印解密后的 provider 配置（api_key 脱敏）
-    api_key_masked = provider_config['api_key'][:8] + '***' if len(provider_config['api_key']) > 8 else '(too short)'
-    logger.info(f'[txt2video] task_id={task_id}, model={model_info["name"]}, provider={model_info["provider"]}, '
-                f'rfid={model_info["rfid"]}, api_key={api_key_masked}, base_url={provider_config["base_url"]}')
-
-    # 保存历史记录
-    payload = {
-        'model': req.model,
-        'prompt': req.prompt,
-        'ratio': req.ratio,
-        'resolution': req.resolution,
-        'duration': req.duration,
-        'user_id': user_id
-    }
-
-    history_id = _save_history(
-        task_id=task_id,
-        prompt=req.prompt,
-        user_id=user_id,
-        model_id=req.model,
-        input_asset_ids=[],
-        output_asset_ids=[],
-        status='pending',
-        type_='txt2video',
-        mode='api',
-        payload=payload
-    )
-
-    # 任务入队到 Redis（平铺结构，与 ComfyUI 原版一致）
-    task_data = {
-        'task_id': task_id,
-        'history_id': history_id,
-        'provider': model_info['provider'],
-        'model': model_info['name'],
-        'model_id': model_info['id'],
-        'prompt': req.prompt,
-        'ratio': req.ratio,
-        'resolution': req.resolution,
-        'duration': req.duration,
-        'user_id': user_id,
-        'api_key': provider_config['api_key'],
-        'base_url': provider_config['base_url'],
-    }
-    enqueue_task('queue:txt2video', task_data)
-
-    logger.info(f'[txt2video] 任务已创建: {task_id}')
-
-    return TaskResponse(task_id=task_id, history_id=history_id)
-
-
-@router.post("/img2video", response_model=TaskResponse)
-async def img2video(req: Img2VideoRequest, user: dict = Depends(get_current_user)):
-    """图生视频接口"""
+    """文生视频接口(支持图生视频)"""
     user_id = user['user_id']
 
     if not req.prompt:
@@ -321,10 +240,12 @@ async def img2video(req: Img2VideoRequest, user: dict = Depends(get_current_user
 
     # 日志：打印解密后的 provider 配置（api_key 脱敏）
     api_key_masked = provider_config['api_key'][:8] + '***' if len(provider_config['api_key']) > 8 else '(too short)'
-    logger.info(f'[img2video] task_id={task_id}, model={model_info["name"]}, provider={model_info["provider"]}, '
-                f'rfid={model_info["rfid"]}, api_key={api_key_masked}, base_url={provider_config["base_url"]}')
+    logger.info(f'[txt2video] task_id={task_id}, model={model_info["name"]}, provider={model_info["provider"]}, '
+                f'rfid={model_info["rfid"]}, api_key={api_key_masked}, base_url={provider_config["base_url"]}, '
+                f'input_asset_ids={input_asset_ids}')
 
-    # 保存历史记录
+    # 保存历史记录 (统一使用 txt2video,支持可选的 input_asset_ids)
+    type_ = 'txt2video'
     payload = {
         'model': req.model,
         'prompt': req.prompt,
@@ -343,13 +264,10 @@ async def img2video(req: Img2VideoRequest, user: dict = Depends(get_current_user
         input_asset_ids=input_asset_ids,
         output_asset_ids=[],
         status='pending',
-        type_='img2video',
+        type_=type_,
         mode='api',
         payload=payload
     )
-
-    # 加载参考图（如果有）
-    image_b64_list = _load_input_assets_as_b64(input_asset_ids) if input_asset_ids else []
 
     # 任务入队到 Redis（平铺结构，与 ComfyUI 原版一致）
     task_data = {
@@ -367,8 +285,8 @@ async def img2video(req: Img2VideoRequest, user: dict = Depends(get_current_user
         'base_url': provider_config['base_url'],
         'input_asset_ids': input_asset_ids,
     }
-    enqueue_task('queue:img2video', task_data)
+    enqueue_task('queue:txt2video', task_data)
 
-    logger.info(f'[img2video] 任务已创建: {task_id}')
+    logger.info(f'[txt2video] 任务已创建: {task_id}')
 
     return TaskResponse(task_id=task_id, history_id=history_id)

@@ -3,7 +3,7 @@ import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getApiModels, pollTaskUntilDone, type ApiModel } from '../api/apiService'
 import { submitImageGeneration, type InputImage } from '../services/imageGenerationService'
-import { submitVideoGeneration, submitImg2VideoGeneration } from '../services/videoGenerationService'
+import { submitVideoGeneration } from '../services/videoGenerationService'
 import { useAtMention } from '../composables/useAtMention'
 import type { SourceAsset, GeneratedAsset } from './NodeGenerateDialog.vue'
 
@@ -163,25 +163,15 @@ async function handleGenerate() {
         })
       }
     } else {
+      // 视频生成(统一用 submitVideoGeneration)
       const refIds = props.refAssets.map((a) => a.id)
-      let taskId: string | undefined
-      let historyId: number | undefined
-      if (refIds.length > 0) {
-        const r = await submitImg2VideoGeneration({
-          modelId: Number(modelId.value), prompt: props.prompt,
-          ratio: videoRatio.value, resolution: resolution.value, duration: duration.value,
-          inputAssetIds: refIds,
-        })
-        taskId = r.taskId
-        historyId = r.historyId
-      } else {
-        const r = await submitVideoGeneration({
-          modelId: Number(modelId.value), prompt: props.prompt,
-          ratio: videoRatio.value, resolution: resolution.value, duration: duration.value,
-        })
-        taskId = r.taskId
-        historyId = r.historyId
-      }
+      const r = await submitVideoGeneration({
+        modelId: Number(modelId.value), prompt: props.prompt,
+        ratio: videoRatio.value, resolution: resolution.value, duration: duration.value,
+        inputAssetIds: refIds.length > 0 ? refIds : undefined,
+      })
+      const taskId = r.taskId
+      const historyId = r.historyId
       if (taskId) {
         if (historyId) emit('submitted', historyId)
         const done = await pollTaskUntilDone(taskId, 'video')

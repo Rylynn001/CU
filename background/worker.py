@@ -42,7 +42,7 @@ async def worker_loop(worker_id: int) -> None:
             # 用 asyncio.to_thread 避免阻塞事件循环
             result = await asyncio.to_thread(
                 redis_client.brpop,
-                ['queue:txt2img', 'queue:txt2video', 'queue:img2video'],
+                ['queue:txt2img', 'queue:txt2video'],
                 1
             )
             if not result:
@@ -69,12 +69,6 @@ async def worker_loop(worker_id: int) -> None:
                     await ark_worker.process_txt2video(task)
                 else:
                     logger.warning(f'[Worker-{worker_id}] 未知视频提供商: {provider}')
-
-            elif queue_name in (b'queue:img2video', 'queue:img2video'):
-                if provider in ('ark', 'openai'):
-                    await ark_worker.process_img2video(task)
-                else:
-                    logger.warning(f'[Worker-{worker_id}] 未知图生视频提供商: {provider}')
 
         except asyncio.CancelledError:
             logger.info(f'[Worker-{worker_id}] 协程被取消')

@@ -3,7 +3,7 @@ import { ref, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getApiModels, pollTaskUntilDone, type ApiModel } from '../api/apiService'
 import { submitImageGeneration, type InputImage } from '../services/imageGenerationService'
-import { submitVideoGeneration, submitImg2VideoGeneration } from '../services/videoGenerationService'
+import { submitVideoGeneration } from '../services/videoGenerationService'
 
 // 供参考图勾选用的资产（来自上一个面板）
 export interface SourceAsset {
@@ -108,27 +108,16 @@ async function handleGenerate() {
         asset = { id: -Date.now(), url: result.images[0], isVideo: false }
       }
     } else {
-      let taskId: string | undefined
-      if (refs.length > 0) {
-        const r = await submitImg2VideoGeneration({
-          modelId: modelId.value,
-          prompt: prompt.value,
-          ratio: ratio.value,
-          resolution: resolution.value,
-          duration: duration.value,
-          inputAssetIds: refs.map((a) => a.id),
-        })
-        taskId = r.taskId
-      } else {
-        const r = await submitVideoGeneration({
-          modelId: modelId.value,
-          prompt: prompt.value,
-          ratio: ratio.value,
-          resolution: resolution.value,
-          duration: duration.value,
-        })
-        taskId = r.taskId
-      }
+      // 视频生成(统一用 submitVideoGeneration)
+      const r = await submitVideoGeneration({
+        modelId: modelId.value,
+        prompt: prompt.value,
+        ratio: ratio.value,
+        resolution: resolution.value,
+        duration: duration.value,
+        inputAssetIds: refs.length > 0 ? refs.map((a) => a.id) : undefined,
+      })
+      const taskId = r.taskId
       if (taskId) {
         const done = await pollTaskUntilDone(taskId, 'video')
         const first = done.images?.[0] as { url: string; asset_id?: number } | undefined

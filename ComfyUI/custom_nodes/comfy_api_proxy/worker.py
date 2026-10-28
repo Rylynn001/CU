@@ -39,7 +39,7 @@ def worker_loop(worker_id: int, redis_client) -> None:
     while True:
         try:
             result = redis_client.brpop(
-                ['queue:txt2img', 'queue:txt2video', 'queue:img2video'],
+                ['queue:txt2img', 'queue:txt2video'],
                 timeout=1
             )
             if not result:
@@ -65,12 +65,6 @@ def worker_loop(worker_id: int, redis_client) -> None:
                     ark_worker.process_txt2video(task)
                 else:
                     logger.warning(f'[Worker-{worker_id}] 未知视频提供商: {provider}')
-
-            elif queue_name in (b'queue:img2video', 'queue:img2video'):
-                if provider == 'ark':
-                    ark_worker.process_img2video(task)
-                else:
-                    logger.warning(f'[Worker-{worker_id}] 未知图生视频提供商: {provider}')
 
         except KeyboardInterrupt:
             logger.info(f'[Worker-{worker_id}] 已被用户停止')

@@ -1,4 +1,4 @@
-"""任务相关路由：txt2img / txt2video / img2video / task 状态查询"""
+"""任务相关路由：txt2img / txt2video / task 状态查询"""
 import uuid
 import json
 import base64
@@ -280,7 +280,12 @@ async def txt2video(request: web.Request):
     model_info = provider_service.get_model_info(model_id)
     model_name = model_info['name']
 
-    logger.info(f'[api-proxy] txt2video model={model_name} prompt={prompt[:50]}')
+    # 支持可选的 input_asset_ids (图生视频)
+    input_asset_ids = body.get('input_asset_ids') or []
+    if isinstance(input_asset_ids, str):
+        input_asset_ids = [int(x.strip()) for x in input_asset_ids.split(',') if x.strip()]
+
+    logger.info(f'[api-proxy] txt2video model={model_name} prompt={prompt[:50]} assets={len(input_asset_ids)}')
 
     if not task_queue.AVAILABLE:
         raise web.HTTPServiceUnavailable(reason='Redis not available')
@@ -295,12 +300,12 @@ async def txt2video(request: web.Request):
         prompt=prompt,
         user_id=user_id,
         model_id=int(model_id) if model_id else None,
-        input_asset_ids=[],
+        input_asset_ids=input_asset_ids,
         output_asset_ids=[],
         status='pending',
         type_='txt2video',
         mode='api',
-        payload={'model': model_id, 'prompt': prompt, 'ratio': body.get('ratio', '16:9'), 'resolution': body.get('resolution', '720p'), 'duration': body.get('duration', 8), 'user_id': user_id},
+        payload={'model': model_id, 'prompt': prompt, 'ratio': body.get('ratio', '16:9'), 'resolution': body.get('resolution', '720p'), 'duration': body.get('duration', 8), 'input_asset_ids': input_asset_ids, 'user_id': user_id},
     )
 
     task_payload = {
@@ -315,81 +320,13 @@ async def txt2video(request: web.Request):
         'user_id': user_id,
         'api_key': api_key,
         'base_url': base_url,
+        'input_asset_ids': input_asset_ids,
         'history_id': history_id,
     }
 
     task_queue.enqueue('queue:txt2video', task_payload)
     task_queue.mark_pending(task_id)
     logger.info(f'[api-proxy] txt2video 任务已入队: {task_id}')
-    return web.json_response({'task_id': task_id, 'history_id': history_id})
-
-
-# ── /api-proxy/img2video ──────────────────────────────────────────────────
-
-@routes.post('/api-proxy/img2video')
-@require_auth
-async def img2video(request: web.Request):
-    body = await request.json()
-
-    model_id = body.get('model')
-    prompt = (body.get('prompt') or '').strip()
-
-    if not model_id:
-        raise web.HTTPBadRequest(reason='model is required')
-    if not prompt:
-        raise web.HTTPBadRequest(reason='prompt is required')
-
-    provider_id = body.get('provider_id')
-    api_key, base_url = provider_service.get_provider_config(provider_id=provider_id, model_id=model_id)
-    model_info = provider_service.get_model_info(model_id)
-    model_name = model_info['name']
-
-    logger.info(f'[api-proxy] img2video model={model_name} prompt={prompt[:50]}')
-
-    if not task_queue.AVAILABLE:
-        raise web.HTTPServiceUnavailable(reason='Redis not available')
-
-    if task_queue.queue_length('queue:img2video') >= QUEUE_MAX_SIZE:
-        raise web.HTTPServiceUnavailable(reason=f'系统繁忙，请稍后再试')
-
-    input_asset_ids = body.get('input_asset_ids') or []
-    if isinstance(input_asset_ids, str):
-        input_asset_ids = [int(x.strip()) for x in input_asset_ids.split(',') if x.strip()]
-
-    user_id = request['user_id']
-    task_id = str(uuid.uuid4())
-    history_id = history_repo.save_history(
-        task_id=task_id,
-        prompt=prompt,
-        user_id=user_id,
-        model_id=int(model_id) if model_id else None,
-        input_asset_ids=input_asset_ids,
-        output_asset_ids=[],
-        status='pending',
-        type_='img2video',
-        mode='api',
-        payload={'model': model_id, 'prompt': prompt, 'ratio': body.get('ratio', '16:9'), 'resolution': body.get('resolution', '720p'), 'duration': int(body.get('duration', 8)), 'input_asset_ids': input_asset_ids, 'user_id': user_id},
-    )
-
-    task_payload = {
-        'task_id': task_id,
-        'provider': 'ark',
-        'model': model_name,
-        'model_id': model_id,
-        'prompt': prompt,
-        'ratio': body.get('ratio', '16:9'),
-        'resolution': body.get('resolution', '720p'),
-        'duration': int(body.get('duration', 8)),
-        'user_id': user_id,
-        'api_key': api_key,
-        'base_url': base_url,
-        'input_asset_ids': input_asset_ids,
-        'history_id': history_id,
-    }
-
-    task_queue.enqueue('queue:img2video', task_payload)
-    task_queue.mark_pending(task_id)
-    logger.info(f'[api-proxy] img2video 任务已入队: {task_id}')
     return web.json_response({'task_id': task_id, 'history_id': history_id})
 
 
@@ -512,41 +449,10 @@ async def retry_history(request: web.Request):
         }
         task_queue.enqueue('queue:txt2img', task_payload)
 
-    elif type_ == 'txt2video':
+    elif type_ == 'txt2video' or type_ == 'img2video':
+        # txt2video 和 img2video 合并 (img2video 是历史数据,统一当作 txt2video 重试)
         if task_queue.queue_length('queue:txt2video') >= QUEUE_MAX_SIZE:
-            raise web.HTTPServiceUnavailable(reason='系统繁忙，请稍后再试')
-
-        new_history_id = history_repo.save_history(
-            task_id=new_task_id,
-            prompt=prompt,
-            user_id=int(user_id) if user_id else 0,
-            model_id=int(model_id) if model_id else None,
-            input_asset_ids=[],
-            output_asset_ids=[],
-            status='pending',
-            type_='txt2video',
-            mode='api',
-            payload=payload,
-        )
-        task_payload = {
-            'task_id': new_task_id,
-            'provider': 'ark',
-            'model': model_name,
-            'model_id': model_id,
-            'prompt': prompt,
-            'ratio': payload.get('ratio', '16:9'),
-            'resolution': payload.get('resolution', '720p'),
-            'duration': payload.get('duration', 8),
-            'user_id': user_id,
-            'api_key': api_key,
-            'base_url': base_url,
-            'history_id': new_history_id,
-        }
-        task_queue.enqueue('queue:txt2video', task_payload)
-
-    elif type_ == 'img2video':
-        if task_queue.queue_length('queue:img2video') >= QUEUE_MAX_SIZE:
-            raise web.HTTPServiceUnavailable(reason='系统繁忙，请稍后再试')
+            raise web.HTTPServiceUnavailable(reason='系统繁忙,请稍后再试')
 
         input_asset_ids = payload.get('input_asset_ids', [])
         new_history_id = history_repo.save_history(
@@ -557,7 +463,7 @@ async def retry_history(request: web.Request):
             input_asset_ids=input_asset_ids,
             output_asset_ids=[],
             status='pending',
-            type_='img2video',
+            type_='txt2video',
             mode='api',
             payload=payload,
         )
@@ -575,9 +481,8 @@ async def retry_history(request: web.Request):
             'base_url': base_url,
             'input_asset_ids': input_asset_ids,
             'history_id': new_history_id,
-            'input_files': [],
         }
-        task_queue.enqueue('queue:img2video', task_payload)
+        task_queue.enqueue('queue:txt2video', task_payload)
 
     else:
         raise web.HTTPBadRequest(reason=f'不支持的任务类型: {type_}')
@@ -620,8 +525,7 @@ async def prioritize_task(request: web.Request):
 
     provider = task_queue.get_meta(task_id, 'provider')
     if provider == 'ark':
-        remote_id = task_queue.get_meta(task_id, 'remote_id')
-        queue_name = 'queue:img2video' if remote_id else 'queue:txt2video'
+        queue_name = 'queue:txt2video'
     else:
         queue_name = 'queue:txt2img'
 

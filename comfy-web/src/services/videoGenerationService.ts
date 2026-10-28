@@ -1,4 +1,4 @@
-import { apiVideoGenerate, apiImg2VideoGenerate, uploadInputImage } from '../api/apiService'
+import { apiVideoGenerate, uploadInputImage } from '../api/apiService'
 
 export interface VideoGenerateParams {
   modelId: string | number
@@ -7,6 +7,10 @@ export interface VideoGenerateParams {
   resolution: string
   duration: number
   userId?: number
+  inputFiles?: File[]
+  inputAssetPreviews?: AssetPreview[]
+  inputAssetIds?: number[]
+  audioFile?: File // 可选背景音频
 }
 
 export interface AssetPreview {
@@ -14,13 +18,6 @@ export interface AssetPreview {
   url: string
   type: 'image' | 'video'
   file?: File
-}
-
-export interface VideoImg2VideoParams extends VideoGenerateParams {
-  inputFiles?: File[]
-  inputAssetPreviews?: AssetPreview[]
-  inputAssetIds?: number[]
-  audioFile?: File // 可选背景音频
 }
 
 export interface VideoGenerateResult {
@@ -31,21 +28,6 @@ export interface VideoGenerateResult {
 }
 
 export async function submitVideoGeneration(params: VideoGenerateParams): Promise<VideoGenerateResult> {
-  const result = await apiVideoGenerate({
-    model: params.modelId,
-    prompt: params.prompt,
-    ratio: params.ratio,
-    resolution: params.resolution,
-    duration: params.duration,
-  })
-
-  if ('task_id' in result) {
-    return { taskId: result.task_id, historyId: result.history_id }
-  }
-  return { videoUrl: result.video_url }
-}
-
-export async function submitImg2VideoGeneration(params: VideoImg2VideoParams): Promise<VideoGenerateResult> {
   const allIds: number[] = [...(params.inputAssetIds ?? [])]
 
   // 上传本地文件
@@ -68,14 +50,17 @@ export async function submitImg2VideoGeneration(params: VideoImg2VideoParams): P
     allIds.push(res.id)
   }
 
-  const result = await apiImg2VideoGenerate({
+  const result = await apiVideoGenerate({
     model: params.modelId,
     prompt: params.prompt,
     ratio: params.ratio,
     resolution: params.resolution,
     duration: params.duration,
-    input_asset_ids: allIds,
+    input_asset_ids: allIds.length > 0 ? allIds : undefined,
   })
 
-  return { taskId: result.task_id, historyId: result.history_id, inputAssetIds: allIds }
+  if ('task_id' in result) {
+    return { taskId: result.task_id, historyId: result.history_id, inputAssetIds: allIds.length > 0 ? allIds : undefined }
+  }
+  return { videoUrl: result.video_url, inputAssetIds: allIds.length > 0 ? allIds : undefined }
 }

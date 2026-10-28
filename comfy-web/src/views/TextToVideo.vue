@@ -1,39 +1,39 @@
 <script setup lang="ts">
 defineOptions({ name: 'TextToVideo' })
-// Vue 鏍稿績
+// Vue 核心
 import { ref, onMounted, onUnmounted, computed, nextTick, watch } from 'vue'
-// Element Plus UI 缁勪欢
+// Element Plus UI 组件
 import { ElSelect, ElOption } from 'element-plus'
 import { UploadFilled } from '@element-plus/icons-vue'
-// 璧勪骇閫夋嫨鍣ㄥ脊绐?
+// 资产选择器弹窗
 import AssetSidebar from '../components/AssetSidebar.vue'
 // 统一媒体查看器
 import MediaViewer from '../components/MediaViewer.vue'
-// 鍘嗗彶璁板綍闈㈡澘
+// 历史记录面板
 import HistoryPanel from '../components/HistoryPanel.vue'
-// 鍥剧墖缂栬緫鍣紙鍥剧敓瑙嗛鏃跺彲浠ユ秱鎶瑰弬鑰冨浘锛?
+// 图片编辑器（图生视频时可涂抹参考图）
 import ImageEditor from '../components/ImageEditor.vue'
 import ModelViewer from '../components/ModelViewer.vue'
 import FavoriteHeart from '../components/FavoriteHeart.vue'
 import ProjectManager from '../components/ProjectManager.vue'
 import RecordContextMenu from '../components/RecordContextMenu.vue'
 import MentionTextarea from '../components/MentionTextarea.vue'
-// 鍚庣 API 鎺ュ彛
+// 后端 API 接口
 import { getApiModels, retryHistory, favoriteAsset, type ApiModel } from '../api/apiService'
-// 鍘嗗彶璁板綍绠＄悊
+// 历史记录管理
 import { useGenerationHistory } from '../composables/useGenerationHistory'
-// 浠诲姟杞
+// 任务轮询
 import { useTaskPolling } from '../composables/useTaskPolling'
-// @鎻愬強鍔熻兘
+// @提及功能
 import { useAtMention } from '../composables/useAtMention'
-// 鍘嗗彶璁板綍缂栬緫闈㈡澘
+// 历史记录编辑面板
 import { useRecordEditor } from '../composables/useRecordEditor'
-// 杈撳叆濯掍綋绠＄悊锛氱粺涓€绠＄悊鏈湴涓婁紶鏂囦欢鍜岃祫浜у簱閫夋嫨鐨勫浘鐗?瑙嗛
+// 输入媒体管理：统一管理本地上传文件和资产库选择的图片、视频
 import { useInputMedia } from '../composables/useInputMedia'
-// 璺ㄩ〉闈㈠畾浣嶅巻鍙茶褰曪細璧勪骇搴撳彸閿?瀹氫綅鍘嗗彶璁板綍"鍚庯紝鍦ㄨ繖閲屾秷璐瑰苟婊氬姩+楂樹寒
+// 跨页面定位历史记录：处理资产库的定位请求并滚动高亮
 import { useLocateHistory } from '../composables/useLocateHistory'
-// 瑙嗛鐢熸垚鏈嶅姟锛氭枃鐢熻棰?鍜?鍥剧敓瑙嗛 鐨?API 璋冪敤灏佽
-import { submitVideoGeneration, submitImg2VideoGeneration } from '../services/videoGenerationService'
+// 视频生成服务：封装文生视频和图生视频的 API 调用
+import { submitVideoGeneration } from '../services/videoGenerationService'
 import { getCurrentUserId } from '../utils/user'
 import { generateUUID } from '../utils/uuid'
 import { getAssetFavoriteTag, loadAssetFavoriteTags, setAssetFavoriteTag } from '../composables/useAssetFavorites'
@@ -42,82 +42,82 @@ import { useRouter } from 'vue-router'
 
 const router = useRouter()
 
-// 鈹€鈹€ 鐢熸垚璁板綍绫诲瀷 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// ── 生成记录类型 ──
 interface VideoRecord {
-  id: string                                            // 鍓嶇鍞竴 ID
-  createdAt: number                                     // 鍒涘缓鏃堕棿鎴?
-  prompt: string                                        // 鎻愮ず璇?
-  modelName: string                                     // 妯″瀷鍚嶇О
-  ratio: string                                         // 瀹介珮姣旓紙濡?"16:9"锛?
-  resolution: string                                    // 鍒嗚鲸鐜囷紙濡?"720p"锛?
-  duration: number                                      // 瑙嗛鏃堕暱锛堢锛?
-  status: 'generating' | 'done' | 'error'              // 褰撳墠鐘舵€?
-  videoUrl?: string                                     // 鐢熸垚缁撴灉瑙嗛 URL
-  errorMsg?: string                                     // 澶辫触鏃剁殑閿欒淇℃伅
-  taskId?: string                                       // API 浠诲姟 ID锛岀敤浜庤疆璇?
-  mode: 'txt2video' | 'img2video'                      // 鏂囩敓瑙嗛 鎴?鍥剧敓瑙嗛
-  inputAssetIds?: number[]                              // 鍙傝€冪礌鏉愬湪璧勪骇搴撲腑鐨?ID
-  inputAssetUrls?: Array<{ url: string; type: string }> // 鍙傝€冪礌鏉愮殑绾夸笂 URL锛堝睍绀虹敤锛?
-  dbId?: number                                         // 鏁版嵁搴撹褰?ID
-  modelId?: number                                      // 妯″瀷鏁版嵁搴?ID
-  outputAssetId?: number                                // 杈撳嚭瑙嗛鍦ㄨ祫浜у簱涓殑 ID锛堢敤浜庢敹钘忥級
+  id: string                                            // 前端唯一 ID
+  createdAt: number                                     // 创建时间戳
+  prompt: string                                        // 提示词
+  modelName: string                                     // 模型名称
+  ratio: string                                         // 宽高比(如 "16:9")
+  resolution: string                                    // 分辨率(如 "720p")
+  duration: number                                      // 视频时长（秒）
+  status: 'generating' | 'done' | 'error'              // 当前状态
+  videoUrl?: string                                     // 生成结果的视频 URL
+  errorMsg?: string                                     // 失败时的错误信息
+  taskId?: string                                       // API 任务 ID，用于轮询
+  mode: 'txt2video' | 'img2video'                      // 文生视频或图生视频
+  inputAssetIds?: number[]                              // 参考素材在资产库中的 ID
+  inputAssetUrls?: Array<{ url: string; type: string }> // 参考素材的线上 URL(展示用)
+  dbId?: number                                         // 数据库记录 ID
+  modelId?: number                                      // 模型数据库 ID
+  outputAssetId?: number                                // 输出视频在资产库中的 ID（用于收藏）
 }
 
-// 鈹€鈹€ 鍘嗗彶璁板綍 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// ── 历史记录 ──
 const {
   records, saveRecords, searchQuery, expandedInputs, filteredRecords,
   toggleInputExpand, deleteRecord, clearAll, loadFromDb, loadMoreFromDb,
   hasMoreInDb, dbPageSize, markStaleRecords,
 } = useGenerationHistory<VideoRecord>('video_generation_history', 'video',
   (r) => ({
-    // blob: URL 鍦ㄩ〉闈㈠埛鏂板悗澶辨晥锛屼繚瀛樻椂杩囨护鎺夛紝涓嬫浠庢暟鎹簱閲嶆柊鍔犺浇绾夸笂 URL
+    // blob: URL 在页面刷新后失效，保存时过滤，下次从数据库加载线上 URL
     inputAssetUrls: r.inputAssetUrls?.filter(a => !a.url.startsWith('blob:')),
   }),
 )
 
-// 鈹€鈹€ 浠诲姟杞 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// ── 任务轮询 ──
 const { resumeTaskPolling } = useTaskPolling<VideoRecord>(
   () => records.value as VideoRecord[],
   saveRecords,
 )
 
-// 瀵硅棰戠敓鎴愪换鍔″惎鍔ㄨ疆璇紝鍥炶皟涓皢缁撴灉鍐欏叆璁板綍
+// 启动视频生成任务的轮询，在回调中将结果写入记录
 function pollVideo(record: VideoRecord, userId?: number) {
   return resumeTaskPolling(record, (rec, result) => {
-    // 浠庤繑鍥炵殑 images 鏁扮粍涓壘鍒拌棰戠被鍨嬬殑鏉＄洰
+    // 从返回的 images 数组中查找视频结果
     const videoItem = result.images.find((i: any) => i.url)
     rec.videoUrl = videoItem?.url || ''
     if (videoItem?.asset_id) rec.outputAssetId = videoItem.asset_id
-    // 濡傛灉鍚庣杩斿洖浜嗗弬鑰冪礌鏉愮殑绾夸笂 URL锛屾洿鏂板埌璁板綍涓紙鐢ㄤ簬灞曠ず锛?
+    // 若后端返回参考素材的线上 URL，则更新到记录中用于展示
     if ((result as any).inputAssetUrls?.length) {
       rec.inputAssetUrls = (result as any).inputAssetUrls
     }
-  }, 'video')  // 'video' 鍛婅瘔杞鍣ㄨ繖鏄棰戜换鍔?
+  }, 'video')  // 'video' 表示轮询视频任务
 }
 
-// 鈹€鈹€ 妯″瀷 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// ── 模型 ──
 const apiModels = ref<ApiModel[]>([])
 const apiModel = ref('')
-// 瑙嗛椤甸粯璁や娇鐢?API 妯″紡锛堟湰鍦拌棰戠敓鎴愭殏鏈疄鐜帮級
+// 视频页默认使用 API 模式（本地视频生成暂未实现）
 const modelSource = ref<'local' | 'api'>('api')
-// 褰撳墠鏍囩椤碉細鏂囩敓瑙嗛 鎴?鍥剧敓瑙嗛
+// 当前标签页：文生视频或图生视频
 const activeTab = ref<'txt2video' | 'img2video'>('txt2video')
 const isImg2Video = computed(() => activeTab.value === 'img2video')
 
-// 鈹€鈹€ 鍙傛暟 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// ── 参数 ──
 const prompt = ref('')
 const generating = ref(false)
 const errorMsg = ref('')
-// 闃查噸澶嶆彁浜ゆ爣蹇?
+// 防重复提交标志
 const justSubmitted = ref(false)
-// 瑙嗛瀹介珮姣?
+// 视频宽高比
 const ratio = ref('16:9')
-// 瑙嗛鍒嗚鲸鐜?
+// 视频分辨率
 const resolution = ref('720p')
-// 瑙嗛鏃堕暱锛堢锛?
+// 视频时长（秒）
 const duration = ref(8)
 
-// 瀹介珮姣旈€夐」鍒楄〃
+// 宽高比选项列表
 const ratioOptions = [
   { label: '16:9', value: '16:9' },
   { label: '4:3', value: '4:3' },
@@ -125,10 +125,10 @@ const ratioOptions = [
   { label: '3:4', value: '3:4' },
   { label: '9:16', value: '9:16' },
   { label: '21:9', value: '21:9' },
-  { label: 'adaptive', value: 'adaptive' },  // 鑷€傚簲锛氱敱妯″瀷鏍规嵁鍙傝€冨浘鍐冲畾
+  { label: 'adaptive', value: 'adaptive' },  // 自适应：由模型根据参考图决定
 ]
 
-// 鍒嗚鲸鐜囬€夐」鍒楄〃
+// 分辨率选项列表
 const resolutionOptions = [
   { label: '480p', value: '480p' },
   { label: '720p', value: '720p' },
@@ -136,9 +136,9 @@ const resolutionOptions = [
   { label: '4K', value: '4k' },
 ]
 
-// 鈹€鈹€ 杈撳叆濯掍綋 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// ── 输入媒体 ──
 
-// 闊抽鏂囦欢锛堝彲閫夛級
+// 音频文件（可选）
 const audioFile = ref<File | null>(null)
 const audioFileName = computed(() => audioFile.value?.name ?? '')
 function handleAudioChange(e: Event) {
@@ -149,7 +149,7 @@ function removeAudio() {
   audioFile.value = null
 }
 
-// 3D 妯″瀷瑙嗚鎴浘
+// 3D 模型视角截图
 const showModelViewer = ref(false)
 function handleModelCapture(file: File) {
   const total = inputFiles.value.length + selectedAssetIds.value.length
@@ -159,17 +159,17 @@ function handleModelCapture(file: File) {
   inputFiles.value.push(file)
   inputPreviews.value.push({ url: URL.createObjectURL(file), type: file.type.startsWith('video/') ? 'video' : 'image' })
 }
-// useInputMedia 缁熶竴绠＄悊鍥剧敓瑙嗛鐨勮緭鍏ョ礌鏉愶細
-// inputFiles - 鏈湴涓婁紶鐨勬枃浠跺垪琛?
-// inputPreviews - 鏈湴鏂囦欢鐨勯瑙堜俊鎭紙url + type锛?
-// selectedAssetIds - 浠庤祫浜у簱閫夋嫨鐨勭礌鏉?ID 鍒楄〃
-// selectedAssetPreviews - 璧勪骇搴撶礌鏉愮殑棰勮淇℃伅锛坲rl + type + id锛?
-// allMediaItems - 鍚堝苟鍚庣殑鎵€鏈夌礌鏉愶紙鐢ㄤ簬 @mention 涓嬫媺锛?
-// handleFilesChange - 澶勭悊鏂囦欢閫夋嫨浜嬩欢锛堟敮鎸佸閫夛紝鑷姩鏍￠獙鏁伴噺涓婇檺锛?
-// removeFile / removeAsset - 鍒犻櫎鏌愪釜鏈湴鏂囦欢 / 璧勪骇
-// clearAllInputs - 娓呯┖鎵€鏈夎緭鍏ョ礌鏉?
-// handleAssetSelect - 璧勪骇閫夋嫨鍣ㄥ洖璋?
-// replaceFile / replaceAssetWithFile - 缂栬緫鍥剧墖鍚庢浛鎹㈠師绱犳潗
+// useInputMedia 统一管理图生视频的输入素材：
+// inputFiles - 本地上传的文件列表
+// inputPreviews - 本地文件预览信息（url + type）
+// selectedAssetIds - 从资产库选择的素材 ID 列表
+// selectedAssetPreviews - 资产库素材预览信息（url + type + id）
+// allMediaItems - 合并后的全部素材（用于 @mention 下拉列表）
+// handleFilesChange - 处理文件选择（支持多选，自动检查数量上限）
+// removeFile / removeAsset - 删除本地文件或资产
+// clearAllInputs - 清空全部输入素材
+// handleAssetSelect - 资产选择器回调
+// replaceFile / replaceAssetWithFile - 编辑图片后替换原素材
 const {
   inputFiles, inputPreviews, selectedAssetIds, selectedAssetPreviews, allMediaItems,
   handleFilesChange, removeFile, removeAsset, clearAllInputs, handleAssetSelect,
@@ -236,17 +236,17 @@ function handlePanelDragLeave(e: DragEvent) {
   }
 }
 
-// 鈹€鈹€ @mention 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// ── @mention ──
 const promptInputRef = ref<InstanceType<typeof MentionTextarea> | null>(null)
 const { atMentionActive, atMentionIndex, onPromptKeyup, onPromptKeydown, insertMention } =
   useAtMention(
     () => prompt.value,
     (v) => { prompt.value = v },
-    () => allMediaItems.value,  // @mention 鍙紩鐢ㄦ墍鏈夊凡涓婁紶鐨勫浘鐗囧拰瑙嗛
+    () => allMediaItems.value,  // @mention 可引用全部已上传的图片和视频
     promptInputRef,
   )
 
-// 鈹€鈹€ 鍥剧墖棰勮 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// ── 图片预览 ──
 const showImageViewer = ref(false)
 const previewImageList = ref<string[]>([])
 const currentPreviewIndex = ref(0)
@@ -278,15 +278,15 @@ function goToNextImage() {
   currentPreviewIndex.value = (currentPreviewIndex.value + 1) % previewImageList.value.length
 }
 
-// 鈹€鈹€ 瑙嗛鎾斁鍣ㄥ脊绐?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
-// 鎺у埗瑙嗛鎾斁鍣ㄥ脊绐楃殑鏄剧ず
+// ── 视频播放器弹窗 ──
+// 控制视频播放器弹窗的显示
 const showVideoPlayer = ref(false)
-// 褰撳墠鎾斁鐨勮棰?URL
+// 当前播放的视频 URL
 const activeVideoUrl = ref('')
-// 褰撳墠鎾斁瑙嗛瀵瑰簲鐨勮祫浜?ID锛堢敤浜庢敹钘忕瓑鎿嶄綔锛?
+// 当前视频对应的资产 ID（用于收藏等操作）
 const activeVideoDbId = ref<number | undefined>(undefined)
 
-// 鐐瑰嚮鍘嗗彶璁板綍涓殑瑙嗛缂╃暐鍥炬椂鎵撳紑鎾斁鍣?
+// 点击历史记录中的视频缩略图时打开播放器
 function openVideo(url: string, dbId?: number) {
   activeVideoUrl.value = url
   activeVideoDbId.value = dbId
@@ -310,14 +310,14 @@ function closeMediaViewer() {
   showVideoPlayer.value = false
 }
 
-// 鈹€鈹€ 鍥剧墖缂栬緫鍣紙杈撳叆绱犳潗锛?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
-// 鎺у埗杈撳叆绱犳潗缂栬緫鍣ㄥ脊绐?
+// ── 图片编辑器（输入素材）──
+// 控制输入素材编辑器弹窗的显示
 const showEditor = ref(false)
-// 褰撳墠缂栬緫鐨勭礌鏉愭潵婧愶細鏈湴鏂囦欢 鎴?璧勪骇搴?
+// 当前编辑的素材来源：本地文件或资产库
 const editingSource = ref<'file' | 'asset'>('file')
-// 褰撳墠缂栬緫鐨勬湰鍦版枃浠剁储寮?
+// 当前编辑的本地文件索引
 const editingFileIndex = ref(-1)
-// 褰撳墠缂栬緫鐨勮祫浜х储寮?
+// 当前编辑的资产索引
 const editingAssetIndex = ref(-1)
 
 function openLocalEditor(index: number) {
@@ -328,7 +328,7 @@ function openAssetEditor(index: number) {
 }
 function onEditorCancel() { showEditor.value = false }
 
-// 缂栬緫鍣ㄧ‘璁ゅ悗锛屾牴鎹潵婧愭浛鎹㈠搴旂殑绱犳潗
+// 编辑器确认后，根据来源替换对应素材
 function onEditorConfirmUnified(file: File) {
   if (editingSource.value === 'file') {
     const idx = editingFileIndex.value
@@ -340,7 +340,7 @@ function onEditorConfirmUnified(file: File) {
   showEditor.value = false
 }
 
-// 鈹€鈹€ 鍘嗗彶璁板綍缂栬緫闈㈡澘 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// ── 历史记录编辑面板 ──
 const inlineEditorRef = ref<InstanceType<typeof ImageEditor> | null>(null)
 const {
   showRecordEditor, recordEditorPrompt,
@@ -349,14 +349,14 @@ const {
   onImageEditorCancel: onRecordImageEditorCancel, closeEditor: closeRecordEditor, getEditedFile,
 } = useRecordEditor(inlineEditorRef)
 
-// 鐐瑰嚮鍘嗗彶璁板綍鍗＄墖鐨?缁х画鐢熸垚"鎸夐挳
+// 点击历史记录卡片的“继续生成”按钮
 function handleRecordEdit(id: string) {
   const rec = (records.value as VideoRecord[]).find(r => r.id === id)
   if (!rec || rec.status !== 'done') return
   openRecordEditor(rec)
 }
 
-// 鍦ㄧ紪杈戦潰鏉夸腑鐐瑰嚮"缁х画鐢熸垚"鎸夐挳锛堝浘鐢熻棰戞ā寮忥紝浣跨敤缂栬緫鍚庣殑鍥剧墖閲嶆柊鐢熸垚锛?
+// 使用编辑后的图片继续生成视频
 async function generateFromEdit() {
   if (!apiModel.value) { errorMsg.value = '请先选择 API 模型'; return }
   closeRecordEditor()
@@ -367,7 +367,7 @@ async function generateFromEdit() {
   const editedFile = await getEditedFile()
   const userId = getCurrentUserId()
 
-  // 鍒涘缓鏂拌褰?
+  // 创建新记录
   const newRecord: VideoRecord = {
     id: generateUUID(), createdAt: Date.now(),
     prompt: recordEditorPrompt.value, modelName: model.name,
@@ -381,7 +381,7 @@ async function generateFromEdit() {
   try {
     let inputAssetIds: number[] = []
     if (editedFile) {
-      // 灏嗙紪杈戝悗鐨勫浘鐗囦笂浼犲埌璧勪骇搴擄紝鑾峰彇璧勪骇 ID
+      // 将编辑后的图片上传到资产库，获取资产 ID
       const { uploadInputImage } = await import('../api/apiService')
       const uploaded = await uploadInputImage(editedFile)
       inputAssetIds = [uploaded.id]
@@ -390,7 +390,7 @@ async function generateFromEdit() {
     }
 
     newRecord.inputAssetIds = inputAssetIds
-    const result = await submitImg2VideoGeneration({
+    const result = await submitVideoGeneration({
       modelId: model.id, prompt: newRecord.prompt,
       ratio: newRecord.ratio, resolution: newRecord.resolution, duration: newRecord.duration,
       userId: userId ?? undefined, inputFiles: [], inputAssetIds,
@@ -404,10 +404,10 @@ async function generateFromEdit() {
   }
 }
 
-// 鈹€鈹€ 閲嶈瘯 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// ── 重试 ──
 async function retryRecord(record: VideoRecord) {
   if (!record.dbId) {
-    return  // 娌℃湁 dbId 鏃犳硶閲嶈瘯
+    return  // 没有 dbId，无法重试
   }
   const newRecord: VideoRecord = {
     id: generateUUID(), createdAt: Date.now(),
@@ -430,16 +430,16 @@ async function retryRecord(record: VideoRecord) {
   }
 }
 
-// 鈹€鈹€ 涓荤敓鎴愬叆鍙?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// ── 主生成入口 ──
 async function handleGenerate() {
   errorMsg.value = ''
   if (!prompt.value.trim()) { errorMsg.value = '请输入提示词'; return }
-  if (generating.value) return  // 闃叉閲嶅鎻愪氦
+  if (generating.value) return  // 防止重复提交
   generating.value = true
 
   if (modelSource.value === 'api') {
     if (!apiModel.value) { errorMsg.value = '请先在模型管理中添加视频模型'; generating.value = false; return }
-    // 鍥剧敓瑙嗛妯″紡蹇呴』鏈夎緭鍏ョ礌鏉?
+    // 图生视频模式必须有输入素材
     if (activeTab.value === 'img2video' && inputFiles.value.length === 0 && selectedAssetIds.value.length === 0) {
       errorMsg.value = '请上传图片、视频，或从资产中选择'; generating.value = false; return
     }
@@ -447,13 +447,13 @@ async function handleGenerate() {
     const modelName = apiModels.value.find(m => m.id === apiModel.value)?.name || apiModel.value
     const userId = getCurrentUserId()
 
-    // 鍒涘缓璁板綍骞剁珛鍗虫彃鍏ュ垪琛?
+    // 创建记录并立即插入列表
     const record: VideoRecord = {
       id: generateUUID(), createdAt: Date.now(),
       prompt: prompt.value, modelId: Number(apiModel.value) || undefined, modelName,
       ratio: ratio.value, resolution: resolution.value, duration: duration.value,
       status: 'generating', mode: activeTab.value,
-      // 鍥剧敓瑙嗛鏃惰褰曞弬鑰冪礌鏉愪俊鎭?
+      // 图生视频时记录参考素材信息
       inputAssetIds: activeTab.value === 'img2video' ? selectedAssetPreviews.value.filter(p => !p.file).map(p => p.id) : undefined,
       inputAssetUrls: activeTab.value === 'img2video'
         ? inputPreviewItems.value.map(item => ({ url: item.preview.url, type: item.preview.type }))
@@ -466,8 +466,8 @@ async function handleGenerate() {
 
     try {
       if (activeTab.value === 'img2video') {
-        // 鍥剧敓瑙嗛锛氫笂浼犳湰鍦版枃浠?+ 浼犲叆璧勪骇棰勮锛屽悗绔細澶勭悊涓婁紶
-        const result = await submitImg2VideoGeneration({
+        // 图生视频：传入本地文件和资产预览，由服务处理上传
+        const result = await submitVideoGeneration({
           modelId: apiModel.value, prompt: prompt.value,
           ratio: ratio.value, resolution: resolution.value, duration: duration.value,
           userId: userId ?? undefined,
@@ -476,10 +476,10 @@ async function handleGenerate() {
           audioFile: audioFile.value ?? undefined,
         })
         record.taskId = result.taskId
-        // 鍚庣鍙兘杩斿洖涓婁紶鍚庣殑璧勪骇 ID
+        // 服务可能返回上传后的资产 ID
         if (result.inputAssetIds) record.inputAssetIds = result.inputAssetIds
       } else {
-        // 鏂囩敓瑙嗛
+        // 文生视频
         const result = await submitVideoGeneration({
           modelId: apiModel.value, prompt: prompt.value,
           ratio: ratio.value, resolution: resolution.value, duration: duration.value,
@@ -488,14 +488,14 @@ async function handleGenerate() {
         if (result.taskId) {
           record.taskId = result.taskId
         } else {
-          // 鏋佸皯鏁版儏鍐典笅鍚屾杩斿洖缁撴灉
+          // 少数情况下同步返回结果
           record.videoUrl = result.videoUrl; record.status = 'done'
           saveRecords(); generating.value = false; return
         }
       }
 
       saveRecords()
-      // 寤惰繜 1.5s 鍚庤В闄?generating 鐘舵€侊紙璁╃敤鎴风湅鍒版彁浜ゆ垚鍔熺殑鍙嶉锛?
+      // 延迟 1.5 秒解除 generating 状态，展示提交成功的反馈
       setTimeout(() => generating.value = false, 1500)
       pollVideo(record, userId ?? undefined).catch(console.error)
     } catch (e: any) {
@@ -506,12 +506,12 @@ async function handleGenerate() {
     return
   }
 
-  // 鏈湴瑙嗛鐢熸垚鏆傛湭瀹炵幇
+  // 本地视频生成暂未实现
   errorMsg.value = '本地视频生成暂未实现，请使用 API 调用'
   generating.value = false
 }
 
-// 涓嬭浇瑙嗛鍒版湰鍦?
+// 下载视频到本地
 function downloadVideo(url: string, filename?: string) {
   const a = document.createElement('a')
   a.href = url
@@ -519,7 +519,7 @@ function downloadVideo(url: string, filename?: string) {
   a.click()
 }
 
-// 璁剧疆鏌愭潯瑙嗛璁板綍鐨勬敹钘忛鑹?
+// 设置视频记录的收藏颜色
 async function setVideoFavorite(rec: VideoRecord, tag: 0 | 1 | 2 | 3 | 4) {
   if (!rec.outputAssetId) return
   const userStr = localStorage.getItem('user')
@@ -531,11 +531,11 @@ async function setVideoFavorite(rec: VideoRecord, tag: 0 | 1 | 2 | 3 | 4) {
       detail: { assetId: rec.outputAssetId, tag },
     }))
   } catch {
-    // 闈欓粯澶辫触
+    // 忽略收藏失败
   }
 }
 
-// 鏁版嵁搴撹褰曡浆鎹㈠嚱鏁帮紝loadMore 鏃跺鐢?
+// 数据库记录转换函数，加载更多时复用
 function mapVideoDbRecord(r: any) {
   return {
     id: String(r.id), dbId: r.id, createdAt: 0,
@@ -552,7 +552,7 @@ function mapVideoDbRecord(r: any) {
 }
 const filterVideoDbRecord = (r: any) => r.status !== 'pending' && r.status !== 'processing'
 
-// 鈹€鈹€ 瀹氫綅鍘嗗彶璁板綍锛堣祫浜у簱鍙抽敭"瀹氫綅鍘嗗彶璁板綍"璺宠浆杩囨潵锛?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// ── 定位历史记录（从资产库右键菜单跳转）──
 const { pendingRecord, consumePendingLocate } = useLocateHistory()
 const locatedRecordId = ref<string | null>(null)
 
@@ -572,7 +572,7 @@ async function locatePendingRecord() {
     if (locatedRecordId.value === rec!.id) locatedRecordId.value = null
   }, 1800)
 }
-// 鍚岄〉闈㈠彸閿?瀹氫綅鍘嗗彶璁板綍"锛堟棤闇€璺宠浆锛夋椂锛宲endingRecord 浼氬湪椤甸潰宸叉寕杞芥椂鍙樺寲
+// 同页定位时，pendingRecord 会在页面已挂载后变化
 watch(pendingRecord, (r) => { if (r) locatePendingRecord() })
 
 const loadingMore = ref(false)
@@ -599,7 +599,7 @@ async function loadMoreHistory() {
   }
 }
 
-// 鈹€鈹€ 娣诲姞鍒伴」鐩?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// ── 添加到项目 ──
 const showProjectManager = ref(false)
 const currentAssetId = ref<number | undefined>(undefined)
 
@@ -619,10 +619,10 @@ function handleProjectManagerClose() {
   currentAssetId.value = undefined
 }
 
-// 鈹€鈹€ 鍒濆鍖?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// ── 初始化 ──
 onMounted(async () => {
   try {
-    // 鑾峰彇瑙嗛绫诲瀷鐨?API 妯″瀷鍒楄〃
+    // 获取视频类型的 API 模型列表
     apiModels.value = await getApiModels('video')
     const defaultModel = apiModels.value.find(model =>
       model.name === 'seedance2.0' || model.description === 'seedance2.0'
@@ -630,26 +630,26 @@ onMounted(async () => {
     if (apiModels.value.length > 0) apiModel.value = (defaultModel || apiModels.value[0]).id
   } catch {}
 
-  // 浠庢暟鎹簱鍔犺浇鍘嗗彶璁板綍
+  // 从数据库加载历史记录
   const userId = await loadVideoHistory()
 
-  // 鎭㈠椤甸潰鍒锋柊鍓嶆湭瀹屾垚鐨勪换鍔¤疆璇?
+  // 恢复页面刷新前未完成的任务轮询
   const pending = markStaleRecords()
   for (const rec of pending) {
     pollVideo(rec as VideoRecord, userId).catch(console.error)
   }
   saveRecords()
 
-  // 浠庤祫浜у簱鍙抽敭"瀹氫綅鍘嗗彶璁板綍"璺宠浆杩囨潵鐨勶紝姝ゆ椂娑堣垂寰呭畾浣嶈褰?
+  // 处理从资产库跳转过来的待定位记录
   await locatePendingRecord()
 
-  // 妫€鏌ユ槸鍚︽湁浠庡浘鐗囬〉闈㈣烦杞繃鏉ョ殑澶嶇敤鍙傛暟
+  // 检查是否有从图片页面跳转过来的复用参数
   const reuseData = localStorage.getItem('reuse_record')
   if (reuseData) {
     try {
       const record = JSON.parse(reuseData)
       localStorage.removeItem('reuse_record')
-      // 寤惰繜鎵ц锛岀‘淇濇暟鎹姞杞藉畬鎴?
+      // 延迟执行，确保数据已加载
       nextTick(() => {
         handleReuseParams(record, true)  // fromStorage = true
       })
@@ -658,39 +658,39 @@ onMounted(async () => {
     }
   }
 
-  // 娉ㄥ唽閿洏浜嬩欢鐩戝惉
+  // 注册全局拖拽事件监听
   // 全局拖拽监听：拖拽任意资产时页面变暗
   window.addEventListener('dragstart', handleGlobalDragStart)
   window.addEventListener('dragend', handleGlobalDragEnd)
 })
 
-// 澶嶇敤鐢熸垚璁板綍鐨勫弬鏁?
+// 复用生成记录的参数
 function handleReuseParams(record: any, fromStorage = false) {
-  // 鍙湁浠庝晶杈规爮鐩存帴璋冪敤鏃舵墠妫€鏌ヨ法椤甸潰璺宠浆
+  // 仅从侧边栏直接调用时检查跨页面跳转
   if (!fromStorage && (record.type === 'txt2img' || record.type === 'img2img')) {
-    // 鍥剧墖鐢熸垚璁板綍锛岃烦杞埌鍥剧墖鐢熸垚椤甸潰
+    // 图片生成记录：跳转到图片生成页面
     localStorage.setItem('reuse_record', JSON.stringify(record))
     router.push('/image')
     ElMessage.success('已跳转到图片生成页面')
     return
   }
 
-  // 瑙嗛鐢熸垚璁板綍锛屽湪褰撳墠椤甸潰澶勭悊
-  // 1. 鍏堟竻绌鸿棰戠敓鎴愮殑鍏抽敭鍙傛暟锛堟彁绀鸿瘝鍜屽弬鑰冪礌鏉愶級
+  // 视频生成记录：在当前页面处理
+  // 1. 清空视频生成的提示词和参考素材
   prompt.value = ''
-  clearAllInputs()  // 娓呯┖杈撳叆绱犳潗
+  clearAllInputs()  // 清空输入素材
 
-  // 2. 鏍规嵁璁板綍绫诲瀷鍒囨崲鏍囩椤?
+  // 2. 根据记录类型切换标签页
   if (record.type === 'img2video') {
     activeTab.value = 'img2video'
   } else {
     activeTab.value = 'txt2video'
   }
 
-  // 3. 濉厖鎻愮ず璇?
+  // 3. 填充提示词
   prompt.value = record.prompt || ''
 
-  // 4. 灏濊瘯鍖归厤妯″瀷
+  // 4. 尝试匹配模型
   if (record.model_name && apiModels.value.length > 0) {
     const matchedModel = apiModels.value.find(m => m.name === record.model_name)
     if (matchedModel) {
@@ -698,21 +698,21 @@ function handleReuseParams(record: any, fromStorage = false) {
     }
   }
 
-  // 5. 浠?payload 涓仮澶嶅畬鏁村弬鏁?
+  // 5. 从 payload 恢复完整参数
   if (record.payload) {
     const p = record.payload
-    // 瑙嗛姣斾緥
+    // 视频比例
     if (p.ratio) ratio.value = p.ratio
-    // 鍒嗚鲸鐜?
+    // 分辨率
     if (p.resolution) resolution.value = p.resolution
-    // 鏃堕暱
+    // 时长
     if (p.duration) duration.value = p.duration
   }
 
-  // 6. 濡傛灉鏈夎緭鍏ヨ祫浜э紝鍔犺浇鍙傝€冨浘
+  // 6. 加载输入资产作为参考素材
   if (record.input_asset_ids && record.input_asset_ids.length > 0 && record.input_asset_urls) {
     activeTab.value = 'img2video'
-    // 鐩存帴浣跨敤鍚庣杩斿洖鐨?URL
+    // 直接使用后端返回的 URL
     const assets = record.input_asset_ids.map((id: number, idx: number) => {
       const assetUrl = record.input_asset_urls[idx]
       return {
@@ -726,7 +726,7 @@ function handleReuseParams(record: any, fromStorage = false) {
 }
 
 onUnmounted(() => {
-  // 绉婚櫎閿洏浜嬩欢鐩戝惉
+  // 移除全局拖拽事件监听
   window.removeEventListener('dragstart', handleGlobalDragStart)
   window.removeEventListener('dragend', handleGlobalDragEnd)
 })
@@ -739,7 +739,7 @@ onUnmounted(() => {
     <div class="orb orb-2" />
 
     <div class="layout" :class="{ 'record-editing': showRecordEditor }">
-      <!-- 鈹€鈹€ LEFT PANEL 鈹€鈹€ -->
+      <!-- ── 左侧参数面板 ── -->
       <aside class="left-panel" v-show="!showRecordEditor">
         <!-- tab bar -->
         <div class="tab-bar">
@@ -781,7 +781,7 @@ onUnmounted(() => {
 
           <div class="divider" />
 
-          <!-- 瑙嗛鍙傛暟 -->
+          <!-- 视频参数 -->
           <div class="row-item">
             <span class="row-label">比例</span>
             <div class="filter-group">
@@ -833,7 +833,7 @@ onUnmounted(() => {
           <div v-if="activeTab === 'img2video'" class="media-upload-section">
             <div class="section-label">输入素材（图片最多 9 张，视频最多 3 个，总计最多 12 个）</div>
 
-            <!-- 宸蹭笂浼犳枃浠堕瑙?-->
+            <!-- 已上传文件预览 -->
             <div v-if="inputPreviewItems.length > 0" class="previews-grid">
               <div v-for="(item, displayIndex) in inputPreviewItems" :key="item.key" class="preview-item">
                 <video
@@ -854,8 +854,8 @@ onUnmounted(() => {
               </div>
             </div>
 
-            <!-- 宸查€夋嫨璧勪骇棰勮 -->
-            <!-- 涓婁紶鎸夐挳 -->
+            <!-- 已选择资产预览 -->
+            <!-- 上传按钮 -->
             <div class="upload-actions">
               <label class="local-upload-btn">
                 <input type="file" accept="image/*,video/*" multiple @change="(e) => handleFilesChange((e.target as HTMLInputElement).files)" hidden />
@@ -870,7 +870,7 @@ onUnmounted(() => {
               </button>
             </div>
 
-            <!-- 闊抽涓婁紶锛堝彲閫夛級 -->
+            <!-- 音频上传（可选） -->
             <div class="audio-upload-row">
               <template v-if="!audioFile">
                 <label class="audio-upload-btn">
@@ -929,9 +929,9 @@ onUnmounted(() => {
         </div>
       </aside>
 
-      <!-- 鈹€鈹€ RIGHT: MESSAGE STREAM 鈹€鈹€ -->
+      <!-- ── 右侧历史记录 ── -->
       <main class="right-panel">
-        <!-- 缂栬緫妯″紡锛氱紪杈戝櫒 + 鎻愮ず璇嶄晶杈规爮 -->
+        <!-- 编辑模式：编辑器 + 提示词侧边栏 -->
         <template v-if="showRecordEditor">
           <div class="editor-area">
             <ImageEditor
@@ -963,7 +963,7 @@ onUnmounted(() => {
           </div>
         </template>
 
-        <!-- 姝ｅ父妯″紡锛氬巻鍙茶褰曪紙濮嬬粓淇濈暀 DOM 闃叉婊氬姩閲嶇疆锛?-->
+        <!-- 历史记录（始终保留 DOM，防止滚动位置重置） -->
         <HistoryPanel
           v-show="!showRecordEditor"
           :records="filteredRecords"
@@ -1016,7 +1016,7 @@ onUnmounted(() => {
           </template>
         </HistoryPanel>
       </main>
-      <!-- 鈹€鈹€ 鍙充晶璧勪骇渚ц竟鏍?鈹€鈹€ -->
+      <!-- ── 右侧资产侧边栏 ── -->
       <AssetSidebar v-show="!showRecordEditor" @select="handleAssetSelect" @reuse-params="handleReuseParams" />
     </div>
 
@@ -1035,7 +1035,7 @@ onUnmounted(() => {
       @next="goToNextImage"
     />
 
-    <!-- Image Editor锛堣緭鍏ョ礌鏉愮紪杈戯級 -->
+    <!-- 图片编辑器（输入素材编辑） -->
     <ImageEditor
       v-if="showEditor"
       :image-src="editingSource === 'file' ? (inputPreviews[editingFileIndex]?.url ?? '') : (selectedAssetPreviews[editingAssetIndex]?.url ?? '')"
@@ -1044,12 +1044,12 @@ onUnmounted(() => {
       @cancel="onEditorCancel"
     />
 
-    <!-- 鍘嗗彶璁板綍鍥剧墖缂栬緫鍣紙宸插唴鑱斿埌渚ц竟鏍忥級 -->
+    <!-- 历史记录图片编辑器（已内联到侧边栏） -->
 
-    <!-- 3D 妯″瀷瑙嗚鎴浘 -->
+    <!-- 3D 模型视角截图 -->
     <ModelViewer v-model:visible="showModelViewer" @capture="handleModelCapture" />
 
-    <!-- 椤圭洰绠＄悊鍣?-->
+    <!-- 项目管理器 -->
     <ProjectManager
       :visible="showProjectManager"
       :asset-id="currentAssetId"
@@ -1062,7 +1062,7 @@ onUnmounted(() => {
 <style scoped>
 @import '../styles/generation-page.css';
 
-/* 鈹€鈹€ 瑙嗛椤典笓灞炴牱寮?鈹€鈹€ */
+/* ── 视频页专属样式 ── */
 
 .prompt-hint {
   color: rgba(255,255,255,0.6);
@@ -1206,7 +1206,7 @@ onUnmounted(() => {
   background: rgba(0,0,0,0.7); color: rgba(255,255,255,0.8); font-size: 10px;
 }
 
-/* 瑙嗛缁撴灉 */
+/* 视频结果 */
 .card-video {
   position: relative; border-radius: 12px; overflow: hidden; background: #000;
   display: inline-block;
@@ -1345,7 +1345,7 @@ onUnmounted(() => {
   color: rgba(255,255,255,0.25);
 }
 
-/* 缁熶竴涓哄弬鏁伴潰鏉块鏍?*/
+/* 统一为参数面板风格 */
 .prompt-hint {
   color: var(--color-muted);
 }

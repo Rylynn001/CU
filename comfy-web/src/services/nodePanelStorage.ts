@@ -66,7 +66,7 @@ async function apiFetch(path: string, init?: RequestInit) {
 // ── 工作区列表 ───────────────────────────────────────────────────────────────
 
 export async function listBoards(userId: number): Promise<BoardMeta[]> {
-  const data = await apiFetch(`node-boards?user_id=${userId}`)
+  const data = await apiFetch(`node-boards`)
   return (data.boards ?? []).map((b: any) => ({
     id: b.id,
     name: b.name,
@@ -78,7 +78,7 @@ export async function listBoards(userId: number): Promise<BoardMeta[]> {
 
 export async function loadBoard(boardId: number, userId: number): Promise<NodePanelSnapshot | null> {
   try {
-    const b = await apiFetch(`node-boards/${boardId}?user_id=${userId}`)
+    const b = await apiFetch(`node-boards/${boardId}`)
     return {
       panels: [
         { assetIds: b.panel1_asset_ids ?? [], ratio: 1 },
@@ -87,7 +87,7 @@ export async function loadBoard(boardId: number, userId: number): Promise<NodePa
       ],
       panel2ImageHistoryIds: b.panel2_image_history_ids ?? [],
       panel2VideoHistoryIds: b.panel2_video_history_ids ?? [],
-      panel2ImagePendingTasks: (b.panel2_image_pending_tasks ?? []).map((task: any) => ({
+      panel2ImagePendingTasks: (b.panel2_image_tasks ?? []).map((task: any) => ({
         historyId: task.history_id,
         type: 'image',
         taskId: task.task_id,
@@ -97,7 +97,7 @@ export async function loadBoard(boardId: number, userId: number): Promise<NodePa
         payload: task.payload ?? {},
         inputAssetIds: task.input_asset_ids ?? [],
       })),
-      panel2VideoPendingTasks: (b.panel2_video_pending_tasks ?? []).map((task: any) => ({
+      panel2VideoPendingTasks: (b.panel2_video_tasks ?? []).map((task: any) => ({
         historyId: task.history_id,
         type: 'video',
         taskId: task.task_id,
@@ -120,10 +120,9 @@ export async function saveBoard(boardId: number, userId: number, snapshot: NodeP
   await apiFetch(`node-boards/${boardId}`, {
     method: 'PUT',
     body: JSON.stringify({
-      user_id: userId,
-      panels: snapshot.panels.map((p) => ({
-        asset_ids: p.assetIds,
-      })),
+      panel1_asset_ids: snapshot.panels[0]?.assetIds ?? [],
+      panel2_asset_ids: snapshot.panels[1]?.assetIds ?? [],
+      panel3_asset_ids: snapshot.panels[2]?.assetIds ?? [],
       panel2_image_history_ids: snapshot.panel2ImageHistoryIds,
       panel2_video_history_ids: snapshot.panel2VideoHistoryIds,
     }),
@@ -135,7 +134,7 @@ export async function saveBoard(boardId: number, userId: number, snapshot: NodeP
 export async function createBoard(userId: number, name: string): Promise<BoardMeta> {
   const data = await apiFetch('node-boards', {
     method: 'POST',
-    body: JSON.stringify({ user_id: userId, name }),
+    body: JSON.stringify({ name }),
   })
   return { id: data.id, name: data.name, updatedAt: data.updated_at ?? 0 }
 }
@@ -145,14 +144,14 @@ export async function createBoard(userId: number, name: string): Promise<BoardMe
 export async function renameBoard(boardId: number, userId: number, name: string): Promise<void> {
   await apiFetch(`node-boards/${boardId}`, {
     method: 'PATCH',
-    body: JSON.stringify({ user_id: userId, name }),
+    body: JSON.stringify({ name }),
   })
 }
 
 // ── 删除工作区 ────────────────────────────────────────────────────────────────
 
 export async function deleteBoard(boardId: number, userId: number): Promise<void> {
-  await apiFetch(`node-boards/${boardId}?user_id=${userId}`, { method: 'DELETE' })
+  await apiFetch(`node-boards/${boardId}`, { method: 'DELETE' })
 }
 
 // ── 保留旧接口（兼容其他可能引用的地方，实现为空操作）─────────────────────────

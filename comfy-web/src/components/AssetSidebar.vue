@@ -55,7 +55,7 @@ interface HistoryRecord {
 }
 
 const emit = defineEmits<{
-  select: [asset: Asset]
+  select: [assets: Asset[]]
   reuseParams: [record: HistoryRecord]
 }>()
 
@@ -1402,7 +1402,7 @@ onUnmounted(() => {
                 </div>
                 <div class="param-row" v-if="recordDetail.mode">
                   <span class="param-label">模式：</span>
-                  <span class="param-value">{{ recordDetail.mode === 'img2video' ? '图生视频' : recordDetail.mode === 'txt2video' ? '文生视频' : recordDetail.mode === 'img2img' ? '图生图' : recordDetail.mode === 'txt2img' ? '文生图' : recordDetail.mode }}</span>
+                  <span class="param-value">{{ recordDetail.mode === 'txt2video' ? '视频生成' : recordDetail.mode === 'img2img' ? '图生图' : recordDetail.mode === 'txt2img' ? '文生图' : recordDetail.mode }}</span>
                 </div>
                 <template v-if="recordDetail.payload">
                   <!-- 视频参数 -->

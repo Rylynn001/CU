@@ -218,7 +218,7 @@ defineExpose({ open })
               </div>
               <div class="param-row" v-if="detail.mode">
                 <span class="param-label">模式：</span>
-                <span class="param-value">{{ detail.mode === 'img2video' ? '图生视频' : detail.mode === 'txt2video' ? '文生视频' : detail.mode === 'img2img' ? '图生图' : detail.mode === 'txt2img' ? '文生图' : detail.mode }}</span>
+                <span class="param-value">{{ detail.mode === 'txt2video' ? '视频生成' : detail.mode === 'img2img' ? '图生图' : detail.mode === 'txt2img' ? '文生图' : detail.mode }}</span>
               </div>
               <template v-if="detail.payload">
                 <div class="param-row" v-if="detail.payload.ratio">

@@ -61,12 +61,10 @@ async def process(task: dict) -> None:
                     f'base_url={task.get("base_url")}, prompt={task.get("prompt", "")[:50]}...')
 
         from openai import AsyncOpenAI
-        import httpx
 
         client = AsyncOpenAI(
             api_key=task['api_key'],
             base_url=task['base_url'],
-            http_client=httpx.AsyncClient(timeout=120.0)
         )
 
         n = task.get('n', 1)

@@ -170,20 +170,21 @@ export function resolveImageSrc(item: { b64?: string; url?: string }): string {
 
 // ── Video Generate ─────────────────────────────────────────────────────────
 
-// 文生视频请求参数
+// 视频生成请求参数(支持文生视频和图生视频)
 export interface ApiVideoParams {
   model: string | number
   prompt: string
   ratio?: string       // 画面比例，如 "16:9"
   resolution?: string  // 分辨率，如 "1080p"
   duration?: number    // 时长（秒）
+  input_asset_ids?: number[]  // 图生视频时传入的参考资产 id 列表
 }
 
 export interface ApiVideoResult {
   video_url: string
 }
 
-// 提交文生视频任务
+// 提交视频生成任务(支持文生视频和图生视频)
 // 后端可能同步返回 video_url，也可能返回 task_id 表示异步任务
 export async function apiVideoGenerate(params: ApiVideoParams): Promise<ApiVideoResult | { task_id: string; history_id?: number }> {
   const res = await authFetch(`${BASE}/txt2video`, {
@@ -206,33 +207,6 @@ export async function apiVideoGenerate(params: ApiVideoParams): Promise<ApiVideo
   } else {
     throw new Error('Invalid response format')
   }
-}
-
-// ── Image/Video to Video ───────────────────────────────────────────────────
-
-// 图生视频请求参数（比文生视频多了 input_asset_ids）
-export interface ApiImg2VideoParams {
-  model: string | number
-  prompt: string
-  ratio?: string
-  resolution?: string
-  duration?: number
-  input_asset_ids?: number[]
-}
-
-// 提交图生视频任务，始终返回 task_id（异步）
-export async function apiImg2VideoGenerate(params: ApiImg2VideoParams): Promise<{ task_id: string; history_id?: number }> {
-  const res = await authFetch(`${BASE}/img2video`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
-    body: JSON.stringify(params),
-  })
-  if (!res.ok) {
-    const text = await res.text()
-    throw new Error(text || `img2video generate failed: ${res.status}`)
-  }
-  const data = await res.json()
-  return { task_id: data.task_id, history_id: data.history_id }
 }
 
 // ── History ───────────────────────────────────────────────────────────────

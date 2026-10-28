@@ -1,9 +1,4 @@
-<script setup lang="ts">
-// 历史记录面板：搜索框 + 记录行（参考图/参考素材展开）+ RecordCard + 分页
-// 图片页和视频页共用，结果区域（图片网格 / 视频播放器）通过 #result 插槽由父组件决定
-import { ref, onMounted, onUnmounted } from 'vue'
-import RecordCard from './RecordCard.vue'
-
+<script lang="ts">
 interface BaseRecord {
   id: string
   status: 'generating' | 'done' | 'error'
@@ -14,9 +9,16 @@ interface BaseRecord {
   inputAssetUrls?: Array<{ url: string; type: string }>
   inputPreviews?: string[]
 }
+</script>
+
+<script setup lang="ts" generic="T extends BaseRecord">
+// 历史记录面板：搜索框 + 记录行（参考图/参考素材展开）+ RecordCard + 分页
+// 图片页和视频页共用，结果区域（图片网格 / 视频播放器）通过 #result 插槽由父组件决定
+import { ref, onMounted, onUnmounted } from 'vue'
+import RecordCard from './RecordCard.vue'
 
 const props = withDefaults(defineProps<{
-  records: BaseRecord[]
+  records: T[]
   totalCount: number
   referenceLabel?: string
   searchQuery: string

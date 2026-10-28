@@ -330,41 +330,9 @@ async def retry_history(
         }
         redis_client.lpush(queue_name, json.dumps(task_payload, ensure_ascii=False))
 
-    elif type_ == 'txt2video':
+    elif type_ == 'txt2video' or type_ == 'img2video':
+        # txt2video 和 img2video 合并 (img2video 是历史数据,统一当作 txt2video 重试)
         queue_name = 'queue:txt2video'
-        if redis_client.llen(queue_name) >= 100:
-            raise HTTPException(status_code=503, detail='系统繁忙，请稍后再试')
-
-        new_history_id = history_repo.save_history(
-            task_id=new_task_id,
-            prompt=prompt,
-            user_id=int(payload_user_id) if payload_user_id else 0,
-            model_id=int(model_id) if model_id else None,
-            input_asset_ids=[],
-            output_asset_ids=[],
-            status='pending',
-            type_='txt2video',
-            mode='api',
-            payload=payload,
-        )
-        task_payload = {
-            'task_id': new_task_id,
-            'provider': 'ark',
-            'model': model_name,
-            'model_id': model_id,
-            'prompt': prompt,
-            'ratio': payload.get('ratio', '16:9'),
-            'resolution': payload.get('resolution', '720p'),
-            'duration': payload.get('duration', 8),
-            'user_id': payload_user_id,
-            'api_key': api_key,
-            'base_url': base_url,
-            'history_id': new_history_id,
-        }
-        redis_client.lpush(queue_name, json.dumps(task_payload, ensure_ascii=False))
-
-    elif type_ == 'img2video':
-        queue_name = 'queue:img2video'
         if redis_client.llen(queue_name) >= 100:
             raise HTTPException(status_code=503, detail='系统繁忙，请稍后再试')
 
@@ -377,7 +345,7 @@ async def retry_history(
             input_asset_ids=input_asset_ids,
             output_asset_ids=[],
             status='pending',
-            type_='img2video',
+            type_='txt2video',
             mode='api',
             payload=payload,
         )
@@ -395,7 +363,6 @@ async def retry_history(
             'base_url': base_url,
             'input_asset_ids': input_asset_ids,
             'history_id': new_history_id,
-            'input_files': [],
         }
         redis_client.lpush(queue_name, json.dumps(task_payload, ensure_ascii=False))
 

@@ -736,7 +736,7 @@ onMounted(async () => {
 // 复用生成记录的参数
 function handleReuseParams(record: any, fromStorage = false) {
   // 只有从侧边栏直接调用时才检查跨页面跳转
-  if (!fromStorage && (record.type === 'txt2video' || record.type === 'img2video')) {
+  if (!fromStorage && record.type === 'txt2video') {
     // 视频生成记录，跳转到视频生成页面
     localStorage.setItem('reuse_record', JSON.stringify(record))
     router.push('/video')
@@ -1189,7 +1189,7 @@ onUnmounted(() => {
                   <FavoriteHeart
                     :tag="getAssetFavoriteTag(rec.outputAssetIds?.[i])"
                     :size="14"
-                    @change="(t) => setImageFavorite(rec as any, i, t)"
+                    @change="(t) => setImageFavorite(rec, i, t)"
                   />
                 </span>
               </div>
