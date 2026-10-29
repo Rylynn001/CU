@@ -48,8 +48,8 @@ else:
 print("\n" + "="*50)
 print("\nSeedance 工具描述检查:\n")
 
-# 检查 workflow_image_tools.py
-tools_file = Path(__file__).parent.parent / "services" / "workflow_image_tools.py"
+# 检查 workflow_tools.py
+tools_file = Path(__file__).parent.parent / "services" / "workflow_tools.py"
 with open(tools_file, "r", encoding="utf-8") as f:
     tools_content = f.read()
 

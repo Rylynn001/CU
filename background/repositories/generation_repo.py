@@ -30,11 +30,11 @@ def get_model_info(model_id: int):
     return model_info
 
 
-def get_language_model_info(provider: str = 'openai'):
-    """获取语言模型信息（默认 openai）"""
+def get_language_model_info(model_id: int):
+    """根据模型编号获取语言模型信息"""
     model_info = execute_query(
-        "SELECT id, name, provider, rfid FROM api_models WHERE type = %s AND provider = %s LIMIT 1",
-        ('language', provider),
+        "SELECT id, name, provider, rfid FROM api_models WHERE id = %s AND type = %s",
+        (model_id, 'language'),
         fetch_one=True
     )
     return model_info

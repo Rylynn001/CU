@@ -13,22 +13,18 @@ class WorkflowRepository:
 
     @staticmethod
     def create_session(user_id: int, intent: Optional[str] = None,
-                      parameters: Optional[Dict[str, Any]] = None) -> str:
-        """创建工作流会话"""
-        session_id = str(uuid.uuid4())
-
-        execute_query(
+                      parameters: Optional[Dict[str, Any]] = None) -> int:
+        """创建工作流会话并返回数据库自动生成的整数编号。"""
+        return execute_query(
             """
-            INSERT INTO workflow_sessions (id, user_id, intent, parameters, status)
-            VALUES (%s, %s, %s, %s, 'collecting')
+            INSERT INTO workflow_sessions (user_id, intent, parameters, status)
+            VALUES (%s, %s, %s, 'collecting')
             """,
-            (session_id, user_id, intent, json.dumps(parameters) if parameters else None)
+            (user_id, intent, json.dumps(parameters) if parameters else None)
         )
 
-        return session_id
-
     @staticmethod
-    def get_session(session_id: str) -> Optional[Dict[str, Any]]:
+    def get_session(session_id: int) -> Optional[Dict[str, Any]]:
         """从 workflow_sessions 读取会话主记录（用户、意图、参数和状态）。"""
         with get_db() as conn:
             cursor = conn.cursor()
@@ -43,7 +39,7 @@ class WorkflowRepository:
             return result
 
     @staticmethod
-    def update_session(session_id: str, intent: Optional[str] = None,
+    def update_session(session_id: int, intent: Optional[str] = None,
                       parameters: Optional[Dict[str, Any]] = None,
                       status: Optional[str] = None):
         """更新会话"""
@@ -73,7 +69,7 @@ class WorkflowRepository:
         )
 
     @staticmethod
-    def add_conversation(session_id: str, role: str, message: str):
+    def add_conversation(session_id: int, role: str, message: str):
         """向 workflow_conversations 写入一条用户或 Agent 消息。"""
         execute_query(
             """
@@ -84,7 +80,7 @@ class WorkflowRepository:
         )
 
     @staticmethod
-    def get_conversations(session_id: str) -> List[Dict[str, Any]]:
+    def get_conversations(session_id: int) -> List[Dict[str, Any]]:
         """按时间顺序读取 workflow_conversations，供下一轮模型恢复上下文。"""
         with get_db() as conn:
             cursor = conn.cursor()
@@ -118,7 +114,7 @@ class WorkflowRepository:
             return cursor.fetchall()
 
     @staticmethod
-    def get_session_executions(session_id: str) -> List[Dict[str, Any]]:
+    def get_session_executions(session_id: int) -> List[Dict[str, Any]]:
         """从 workflow_executions 加载会话提交过的任务。
 
         workflow_definition 保存本次任务参数，result 保存 task_id、history_id 等返回结果；
@@ -150,7 +146,7 @@ class WorkflowRepository:
         ) or []
 
     @staticmethod
-    def create_execution(session_id: str, workflow_definition: Dict[str, Any]) -> str:
+    def create_execution(session_id: int, workflow_definition: Dict[str, Any]) -> str:
         """向 workflow_executions 写入一次工具任务的初始执行记录。"""
         execution_id = str(uuid.uuid4())
 

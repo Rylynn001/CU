@@ -6,7 +6,7 @@ from typing import TypedDict, Optional, List, Any, Dict
 
 class ConversationState(TypedDict):
     """对话状态"""
-    session_id: str
+    session_id: Optional[int]
     user_id: int
     messages: List[Dict[str, str]]  # [{"role": "user/agent", "content": "..."}]
     intent: Optional[str]  # short_drama, batch_image, single_video, etc.
@@ -19,7 +19,7 @@ class ConversationState(TypedDict):
 class TaskState(TypedDict):
     """工作流执行状态"""
     workflow_id: str
-    session_id: str
+    session_id: int
     user_id: int
 
     # 任务信息

@@ -10,11 +10,11 @@ sequenceDiagram
     participant API as workflow.chat_stream
     participant Agent as ConversationAgent
     participant LLM as 对话模型
-    participant Box as WorkflowImageTools 工具箱
+    participant Box as WorkflowTools 工具箱
     participant DB as MySQL
     participant Redis as Redis 队列
 
-    UI->>API: POST 消息 / session_id
+    UI->>API: POST 消息 / model_id / session_id
     API->>DB: 验证会话归属并加载历史
     API->>Agent: 消息、历史、工具发现器、执行器
     Agent->>LLM: 对话 + discover_tools 描述
@@ -51,7 +51,7 @@ sequenceDiagram
 - `ConversationAgent`：负责请求对话模型和处理模型返回的工具调用。
 - `WorkflowRepository`：读写聊天会话、聊天消息和工具任务执行记录。
 - `get_language_model_info`、`get_provider_config_by_rfid`：从数据库找到对话模型，并取得对应的 API 地址和密钥。
-- `WorkflowImageTools`、`session_tasks`：创建本次请求使用的工具箱，并读取会话任务状态。
+- `WorkflowTools`、`session_tasks`：创建本次请求使用的工具箱，并读取会话任务状态。
 
 `chat_stream()` 负责把 HTTP 连接变成 SSE。`_process_chat()` 负责加载上下文、创建工具箱、调用 Agent，并保存用户消息和最终回复。
 
@@ -68,9 +68,9 @@ sequenceDiagram
 
 这个请求路径没有运行 LangGraph 图；`ConversationState` 在这里主要用于标注状态结构。工具调用使用 OpenAI 兼容接口的 `tools` / `tool_calls` JSON Schema，没有使用 MCP、LangChain 工具执行器或 Python 反射自动发现函数。
 
-### `services/workflow_image_tools.py`
+### `services/workflow_tools.py`
 
-这是工具目录、匹配器和后端处理函数所在的位置。虽然文件名叫 `workflow_image_tools.py`，当前类也注册了视频生成、用户图片查询和生成历史查询。
+这是工具目录、匹配器和后端处理函数所在的位置。当前注册了图片、视频生成、用户图片查询和生成历史查询。
 
 - `pydantic.BaseModel`、`ConfigDict`、`Field`：校验模型生成的文生图参数；例如限制张数、比例和质量。
 - `api.generation` 中的请求模型和函数：复用已有的文生图、文生视频后端接口。
@@ -97,7 +97,7 @@ sequenceDiagram
 
 ## 数据从哪里来
 
-- 用户消息和可选的 `session_id` 来自前端请求体。
+- 用户消息、前端选择的语言模型 `model_id` 和可选的 `session_id` 来自前端请求体。后端按 `api_models.id` 精确读取该语言模型。
 - 当前用户来自 `get_current_user()`：它验证 JWT 并返回 `user_id`。已有会话会检查数据库中的所有者是否与当前用户一致。
 - 历史对话来自 `workflow_conversations` 表，并与系统提示一起发给模型。
 - 图片模型和视频模型来自 `api_models` 表；模型列表工具只返回模型编号、名称、描述和提供商，不返回 API 密钥。
@@ -110,9 +110,9 @@ sequenceDiagram
 ## 生命周期：什么会结束，什么会保留
 
 - `get_conversation_agent()` 创建的 `ConversationAgent` 是模块级单例。它和其中的 `AsyncOpenAI` 客户端会随 FastAPI 服务进程保留，不会在每次聊天结束时销毁。
-- `WorkflowImageTools` 在 `_process_chat()` 每次调用时创建一次。它保存本次用户、会话创建函数、已查询的图片/视频模型和工具处理器；请求结束后没有其他模块持有它时，Python 可以回收它。代码没有显式调用 `del` 或专门的 `close()`。
+- `WorkflowTools` 在 `_process_chat()` 每次调用时创建一次。它保存本次用户、会话创建函数、已查询的图片/视频模型和工具处理器；请求结束后没有其他模块持有它时，Python 可以回收它。代码没有显式调用 `del` 或专门的 `close()`。
 - `available_tools`、本轮 `messages`、模型输出分片和工具调用参数都是 `ConversationAgent.process()` 的局部数据。本轮处理结束后，它们离开作用域，不会自动成为下一轮的工具定义。新一条用户消息会重新从 `discover_tools` 开始。
-- 模型服务收到的是对话内容和 JSON Schema。服务端不会向模型发送 Python 函数、数据库句柄或 `WorkflowImageTools` 对象。
+- 模型服务收到的是对话内容和 JSON Schema。服务端不会向模型发送 Python 函数、数据库句柄或 `WorkflowTools` 对象。
 - 每个模型流在 `finally` 中调用 `await stream.close()`。如果浏览器中断连接，SSE 层会取消并等待聊天任务结束。
 - 已保存的会话消息、`workflow_executions`、生成历史和 Redis 队列任务不会随 Agent 对象回收而删除；这些是业务数据，按各自的数据库/队列生命周期保留。Agent 对象结束不等于生成任务被取消。
 

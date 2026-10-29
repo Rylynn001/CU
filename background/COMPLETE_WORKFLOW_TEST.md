@@ -265,7 +265,7 @@ POST /api/api-proxy/workflow/chat/stream
 
 ## 修改文件
 
-- ✅ `services/workflow_image_tools.py` - Seedance 工具返回信息
+- ✅ `services/workflow_tools.py` - Seedance 工具返回信息
 - ✅ `agents/conversation_agent.py` - 系统提示词增强
 
 **重启服务后生效!**

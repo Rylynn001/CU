@@ -40,7 +40,8 @@
         <p>正在加载模型...</p>
       </div>
 
-      <div v-else-if="!currentSessionId && messages.length === 0" class="welcome-container">
+      <template v-else>
+      <div v-if="!currentSessionId && messages.length === 0" class="welcome-container">
         <AiMascotInput
           title="我能为您做什么？"
           subtitle="输入提示词或语音输入开始对话"
@@ -57,14 +58,8 @@
 
       <div v-else class="chat-container">
         <div class="messages-container" ref="messagesContainer">
-          <div
-            v-for="(msg, idx) in messages"
-            :key="idx"
-            :class="['message', msg.role]"
-          >
-            <div class="message-avatar">
-              {{ msg.role === 'user' ? '👤' : '🤖' }}
-            </div>
+          <div v-for="(msg, idx) in messages" :key="idx" :class="['message', msg.role]">
+            <div class="message-avatar">{{ msg.role === 'user' ? '👤' : '🤖' }}</div>
             <div class="message-bubble">
               <div v-if="isProcessing && idx === messages.length - 1 && currentStatus" class="message-status">
                 <span class="status-dot"></span>{{ currentStatus }}
@@ -107,6 +102,39 @@
           />
         </div>
       </div>
+
+      <el-dialog v-model="generationDialogOpen" :title="generationType === 'video' ? '确认视频生成参数' : '确认图片生成参数'" width="min(520px, 92vw)" :close-on-click-modal="false">
+        <p class="generation-dialog-prompt">{{ pendingGenerationPrompt }}</p>
+        <div class="generation-dialog-fields">
+          <el-select v-model="generationModelId" placeholder="选择生成模型" clearable>
+            <el-option v-for="model in generationModels" :key="model.id" :label="`${model.name} · ${model.provider}`" :value="model.id" />
+          </el-select>
+          <template v-if="generationType === 'image'">
+            <el-select v-model="imageAspectRatio" placeholder="选择比例" clearable>
+              <el-option label="1:1" value="1:1" /><el-option label="16:9" value="16:9" /><el-option label="9:16" value="9:16" /><el-option label="4:3" value="4:3" /><el-option label="3:4" value="3:4" />
+            </el-select>
+            <el-select v-model="imageQuality" placeholder="选择质量" clearable>
+              <el-option label="低" value="low" /><el-option label="中" value="medium" /><el-option label="高" value="high" />
+            </el-select>
+            <el-input-number v-model="imageCount" :min="1" :max="10" placeholder="张数" />
+          </template>
+          <template v-else>
+            <el-select v-model="videoRatio" placeholder="选择比例" clearable>
+              <el-option label="16:9" value="16:9" /><el-option label="9:16" value="9:16" /><el-option label="1:1" value="1:1" />
+            </el-select>
+            <el-select v-model="videoResolution" placeholder="选择分辨率" clearable>
+              <el-option label="720p" value="720p" /><el-option label="1080p" value="1080p" />
+            </el-select>
+            <el-input-number v-model="videoDuration" :min="1" :max="60" placeholder="秒数" />
+          </template>
+        </div>
+        <p v-if="generationDialogError" class="task-error">{{ generationDialogError }}</p>
+        <template #footer>
+          <el-button @click="generationDialogOpen = false">取消</el-button>
+          <el-button type="primary" @click="confirmGeneration">确认并生成</el-button>
+        </template>
+      </el-dialog>
+      </template>
     </div>
   </div>
 </template>
@@ -120,6 +148,9 @@ import {
   getLanguageModels,
   getUserSessions,
   getSessionHistory,
+  getTaskStatus,
+  type WorkflowMessageRequest,
+  type WorkflowMessageResponse,
   type WorkflowSession,
   type WorkflowTask,
   type ConversationMessage,
@@ -134,6 +165,20 @@ const currentSessionId = ref<string | undefined>(undefined)
 const sessions = ref<WorkflowSession[]>([])
 const messagesContainer = ref<HTMLElement | null>(null)
 const activeTasks = ref<WorkflowTask[]>([])
+const generationType = ref<'none' | 'image' | 'video'>('none')
+const generationModels = ref<Array<{ id: number; name: string; provider: string; description?: string }>>([])
+const generationModelId = ref<number | null>(null)
+const imageCount = ref<number | null>(null)
+const imageAspectRatio = ref<string | null>(null)
+const imageQuality = ref<string | null>(null)
+const videoRatio = ref<string | null>(null)
+const videoResolution = ref<string | null>(null)
+const videoDuration = ref<number | null>(null)
+const generationDialogOpen = ref(false)
+const generationDialogError = ref('')
+const pendingGenerationPrompt = ref('')
+let lastSubmitData: ChatSubmitData | undefined
+let pollingTasks = false
 let taskPoller: ReturnType<typeof setInterval> | undefined
 
 // 状态文本映射
@@ -275,6 +320,7 @@ async function loadSessionDetail(sessionId: string) {
     const detail = await getSessionHistory(sessionId)
     messages.value = detail.conversations as any
     activeTasks.value = detail.tasks || []
+    if (detail.parameters?.generation_request) openGenerationDialog(detail.parameters.generation_request)
     scrollToBottom()
   } catch (error) {
     console.error('加载会话详情失败:', error)
@@ -287,6 +333,7 @@ async function loadSessionDetail(sessionId: string) {
 async function switchSession(sessionId: string) {
   if (sessionId === currentSessionId.value || isProcessing.value) return
   currentSessionId.value = sessionId
+  generationDialogOpen.value = false
   await loadSessionDetail(sessionId)
 }
 
@@ -296,10 +343,48 @@ function createNewSession() {
   currentSessionId.value = undefined
   messages.value = []
   activeTasks.value = []
+  generationDialogOpen.value = false
+}
+
+function openGenerationDialog(request: NonNullable<WorkflowMessageResponse['generation_request']>) {
+  generationType.value = request.media_type
+  generationModels.value = request.models
+  pendingGenerationPrompt.value = request.prompt
+  generationModelId.value = null
+  imageCount.value = null
+  imageAspectRatio.value = null
+  imageQuality.value = null
+  videoRatio.value = null
+  videoResolution.value = null
+  videoDuration.value = null
+  generationDialogError.value = ''
+  generationDialogOpen.value = true
+}
+
+async function confirmGeneration() {
+  if (isProcessing.value) return
+  const options: WorkflowMessageRequest['generation_options'] = generationType.value === 'image'
+    ? { media_type: 'image', model: generationModelId.value, n: imageCount.value, aspect_ratio: imageAspectRatio.value, quality: imageQuality.value }
+    : { media_type: 'video', model: generationModelId.value, ratio: videoRatio.value, resolution: videoResolution.value, duration: videoDuration.value }
+  if (Object.values(options).some((value) => value === null || value === undefined || value === '')) {
+    generationDialogError.value = '请先选择模型，并填写全部生成参数。'
+    return
+  }
+  const selected = generationModels.value.find((model) => model.id === generationModelId.value)
+  if (selected?.provider === 'gemini' && generationType.value === 'image' && imageCount.value !== 1) {
+    generationDialogError.value = '当前模型每次支持生成一张图片，请选择一张。'
+    return
+  }
+  const model = lastSubmitData?.model || availableModels.value[0]
+  if (!model) { generationDialogError.value = '请先加载对话模型后重试。'; return }
+  generationDialogOpen.value = false
+  await handleSubmit({ prompt: pendingGenerationPrompt.value, model, effort: model.defaultLevel, useWebSearch: false, attachedFile: null }, options)
 }
 
 // 处理消息提交
-const handleSubmit = async (data: ChatSubmitData) => {
+const handleSubmit = async (data: ChatSubmitData, confirmedOptions?: WorkflowMessageRequest['generation_options']) => {
+  if (isProcessing.value) return
+  lastSubmitData = data
   console.log('用户提交:', data)
 
   // 乐观更新：立即添加用户消息到界面
@@ -321,7 +406,7 @@ const handleSubmit = async (data: ChatSubmitData) => {
   try {
     // 调用后端 API
     const response = await sendWorkflowMessageStream(
-      { message: data.prompt, session_id: currentSessionId.value },
+      { message: data.prompt, model_id: Number(data.model.id), session_id: currentSessionId.value, generation_options: confirmedOptions },
       (status) => {
         currentStatus.value = status
         console.info('[工作流对话]', status)
@@ -333,9 +418,13 @@ const handleSubmit = async (data: ChatSubmitData) => {
       },
     )
     activeTasks.value = response.tasks || []
+    if (response.generation_request) {
+      openGenerationDialog(response.generation_request)
+    }
 
     // 更新 session_id
-    if (response.session_id && response.session_id !== currentSessionId.value) {
+    const sessionChanged = Boolean(response.session_id && response.session_id !== currentSessionId.value)
+    if (sessionChanged) {
       currentSessionId.value = response.session_id
       // 刷新会话列表
       await loadSessions()
@@ -349,7 +438,7 @@ const handleSubmit = async (data: ChatSubmitData) => {
     scrollToBottom()
 
     // 如果工作流准备就绪，刷新会话列表（状态可能已变化）
-    if (response.workflow_ready) {
+    if (response.workflow_ready && !sessionChanged) {
       await loadSessions()
     }
   } catch (error) {
@@ -377,13 +466,28 @@ onMounted(async () => {
   }
 
   taskPoller = setInterval(async () => {
-    if (!currentSessionId.value || !activeTasks.value.some((task) => task.status === 'running')) return
+    if (pollingTasks || !currentSessionId.value || !activeTasks.value.some((task) => task.status === 'running')) return
+    pollingTasks = true
+    const sessionId = currentSessionId.value
     try {
-      const detail = await getSessionHistory(currentSessionId.value)
-      activeTasks.value = detail.tasks || []
-      await loadSessions()
-    } catch (error) {
-      console.error('刷新图片任务状态失败:', error)
+    for (const task of activeTasks.value.filter((item) => item.status === 'running')) {
+      try {
+        const status = await getTaskStatus(task.task_id)
+        if (sessionId !== currentSessionId.value) return
+        if (status.status === 'completed' || status.status === 'failed') {
+          const detail = await getSessionHistory(sessionId)
+          if (sessionId !== currentSessionId.value) return
+          activeTasks.value = detail.tasks || []
+          await loadSessions()
+          break
+        }
+        task.stage = status.status
+      } catch (error) {
+        console.error('刷新生成任务状态失败:', error)
+      }
+    }
+    } finally {
+      pollingTasks = false
     }
   }, 3000)
 })
@@ -535,6 +639,10 @@ onUnmounted(() => {
   flex-direction: column;
   overflow: hidden;
 }
+
+.generation-dialog-prompt { margin: 0 0 1rem; white-space: pre-wrap; }
+.generation-dialog-fields { display: grid; gap: 1rem; }
+.generation-dialog-fields :deep(.el-select), .generation-dialog-fields :deep(.el-input-number) { width: 100%; }
 
 .loading-container {
   flex: 1;

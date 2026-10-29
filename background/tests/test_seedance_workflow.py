@@ -9,7 +9,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from services.workflow_image_tools import WorkflowImageTools
+from services.workflow_tools import WorkflowTools
 
 
 class MockUser:
@@ -40,7 +40,7 @@ async def test_tool_discovery():
 
     user = MockUser()
     session = MockSession()
-    tools = WorkflowImageTools(user, session)
+    tools = WorkflowTools(user, session)
 
     test_queries = [
         "我想生成一个视频的提示词",
@@ -64,7 +64,7 @@ async def test_tool_execution():
 
     user = MockUser()
     session = MockSession()
-    tools = WorkflowImageTools(user, session)
+    tools = WorkflowTools(user, session)
 
     # 模拟 LLM 调用工具
     arguments = {
@@ -104,7 +104,7 @@ async def test_workflow_integration():
 
     user = MockUser()
     session = MockSession()
-    tools = WorkflowImageTools(user, session)
+    tools = WorkflowTools(user, session)
 
     # 场景 1: 图生视频
     print("场景 1: 图生视频")
@@ -149,7 +149,7 @@ async def test_all_tools():
 
     user = MockUser()
     session = MockSession()
-    tools = WorkflowImageTools(user, session)
+    tools = WorkflowTools(user, session)
 
     print("已注册的工具:")
     for name, tool_def in tools.tools.items():

@@ -1,6 +1,6 @@
 -- 工作流会话表
 CREATE TABLE IF NOT EXISTS workflow_sessions (
-    id VARCHAR(36) PRIMARY KEY,
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
     user_id INT NOT NULL,
     intent VARCHAR(50),
     parameters JSON,
@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS workflow_sessions (
 -- 对话记录表
 CREATE TABLE IF NOT EXISTS workflow_conversations (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    session_id VARCHAR(36) NOT NULL,
+    session_id BIGINT UNSIGNED NOT NULL,
     role ENUM('user', 'agent') NOT NULL,
     message TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS workflow_conversations (
 -- 工作流执行记录表
 CREATE TABLE IF NOT EXISTS workflow_executions (
     id VARCHAR(36) PRIMARY KEY,
-    session_id VARCHAR(36) NOT NULL,
+    session_id BIGINT UNSIGNED NOT NULL,
     workflow_definition JSON,
     current_node VARCHAR(100),
     status ENUM('running', 'paused', 'completed', 'failed') DEFAULT 'running',

@@ -33,7 +33,7 @@
 3. 复杂格式转换：需要专业知识的内容转换（如分镜脚本、运镜描述等）
 ```
 
-### 2. 工具描述强化 (`services/workflow_image_tools.py:175`)
+### 2. 工具描述强化 (`services/workflow_tools.py:175`)
 
 **修改前**:
 ```python
@@ -206,6 +206,6 @@ stream = await self.client.chat.completions.create(
 ## 修改文件清单
 
 - ✅ `agents/conversation_agent.py` - 系统提示词
-- ✅ `services/workflow_image_tools.py` - 工具描述和关键词
+- ✅ `services/workflow_tools.py` - 工具描述和关键词
 
 **重启后生效!**

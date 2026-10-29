@@ -24,13 +24,21 @@ class ImageArguments(BaseModel):
     model_config = ConfigDict(extra="forbid")
     model: int
     prompt: str = Field(min_length=1)
-    n: int = Field(default=1, ge=1, le=10)
-    aspect_ratio: Literal["1:1", "16:9", "9:16", "4:3", "3:4"] = "1:1"
-    quality: Literal["low", "medium", "high"] = "medium"
+    n: int = Field(ge=1, le=10)
+    aspect_ratio: Literal["1:1", "16:9", "9:16", "4:3", "3:4"]
+    quality: Literal["low", "medium", "high"]
     regenerate: bool = False
 
 
-def session_tasks(session_id: str, user_id: int) -> list:
+class VideoArguments(BaseModel):
+    model: int
+    prompt: str = Field(min_length=1)
+    ratio: Literal["16:9", "9:16", "1:1"]
+    resolution: Literal["720p", "1080p"]
+    duration: int = Field(ge=1, le=60)
+
+
+def session_tasks(session_id: int, user_id: int) -> list:
     """读取会话任务，并用 history/assets 的持久化数据恢复最新状态。"""
     tasks = []
     for execution in WorkflowRepository.get_session_executions(session_id):
@@ -70,10 +78,12 @@ def session_tasks(session_id: str, user_id: int) -> list:
     return tasks
 
 
-class WorkflowImageTools:
-    def __init__(self, user: dict, ensure_session):
+class WorkflowTools:
+    def __init__(self, user: dict, ensure_session, generation_options: dict | None = None):
         self.user = user
         self.ensure_session = ensure_session
+        self.generation_options = generation_options or {}
+        self.pending_generation = None
         self.models = None
         self.video_models = None
         self.submitted = []
@@ -99,12 +109,12 @@ class WorkflowImageTools:
                         "properties": {
                             "model": {"type": "integer", "description": "list_image_models 返回的模型编号"},
                             "prompt": {"type": "string", "description": "图片内容描述"},
-                            "n": {"type": "integer", "minimum": 1, "maximum": 10, "default": 1},
-                            "aspect_ratio": {"type": "string", "enum": ["1:1", "16:9", "9:16", "4:3", "3:4"], "default": "1:1"},
-                            "quality": {"type": "string", "enum": ["low", "medium", "high"], "default": "medium"},
+                            "n": {"type": "integer", "minimum": 1, "maximum": 10},
+                            "aspect_ratio": {"type": "string", "enum": ["1:1", "16:9", "9:16", "4:3", "3:4"]},
+                            "quality": {"type": "string", "enum": ["low", "medium", "high"]},
                             "regenerate": {"type": "boolean", "default": False},
                         },
-                        "required": ["model", "prompt"],
+                        "required": ["prompt"],
                         "additionalProperties": False,
                     },
                 },
@@ -129,11 +139,11 @@ class WorkflowImageTools:
                         "properties": {
                             "model": {"type": "integer", "description": "list_video_models 返回的模型编号"},
                             "prompt": {"type": "string", "description": "视频内容描述"},
-                            "ratio": {"type": "string", "enum": ["16:9", "9:16", "1:1"], "default": "16:9"},
-                            "resolution": {"type": "string", "enum": ["720p", "1080p"], "default": "720p"},
-                            "duration": {"type": "integer", "minimum": 1, "maximum": 60, "default": 8},
+                            "ratio": {"type": "string", "enum": ["16:9", "9:16", "1:1"]},
+                            "resolution": {"type": "string", "enum": ["720p", "1080p"]},
+                            "duration": {"type": "integer", "minimum": 1, "maximum": 60},
                         },
-                        "required": ["model", "prompt"],
+                        "required": ["prompt"],
                         "additionalProperties": False,
                     },
                 },
@@ -204,14 +214,18 @@ class WorkflowImageTools:
         }
 
     def discover(self, query: str) -> list[dict]:
-        """按模型给出的意图描述，从工具目录中找出最相关的能力。"""
+        """匹配模型给出的查询词（不是用户原话），返回得分最高的三个工具。"""
         query = query.casefold()
         matches = []
         for tool in self.tools.values():
-            keywords = tool["keywords"]
-            score = sum(keyword.casefold() in query for keyword in keywords)
-            if score:
+            # 每命中一个关键词加一分；没有命中的工具不提供给模型。
+            score = 0
+            for keyword in tool["keywords"]:
+                if keyword.casefold() in query:
+                    score += 1
+            if score > 0:
                 matches.append((score, tool))
+
         matches.sort(key=lambda item: item[0], reverse=True)
         return [tool for _, tool in matches[:3]]
 
@@ -230,14 +244,23 @@ class WorkflowImageTools:
         return {"models": self.video_models}
 
     async def _txt2video(self, arguments: dict) -> dict:
-        args = Txt2VideoRequest.model_validate(arguments)
+        options = self._selected_generation_options("video", ("model", "ratio", "resolution", "duration"))
+        if options is None:
+            return self._request_generation_selection("video", arguments)
+        args = Txt2VideoRequest(**VideoArguments.model_validate({**arguments, **options}).model_dump())
         if self.video_models is None:
-            raise ValueError("请先调用 list_video_models 查询可用视频模型")
+            await self._list_video_models({})
         selected = next((model for model in self.video_models if model["id"] == args.model), None)
         if selected is None:
             raise ValueError("所选模型不是查询结果中的可用视频模型")
         session_id = self.ensure_session()
-        execution_id = WorkflowRepository.create_execution(session_id, {"type": "txt2video", **args.model_dump()})
+        definition = {"type": "txt2video", **args.model_dump()}
+        for execution in WorkflowRepository.get_session_executions(session_id):
+            if execution["workflow_definition"] == definition:
+                if execution["result"].get("task_id"):
+                    return {**execution["result"], "reused": True}
+                raise ValueError("相同视频请求已存在提交记录，请先检查任务状态")
+        execution_id = WorkflowRepository.create_execution(session_id, definition)
         try:
             response = await txt2video(args, user=self.user)
         except Exception as error:
@@ -352,12 +375,14 @@ class WorkflowImageTools:
             return {"models": self.models}
         if name != "txt2img":
             raise ValueError(f"不支持的工具：{name}")
+        options = self._selected_generation_options("image", ("model", "n", "aspect_ratio", "quality"))
+        if options is None:
+            return self._request_generation_selection("image", arguments)
         if self.models is None:
-            # 强制要求先查询模型，避免模型绕过数据库直接伪造 model id。
-            raise ValueError("请先调用 list_image_models 查询可用模型")
+            await self.execute("list_image_models", {})
         # =====【图片参数校验】=====
         # 将语言模型返回的 JSON 转成严格的 Pydantic 对象，检查类型、范围和枚举值。
-        args = ImageArguments.model_validate(arguments)
+        args = ImageArguments.model_validate({**arguments, **options})
         if not args.prompt.strip():
             raise ValueError("图片描述不能为空")
         selected = next((model for model in self.models if model["id"] == args.model), None)
@@ -398,3 +423,22 @@ class WorkflowImageTools:
         self.submitted.append(task)
         logger.info("对话工具已提交文生图 session_id=%s execution_id=%s task_id=%s model_id=%s", session_id, execution_id, response.task_id, args.model)
         return task
+
+    def _selected_generation_options(self, media_type: str, required: tuple[str, ...]) -> dict | None:
+        options = self.generation_options
+        if options.get("media_type") != media_type:
+            return None
+        missing = [key for key in required if options.get(key) is None]
+        if missing:
+            return None
+        return {key: options[key] for key in required}
+
+    def _request_generation_selection(self, media_type: str, arguments: dict) -> dict:
+        providers = ("openai", "gemini") if media_type == "image" else ("ark", "openai")
+        models = [
+            {key: model.get(key) for key in ("id", "name", "description", "provider")}
+            for model in provider_repo.get_all_models()
+            if model.get("type") == media_type and model.get("provider") in providers
+        ]
+        self.pending_generation = {"media_type": media_type, "prompt": arguments.get("prompt", ""), "models": models}
+        return {"selection_required": self.pending_generation}

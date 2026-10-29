@@ -172,7 +172,7 @@ background/
 ├── agents/
 │   └── conversation_agent.py      # ✓ 系统提示词 + 关键词强制触发
 ├── services/
-│   └── workflow_image_tools.py    # ✓ 工具描述强化 + 关键词扩充
+│   └── workflow_tools.py          # ✓ 工具描述强化 + 关键词扩充
 └── SEEDANCE_TROUBLESHOOT.md       # ✓ 诊断文档
 ```
 

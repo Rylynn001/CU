@@ -183,7 +183,7 @@ D:\CU\Test\seedance2.5提示词\seedance2.5-prompt-skill-main\
 
 ### 工具注册
 
-在 `WorkflowImageTools` 中注册为标准工具:
+在 `WorkflowTools` 中注册为标准工具:
 - 名称: `generate_seedance_prompt`
 - 触发: 关键词匹配
 - 执行: `_generate_seedance_prompt` 方法

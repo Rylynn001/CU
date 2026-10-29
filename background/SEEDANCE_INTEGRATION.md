@@ -8,7 +8,7 @@
 
 ### 1. 工具注册
 
-在 `WorkflowImageTools` 中注册了新工具 `generate_seedance_prompt`:
+在 `WorkflowTools` 中注册了新工具 `generate_seedance_prompt`:
 
 ```python
 "generate_seedance_prompt": {
@@ -140,7 +140,7 @@ LLM 根据指令生成符合 Seedance 规则的提示词
 background/
 ├── services/
 │   ├── seedance_tool.py          # Seedance 工具核心
-│   └── workflow_image_tools.py   # 工具注册和集成
+│   └── workflow_tools.py         # 工具注册和集成
 ├── tests/
 │   └── test_seedance.py          # 测试脚本
 └── ...

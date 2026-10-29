@@ -2,7 +2,18 @@ import { authFetch } from './apiService'
 
 export interface WorkflowMessageRequest {
   message: string
+  model_id: number
   session_id?: string
+  generation_options?: {
+    media_type: 'image' | 'video' | null
+    model: number | null
+    n?: number | null
+    aspect_ratio?: string | null
+    quality?: string | null
+    ratio?: string | null
+    resolution?: string | null
+    duration?: number | null
+  }
 }
 
 export interface WorkflowMessageResponse {
@@ -12,6 +23,7 @@ export interface WorkflowMessageResponse {
   parameters?: Record<string, unknown> | null
   workflow_ready: boolean
   tasks: WorkflowTask[]
+  generation_request?: { media_type: 'image' | 'video'; prompt: string; models: GenerationModel[] } | null
 }
 
 export interface LanguageModel {
@@ -19,6 +31,13 @@ export interface LanguageModel {
   name: string
   provider: string
   type: string
+}
+
+export interface GenerationModel {
+  id: number
+  name: string
+  provider: string
+  description?: string
 }
 
 export interface WorkflowSession {
@@ -51,7 +70,7 @@ export interface WorkflowTask {
   stage?: string
   error?: string
   model_name?: string
-  parameters: { prompt?: string; n?: number }
+  parameters: { prompt?: string; n?: number; aspect_ratio?: string; quality?: string; ratio?: string; resolution?: string; duration?: number }
   images: Array<{ url: string; asset_id: number }>
 }
 
@@ -64,6 +83,12 @@ export async function getLanguageModels(): Promise<LanguageModel[]> {
   })
   const data = await res.json()
   return data.models || []
+}
+
+export async function getTaskStatus(taskId: string): Promise<Record<string, any>> {
+  const res = await authFetch(`/api/api-proxy/task/${taskId}`, { method: 'GET' })
+  if (!res.ok) throw new Error(`任务状态查询失败（${res.status}）`)
+  return res.json()
 }
 
 /**
