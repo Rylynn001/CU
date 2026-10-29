@@ -80,7 +80,7 @@
             <div v-if="task.status === 'failed'" class="task-error">{{ task.error || '生成失败' }}</div>
             <div v-if="task.images?.length" class="task-images">
               <a v-for="image in task.images" :key="image.asset_id" :href="image.url" target="_blank" rel="noreferrer">
-                <img :src="image.url" :alt="task.parameters?.prompt || '生成图片'" />
+                <img :src="image.url" :alt="task.parameters?.prompt || '生成图片'" loading="lazy" />
               </a>
             </div>
             <div v-if="task.videos?.length" class="task-images">
@@ -502,39 +502,39 @@ onUnmounted(() => {
   display: flex;
   width: 100%;
   height: 100vh;
-  background: #000;
-  color: #fff;
+  background: var(--color-black);
+  color: var(--color-white);
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
 }
 
 /* ===== 左侧会话列表 ===== */
 .sessions-sidebar {
   width: 280px;
-  background: #0F172A;
-  border-right: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--color-bg);
+  border-right: 1px solid rgba(var(--color-white-rgb), 0.1);
   display: flex;
   flex-direction: column;
 }
 
 .sidebar-header {
   padding: 1.5rem 1rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid rgba(var(--color-white-rgb), 0.1);
 }
 
 .sidebar-header h2 {
   font-size: 1.125rem;
   font-weight: 600;
   margin: 0 0 1rem 0;
-  color: #F8FAFC;
+  color: var(--color-text);
 }
 
 .new-session-btn {
   width: 100%;
   padding: 0.625rem 1rem;
-  background: rgba(56, 189, 248, 0.1);
-  border: 1px solid rgba(56, 189, 248, 0.3);
+  background: rgba(var(--color-info-rgb), 0.1);
+  border: 1px solid rgba(var(--color-info-rgb), 0.3);
   border-radius: 0.5rem;
-  color: #38BDF8;
+  color: var(--color-info);
   font-size: 0.875rem;
   font-weight: 500;
   cursor: pointer;
@@ -546,8 +546,8 @@ onUnmounted(() => {
 }
 
 .new-session-btn:hover:not(:disabled) {
-  background: rgba(56, 189, 248, 0.2);
-  border-color: rgba(56, 189, 248, 0.5);
+  background: rgba(var(--color-info-rgb), 0.2);
+  border-color: rgba(var(--color-info-rgb), 0.5);
 }
 
 .new-session-btn:disabled {
@@ -564,27 +564,27 @@ onUnmounted(() => {
 .session-item {
   padding: 0.875rem;
   margin-bottom: 0.5rem;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(var(--color-white-rgb), 0.02);
+  border: 1px solid rgba(var(--color-white-rgb), 0.05);
   border-radius: 0.5rem;
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .session-item:hover {
-  background: rgba(255, 255, 255, 0.05);
-  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(var(--color-white-rgb), 0.05);
+  border-color: rgba(var(--color-white-rgb), 0.1);
 }
 
 .session-item.active {
-  background: rgba(56, 189, 248, 0.1);
-  border-color: rgba(56, 189, 248, 0.3);
+  background: rgba(var(--color-info-rgb), 0.1);
+  border-color: rgba(var(--color-info-rgb), 0.3);
 }
 
 .session-title {
   font-size: 0.875rem;
   font-weight: 500;
-  color: #F8FAFC;
+  color: var(--color-text);
   margin-bottom: 0.5rem;
   white-space: nowrap;
   overflow: hidden;
@@ -596,7 +596,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   font-size: 0.75rem;
-  color: rgba(248, 250, 252, 0.5);
+  color: rgba(var(--color-text-soft-rgb), 0.5);
 }
 
 .session-status {
@@ -606,29 +606,29 @@ onUnmounted(() => {
 }
 
 .session-status.collecting {
-  background: rgba(249, 115, 22, 0.1);
-  color: #F97316;
+  background: rgba(var(--color-danger-rgb), 0.1);
+  color: var(--color-danger);
 }
 
 .session-status.ready {
-  background: rgba(34, 197, 94, 0.1);
-  color: #22C55E;
+  background: rgba(var(--color-success-rgb), 0.1);
+  color: rgb(var(--color-success-rgb));
 }
 
 .session-status.completed {
-  background: rgba(56, 189, 248, 0.1);
-  color: #38BDF8;
+  background: rgba(var(--color-info-rgb), 0.1);
+  color: var(--color-info);
 }
 
 .session-status.failed {
-  background: rgba(239, 68, 68, 0.1);
-  color: #EF4444;
+  background: rgba(var(--color-danger-rgb), 0.1);
+  color: var(--color-danger);
 }
 
 .empty-sessions {
   padding: 2rem 1rem;
   text-align: center;
-  color: rgba(248, 250, 252, 0.3);
+  color: rgba(var(--color-text-soft-rgb), 0.3);
   font-size: 0.875rem;
 }
 
@@ -649,7 +649,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(var(--color-white-rgb), 0.6);
 }
 
 .welcome-container {
@@ -692,7 +692,7 @@ onUnmounted(() => {
   width: 2.5rem;
   height: 2.5rem;
   border-radius: 0.5rem;
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(var(--color-white-rgb), 0.05);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -701,11 +701,11 @@ onUnmounted(() => {
 }
 
 .message.user .message-avatar {
-  background: rgba(56, 189, 248, 0.1);
+  background: rgba(var(--color-info-rgb), 0.1);
 }
 
 .message.agent .message-avatar {
-  background: rgba(249, 115, 22, 0.1);
+  background: rgba(var(--color-danger-rgb), 0.1);
 }
 
 .message-bubble {
@@ -720,7 +720,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 8px;
   padding: 0 0.5rem;
-  color: #a1a1aa;
+  color: var(--color-text-soft);
   font-size: 0.875rem;
 }
 
@@ -728,7 +728,7 @@ onUnmounted(() => {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: #38bdf8;
+  background: var(--color-info);
   animation: statusPulse 1s ease-in-out infinite alternate;
 }
 
@@ -738,7 +738,7 @@ onUnmounted(() => {
 
 .message-content {
   padding: 1rem;
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(var(--color-white-rgb), 0.05);
   border-radius: 0.75rem;
   line-height: 1.6;
   white-space: pre-wrap;
@@ -746,36 +746,36 @@ onUnmounted(() => {
 }
 
 .message.user .message-content {
-  background: rgba(56, 189, 248, 0.1);
+  background: rgba(var(--color-info-rgb), 0.1);
 }
 
 .message-time {
   font-size: 0.75rem;
-  color: rgba(248, 250, 252, 0.4);
+  color: rgba(var(--color-text-soft-rgb), 0.4);
   padding: 0 0.5rem;
 }
 
 .task-result {
   margin-left: 3.5rem;
   padding: 1rem;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(var(--color-white-rgb), 0.12);
   border-radius: 0.5rem;
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(var(--color-white-rgb), 0.04);
 }
 
 .task-heading { display: flex; justify-content: space-between; gap: 1rem; }
-.task-status { color: #38bdf8; }
-.task-status.completed { color: #22c55e; }
-.task-status.failed, .task-error { color: #f87171; }
-.task-prompt, .task-meta { margin-top: 0.5rem; color: rgba(255, 255, 255, 0.65); }
+.task-status { color: var(--color-info); }
+.task-status.completed { color: rgb(var(--color-success-rgb)); }
+.task-status.failed, .task-error { color: var(--color-danger); }
+.task-prompt, .task-meta { margin-top: 0.5rem; color: rgba(var(--color-white-rgb), 0.65); }
 .task-images { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 0.75rem; }
 .task-images img { display: block; width: min(100%, 320px); max-height: 320px; object-fit: contain; border-radius: 4px; }
 .task-images video { display: block; width: min(100%, 480px); max-height: 320px; border-radius: 4px; }
 
 .input-container {
   padding: 1.5rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-  background: #0F172A;
+  border-top: 1px solid rgba(var(--color-white-rgb), 0.1);
+  background: var(--color-bg);
 }
 
 /* 滚动条样式 */
@@ -791,12 +791,12 @@ onUnmounted(() => {
 
 .sessions-list::-webkit-scrollbar-thumb,
 .messages-container::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(var(--color-white-rgb), 0.1);
   border-radius: 3px;
 }
 
 .sessions-list::-webkit-scrollbar-thumb:hover,
 .messages-container::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(var(--color-white-rgb), 0.2);
 }
 </style>

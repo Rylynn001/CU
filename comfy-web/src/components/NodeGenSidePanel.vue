@@ -219,7 +219,7 @@ async function handleGenerate() {
         <div v-if="refAssets.length" class="gsp-refs">
           <div v-for="a in refAssets" :key="a.id" class="gsp-ref-thumb">
             <video v-if="a.isVideo" :src="a.url" muted playsinline preload="metadata" />
-            <img v-else :src="a.url" />
+            <img v-else :src="a.url" loading="lazy" />
             <button
               type="button"
               class="gsp-ref-remove"
@@ -272,7 +272,7 @@ async function handleGenerate() {
               @mousedown.prevent="insertMention(index)"
             >
               <video v-if="asset.isVideo" :src="asset.url" muted playsinline preload="metadata" />
-              <img v-else :src="asset.url" />
+              <img v-else :src="asset.url" loading="lazy" />
               <span>{{ getMentionLabel(asset, index) }}</span>
             </button>
           </div>
@@ -353,7 +353,7 @@ async function handleGenerate() {
   height: 100%;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
-  background: linear-gradient(180deg, rgba(18, 21, 30, 0.97), rgba(6, 8, 13, 0.96));
+  background: linear-gradient(180deg, rgba(var(--color-surface-rgb), 0.97), rgba(var(--color-surface-rgb), 0.96));
   backdrop-filter: var(--glass-blur);
   overflow: hidden;
 }
@@ -363,10 +363,10 @@ async function handleGenerate() {
 .gsp-error {
   margin: 12px 16px 0;
   padding: 10px 12px;
-  border: 1px solid rgba(255, 104, 104, 0.36);
+  border: 1px solid rgba(var(--color-danger-rgb), 0.36);
   border-radius: 6px;
-  background: rgba(255, 80, 80, 0.1);
-  color: rgba(255, 172, 172, 0.95);
+  background: rgba(var(--color-danger-rgb), 0.1);
+  color: rgba(var(--color-text-soft-rgb), 0.95);
   font-size: 12px;
   line-height: 1.5;
   white-space: pre-wrap;
@@ -377,23 +377,23 @@ async function handleGenerate() {
   justify-content: space-between;
   padding: 14px 16px 12px;
   flex-shrink: 0;
-  border-bottom: 1px solid rgba(255,255,255,0.06);
+  border-bottom: 1px solid rgba(var(--color-white-rgb), 0.06);
 }
 .gsp-title {
   font-size: 13px;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.9);
+  color: rgba(var(--color-white-rgb), 0.9);
 }
 .gsp-close {
   width: 22px; height: 22px;
   border-radius: 6px; border: none;
   background: transparent;
-  color: rgba(255,255,255,0.3);
+  color: rgba(var(--color-white-rgb), 0.3);
   font-size: 12px; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
   transition: all 0.15s;
 }
-.gsp-close:hover { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.8); }
+.gsp-close:hover { background: rgba(var(--color-white-rgb), 0.08); color: rgba(var(--color-white-rgb), 0.8); }
 
 .gsp-body {
   flex: 1;
@@ -404,19 +404,19 @@ async function handleGenerate() {
   gap: 14px;
 }
 .gsp-body::-webkit-scrollbar { width: 4px; }
-.gsp-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+.gsp-body::-webkit-scrollbar-thumb { background: rgba(var(--color-white-rgb), 0.1); border-radius: 2px; }
 
 .gsp-section { display: flex; flex-direction: column; gap: 6px; }
 .gsp-label {
   font-size: 11px;
-  color: rgba(255,255,255,0.35);
+  color: rgba(var(--color-white-rgb), 0.35);
   letter-spacing: 0.5px;
   display: flex;
   align-items: center;
   gap: 6px;
 }
-.gsp-hint { color: rgba(255,255,255,0.22); font-size: 10px; }
-.gsp-val { color: rgba(255,255,255,0.6); }
+.gsp-hint { color: rgba(var(--color-white-rgb), 0.22); font-size: 10px; }
+.gsp-val { color: rgba(var(--color-white-rgb), 0.6); }
 
 /* 参考图 */
 .gsp-refs {
@@ -429,7 +429,7 @@ async function handleGenerate() {
   width: 54px; height: 54px;
   border-radius: 7px;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.3);
+  border: 1px solid rgba(var(--color-white-rgb), 0.3);
 }
 .gsp-ref-thumb img,
 .gsp-ref-thumb video { width: 100%; height: 100%; object-fit: cover; display: block; }
@@ -443,10 +443,10 @@ async function handleGenerate() {
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(255, 255, 255, 0.24);
+  border: 1px solid rgba(var(--color-white-rgb), 0.24);
   border-radius: 50%;
-  background: rgba(6, 8, 13, 0.82);
-  color: rgba(255, 255, 255, 0.78);
+  background: rgba(var(--color-surface-rgb), 0.82);
+  color: rgba(var(--color-white-rgb), 0.78);
   cursor: pointer;
   opacity: 0.72;
   transition: opacity 0.15s, background 0.15s, color 0.15s;
@@ -456,13 +456,13 @@ async function handleGenerate() {
   opacity: 1;
 }
 .gsp-ref-remove:hover:not(:disabled) {
-  background: rgba(220, 38, 38, 0.82);
-  color: #fff;
+  background: rgba(var(--color-danger-rgb), 0.82);
+  color: var(--color-white);
 }
 .gsp-ref-remove:disabled { cursor: not-allowed; }
 .gsp-ref-empty {
   font-size: 11px;
-  color: rgba(255,255,255,0.2);
+  color: rgba(var(--color-white-rgb), 0.2);
   padding: 8px 0;
   letter-spacing: 0.3px;
 }
@@ -472,31 +472,31 @@ async function handleGenerate() {
   width: 100%;
   padding: 8px 10px;
   border-radius: 8px;
-  border: 1px solid rgba(255,255,255,0.12);
-  background: rgba(255,255,255,0.05);
-  color: rgba(255,255,255,0.8);
+  border: 1px solid rgba(var(--color-white-rgb), 0.12);
+  background: rgba(var(--color-white-rgb), 0.05);
+  color: rgba(var(--color-white-rgb), 0.8);
   color-scheme: dark;
   font-size: 12px;
   outline: none;
 }
 .gsp-select option {
-  background: #12151e;
-  color: rgba(255,255,255,0.86);
+  background: var(--color-bg);
+  color: rgba(var(--color-white-rgb), 0.86);
 }
 .gsp-textarea {
   width: 100%;
   box-sizing: border-box;
   padding: 9px 10px;
   border-radius: 8px;
-  border: 1px solid rgba(255,255,255,0.12);
-  background: rgba(255,255,255,0.05);
-  color: rgba(255,255,255,0.8);
+  border: 1px solid rgba(var(--color-white-rgb), 0.12);
+  background: rgba(var(--color-white-rgb), 0.05);
+  color: rgba(var(--color-white-rgb), 0.8);
   font-size: 12px;
   resize: vertical;
   outline: none;
   transition: border-color 0.2s;
 }
-.gsp-textarea:focus { border-color: rgba(255, 255, 255, 0.28); }
+.gsp-textarea:focus { border-color: rgba(var(--color-white-rgb), 0.28); }
 
 .gsp-prompt-wrap {
   position: relative;
@@ -510,10 +510,10 @@ async function handleGenerate() {
   max-height: 176px;
   overflow-y: auto;
   padding: 4px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(var(--color-white-rgb), 0.14);
   border-radius: 7px;
-  background: rgba(8, 10, 16, 0.98);
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.42);
+  background: rgba(var(--color-surface-rgb), 0.98);
+  box-shadow: 0 12px 28px rgba(var(--color-black-rgb), 0.42);
 }
 .gsp-mention-item {
   width: 100%;
@@ -525,15 +525,15 @@ async function handleGenerate() {
   border: 0;
   border-radius: 5px;
   background: transparent;
-  color: rgba(255, 255, 255, 0.72);
+  color: rgba(var(--color-white-rgb), 0.72);
   font-size: 11px;
   text-align: left;
   cursor: pointer;
 }
 .gsp-mention-item:hover,
 .gsp-mention-item.active {
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
+  background: rgba(var(--color-white-rgb), 0.1);
+  color: var(--color-white);
 }
 .gsp-mention-item img,
 .gsp-mention-item video {
@@ -548,37 +548,37 @@ async function handleGenerate() {
 .gsp-chip {
   padding: 4px 10px;
   border-radius: 6px;
-  border: 1px solid rgba(255,255,255,0.1);
-  background: rgba(255,255,255,0.04);
-  color: rgba(255,255,255,0.5);
+  border: 1px solid rgba(var(--color-white-rgb), 0.1);
+  background: rgba(var(--color-white-rgb), 0.04);
+  color: rgba(var(--color-white-rgb), 0.5);
   font-size: 11px; cursor: pointer;
   transition: all 0.15s;
 }
-.gsp-chip:hover { border-color: rgba(255,255,255,0.2); color: rgba(255,255,255,0.8); }
+.gsp-chip:hover { border-color: rgba(var(--color-white-rgb), 0.2); color: rgba(var(--color-white-rgb), 0.8); }
 .gsp-chip.active {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(255, 255, 255, 0.32);
-  color: #fff;
+  background: rgba(var(--color-white-rgb), 0.12);
+  border-color: rgba(var(--color-white-rgb), 0.32);
+  color: var(--color-white);
 }
 
 .gsp-range {
   width: 100%;
-  accent-color: rgba(255, 255, 255, 0.8);
+  accent-color: rgba(var(--color-white-rgb), 0.8);
 }
 
 /* 底部生成按钮 */
 .gsp-footer {
   flex-shrink: 0;
   padding: 12px 14px;
-  border-top: 1px solid rgba(255,255,255,0.06);
+  border-top: 1px solid rgba(var(--color-white-rgb), 0.06);
 }
 .gsp-generate {
   width: 100%;
   padding: 10px;
   border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.28);
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
+  border: 1px solid rgba(var(--color-white-rgb), 0.28);
+  background: rgba(var(--color-white-rgb), 0.1);
+  color: var(--color-white);
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
@@ -589,16 +589,16 @@ async function handleGenerate() {
   gap: 8px;
 }
 .gsp-generate:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.18);
-  border-color: rgba(255, 255, 255, 0.45);
+  background: rgba(var(--color-white-rgb), 0.18);
+  border-color: rgba(var(--color-white-rgb), 0.45);
 }
 .gsp-generate:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .gsp-spin {
   width: 14px; height: 14px;
   border-radius: 50%;
-  border: 2px solid rgba(255, 255, 255, 0.2);
-  border-top-color: #fff;
+  border: 2px solid rgba(var(--color-white-rgb), 0.2);
+  border-top-color: var(--color-white);
   animation: spin 0.8s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }

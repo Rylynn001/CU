@@ -112,24 +112,24 @@ function formatTime(ts: number): string {
 
 <style scoped>
 .record-card {
-  background: linear-gradient(180deg, rgba(32, 36, 48, 0.42), rgba(7, 9, 15, 0.28));
+  background: linear-gradient(180deg, rgba(var(--color-surface-rgb), 0.42), rgba(var(--color-surface-rgb), 0.28));
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   overflow: hidden;
   transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
   backdrop-filter: blur(18px);
-  box-shadow: 0 12px 38px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 12px 38px rgba(var(--color-black-rgb), 0.2);
 }
 .record-card:hover {
-  border-color: rgba(255, 255, 255, 0.24);
+  border-color: rgba(var(--color-white-rgb), 0.24);
   transform: translateY(-2px);
   box-shadow: var(--shadow-soft);
 }
 .record-card.generating {
-  border-color: rgba(255,255,255, 0.3);
+  border-color: rgba(var(--color-white-rgb), 0.3);
 }
 .record-card.error {
-  border-color: rgba(248, 113, 113, 0.28);
+  border-color: rgba(var(--color-danger-rgb), 0.28);
 }
 
 .card-body {
@@ -145,7 +145,7 @@ function formatTime(ts: number): string {
   justify-content: flex-start;
   padding: 12px;
   border-right: 1px solid var(--color-border);
-  background: rgba(0, 0, 0, 0.14);
+  background: rgba(var(--color-black-rgb), 0.14);
 }
 
 /* 右侧主内容 */
@@ -181,7 +181,7 @@ function formatTime(ts: number): string {
 .card-model {
   font-size: 11px;
   color: var(--color-muted);
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(var(--color-white-rgb), 0.06);
   padding: 2px 8px;
   border-radius: 6px;
   border: 1px solid var(--color-border);
@@ -196,7 +196,7 @@ function formatTime(ts: number): string {
   gap: 4px;
   padding: 3px 10px;
   border-radius: var(--radius-sm);
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(var(--color-white-rgb), 0.06);
   border: 1px solid var(--color-border);
   color: var(--color-muted);
   font-size: 11px;
@@ -205,8 +205,8 @@ function formatTime(ts: number): string {
   flex-shrink: 0;
 }
 .card-edit-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.24);
+  background: rgba(var(--color-white-rgb), 0.1);
+  border-color: rgba(var(--color-white-rgb), 0.24);
   color: var(--color-text);
   transform: translateY(-1px);
 }
@@ -228,8 +228,8 @@ function formatTime(ts: number): string {
   flex-shrink: 0;
 }
 .card-delete-btn:hover {
-  background: rgba(248, 113, 113, 0.15);
-  border-color: rgba(248, 113, 113, 0.3);
+  background: rgba(var(--color-danger-rgb), 0.15);
+  border-color: rgba(var(--color-danger-rgb), 0.3);
   color: var(--color-danger);
 }
 
@@ -244,13 +244,13 @@ function formatTime(ts: number): string {
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  border: 2px solid rgba(255,255,255, 0.5);
+  border: 2px solid rgba(var(--color-white-rgb), 0.5);
   flex-shrink: 0;
   animation: breathe-ring 2s ease-in-out infinite;
 }
 @keyframes breathe-ring {
-  0%, 100% { border-color: rgba(255,255,255, 0.42); transform: scale(1); }
-  50% { border-color: rgba(255, 255, 255, 0.72); transform: scale(1.08); }
+  0%, 100% { border-color: rgba(var(--color-white-rgb), 0.42); transform: scale(1); }
+  50% { border-color: rgba(var(--color-white-rgb), 0.72); transform: scale(1.08); }
 }
 .generating-content {
   flex: 1;
@@ -264,8 +264,8 @@ function formatTime(ts: number): string {
 .prioritize-btn {
   padding: 4px 12px;
   border-radius: var(--radius-sm);
-  background: rgba(255, 255, 255, 0.07);
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(var(--color-white-rgb), 0.07);
+  border: 1px solid rgba(var(--color-white-rgb), 0.16);
   color: var(--color-primary);
   font-size: 11px;
   cursor: pointer;
@@ -273,8 +273,8 @@ function formatTime(ts: number): string {
   flex-shrink: 0;
 }
 .prioritize-btn:hover {
-  background: rgba(255, 255, 255, 0.14);
-  border-color: rgba(255, 255, 255, 0.28);
+  background: rgba(var(--color-white-rgb), 0.14);
+  border-color: rgba(var(--color-white-rgb), 0.28);
 }
 
 /* 错误 */
@@ -283,9 +283,9 @@ function formatTime(ts: number): string {
   align-items: center;
   gap: 12px;
   padding: 8px 12px;
-  background: rgba(248, 113, 113, 0.06);
+  background: rgba(var(--color-danger-rgb), 0.06);
   border-radius: var(--radius-sm);
-  border: 1px solid rgba(248, 113, 113, 0.12);
+  border: 1px solid rgba(var(--color-danger-rgb), 0.12);
 }
 .error-text {
   flex: 1;
@@ -296,8 +296,8 @@ function formatTime(ts: number): string {
 .retry-btn {
   padding: 4px 12px;
   border-radius: var(--radius-sm);
-  background: rgba(248, 113, 113, 0.1);
-  border: 1px solid rgba(248, 113, 113, 0.25);
+  background: rgba(var(--color-danger-rgb), 0.1);
+  border: 1px solid rgba(var(--color-danger-rgb), 0.25);
   color: var(--color-danger);
   font-size: 11px;
   cursor: pointer;
@@ -305,6 +305,6 @@ function formatTime(ts: number): string {
   flex-shrink: 0;
 }
 .retry-btn:hover {
-  background: rgba(248, 113, 113, 0.2);
+  background: rgba(var(--color-danger-rgb), 0.2);
 }
 </style>

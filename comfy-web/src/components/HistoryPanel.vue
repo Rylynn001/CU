@@ -102,11 +102,11 @@ onUnmounted(() => {
               <template v-if="rec.inputAssetUrls && rec.inputAssetUrls.length">
                 <template v-for="(a, i) in rec.inputAssetUrls" :key="'a' + i">
                   <video v-if="a.type === 'video'" :src="a.url" class="input-panel-thumb" controls />
-                  <img v-else :src="a.url" class="input-panel-thumb" @click="emit('preview-image', a.url)" />
+                  <img v-else :src="a.url" class="input-panel-thumb" @click="emit('preview-image', a.url)" loading="lazy" />
                 </template>
               </template>
               <template v-else-if="rec.inputPreviews && rec.inputPreviews.length">
-                <img v-for="(p, i) in rec.inputPreviews" :key="i" :src="p" class="input-panel-thumb" @click="emit('preview-image', p)" />
+                <img v-for="(p, i) in rec.inputPreviews" :key="i" :src="p" class="input-panel-thumb" @click="emit('preview-image', p)" loading="lazy" />
               </template>
             </template>
           </template>
@@ -148,7 +148,7 @@ onUnmounted(() => {
   align-items: center;
   width: min(240px, 72%);
   gap: 12px;
-  color: rgba(255, 255, 255, 0.32);
+  color: rgba(var(--color-white-rgb), 0.32);
   font-size: 12px;
   line-height: 1;
   text-align: center;
@@ -160,6 +160,6 @@ onUnmounted(() => {
   content: '';
   height: 1px;
   flex: 1;
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(var(--color-white-rgb), 0.08);
 }
 </style>

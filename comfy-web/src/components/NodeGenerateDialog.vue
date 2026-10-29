@@ -224,7 +224,7 @@ async function handleGenerate() {
                   :class="{ selected: selectedRefIds.includes(a.id) }"
                   @click="toggleRef(a.id)"
                 >
-                  <img :src="a.url" class="ngd-ref-img" />
+                  <img :src="a.url" class="ngd-ref-img" loading="lazy" />
                   <span v-if="selectedRefIds.includes(a.id)" class="ngd-ref-check">✓</span>
                 </div>
               </div>
@@ -248,7 +248,7 @@ async function handleGenerate() {
   position: fixed;
   inset: 0;
   z-index: 3500;
-  background: rgba(0, 0, 0, 0.7);
+  background: rgba(var(--color-black-rgb), 0.7);
   backdrop-filter: blur(10px);
   display: flex;
   align-items: center;
@@ -261,10 +261,10 @@ async function handleGenerate() {
   max-height: 86vh;
   display: flex;
   flex-direction: column;
-  background: rgba(25, 25, 30, 0.98);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(var(--color-surface-rgb), 0.98);
+  border: 1px solid rgba(var(--color-white-rgb), 0.12);
   border-radius: 18px;
-  box-shadow: 0 25px 80px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 25px 80px rgba(var(--color-black-rgb), 0.6);
   overflow: hidden;
 }
 .ngd-header {
@@ -272,20 +272,20 @@ async function handleGenerate() {
   align-items: center;
   justify-content: space-between;
   padding: 16px 20px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(var(--color-white-rgb), 0.08);
   flex-shrink: 0;
 }
-.ngd-title { font-size: 15px; color: rgba(255, 255, 255, 0.9); font-weight: 500; }
+.ngd-title { font-size: 15px; color: rgba(var(--color-white-rgb), 0.9); font-weight: 500; }
 .ngd-close {
   width: 28px; height: 28px;
   border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(var(--color-white-rgb), 0.1);
   background: transparent;
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(var(--color-white-rgb), 0.5);
   cursor: pointer;
   transition: all 0.2s;
 }
-.ngd-close:hover:not(:disabled) { background: rgba(255, 255, 255, 0.08); color: #fff; }
+.ngd-close:hover:not(:disabled) { background: rgba(var(--color-white-rgb), 0.08); color: var(--color-white); }
 .ngd-close:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .ngd-body {
@@ -297,55 +297,55 @@ async function handleGenerate() {
   gap: 16px;
 }
 .ngd-body::-webkit-scrollbar { width: 5px; }
-.ngd-body::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.16); border-radius: 3px; }
+.ngd-body::-webkit-scrollbar-thumb { background: rgba(var(--color-white-rgb), 0.16); border-radius: 3px; }
 
 .ngd-field { display: flex; flex-direction: column; gap: 8px; }
-.ngd-label { font-size: 12px; color: rgba(255, 255, 255, 0.5); }
+.ngd-label { font-size: 12px; color: rgba(var(--color-white-rgb), 0.5); }
 .ngd-select,
 .ngd-textarea {
   width: 100%;
   padding: 9px 12px;
   border-radius: 9px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.04);
-  color: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(var(--color-white-rgb), 0.12);
+  background: rgba(var(--color-white-rgb), 0.04);
+  color: rgba(var(--color-white-rgb), 0.9);
   font-size: 13px;
   outline: none;
   box-sizing: border-box;
 }
 .ngd-textarea { resize: vertical; font-family: inherit; line-height: 1.5; }
-.ngd-select option { background: #1a1a20; }
+.ngd-select option { background: var(--color-bg); }
 
 .ngd-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .ngd-chip {
   padding: 6px 12px;
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.04);
-  color: rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(var(--color-white-rgb), 0.12);
+  background: rgba(var(--color-white-rgb), 0.04);
+  color: rgba(var(--color-white-rgb), 0.6);
   font-size: 12px;
   cursor: pointer;
   transition: all 0.2s;
 }
-.ngd-chip:hover { color: rgba(255, 255, 255, 0.9); }
+.ngd-chip:hover { color: rgba(var(--color-white-rgb), 0.9); }
 .ngd-chip.active {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(255, 255, 255, 0.28);
-  color: #fff;
+  background: rgba(var(--color-white-rgb), 0.12);
+  border-color: rgba(var(--color-white-rgb), 0.28);
+  color: var(--color-white);
 }
 
 .ngd-stepper { display: flex; align-items: center; gap: 10px; }
 .ngd-step {
   width: 30px; height: 30px;
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.04);
-  color: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(var(--color-white-rgb), 0.12);
+  background: rgba(var(--color-white-rgb), 0.04);
+  color: rgba(var(--color-white-rgb), 0.8);
   font-size: 16px;
   cursor: pointer;
 }
-.ngd-step:hover { background: rgba(255, 255, 255, 0.1); }
-.ngd-step-val { min-width: 28px; text-align: center; color: #fff; font-size: 14px; }
+.ngd-step:hover { background: rgba(var(--color-white-rgb), 0.1); }
+.ngd-step-val { min-width: 28px; text-align: center; color: var(--color-white); font-size: 14px; }
 
 .ngd-refs { display: flex; flex-wrap: wrap; gap: 8px; }
 .ngd-ref {
@@ -357,15 +357,15 @@ async function handleGenerate() {
   cursor: pointer;
   transition: border-color 0.2s;
 }
-.ngd-ref.selected { border-color: var(--color-primary, rgba(255,255,255,0.82)); }
+.ngd-ref.selected { border-color: var(--color-primary, rgba(var(--color-white-rgb), 0.82)); }
 .ngd-ref-img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .ngd-ref-check {
   position: absolute;
   top: 2px; right: 2px;
   width: 18px; height: 18px;
   border-radius: 50%;
-  background: var(--color-primary, rgba(255,255,255,0.14));
-  color: #000;
+  background: var(--color-primary, rgba(var(--color-white-rgb), 0.14));
+  color: var(--color-black);
   font-size: 12px;
   display: flex;
   align-items: center;
@@ -377,7 +377,7 @@ async function handleGenerate() {
   justify-content: flex-end;
   gap: 10px;
   padding: 14px 20px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 1px solid rgba(var(--color-white-rgb), 0.08);
   flex-shrink: 0;
 }
 .ngd-btn {
@@ -389,17 +389,17 @@ async function handleGenerate() {
   transition: all 0.2s;
 }
 .ngd-btn.cancel {
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.6);
+  background: rgba(var(--color-white-rgb), 0.04);
+  border-color: rgba(var(--color-white-rgb), 0.1);
+  color: rgba(var(--color-white-rgb), 0.6);
 }
-.ngd-btn.cancel:hover:not(:disabled) { background: rgba(255, 255, 255, 0.08); color: #fff; }
+.ngd-btn.cancel:hover:not(:disabled) { background: rgba(var(--color-white-rgb), 0.08); color: var(--color-white); }
 .ngd-btn.confirm {
-  background: rgba(255, 255, 255, 0.14);
-  border-color: rgba(255, 255, 255, 0.28);
-  color: #fff;
+  background: rgba(var(--color-white-rgb), 0.14);
+  border-color: rgba(var(--color-white-rgb), 0.28);
+  color: var(--color-white);
 }
-.ngd-btn.confirm:hover:not(:disabled) { background: rgba(255, 255, 255, 0.2); }
+.ngd-btn.confirm:hover:not(:disabled) { background: rgba(var(--color-white-rgb), 0.2); }
 .ngd-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .ngd-enter-active, .ngd-leave-active { transition: opacity 0.25s; }

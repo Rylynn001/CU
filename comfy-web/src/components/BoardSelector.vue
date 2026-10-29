@@ -166,9 +166,9 @@ function submitRename() {
   gap: 5px;
   padding: 6px 12px 6px 8px;
   border-radius: 8px;
-  border: 1px solid rgba(255,255,255,0.1);
+  border: 1px solid rgba(var(--color-white-rgb), 0.1);
   background: transparent;
-  color: rgba(255,255,255,0.45);
+  color: rgba(var(--color-white-rgb), 0.45);
   font-size: 12px;
   cursor: pointer;
   transition: all 0.2s;
@@ -176,20 +176,20 @@ function submitRename() {
   margin-bottom: 8px;
 }
 .btn-back:hover {
-  background: rgba(255,255,255,0.06);
-  color: rgba(255,255,255,0.8);
-  border-color: rgba(255,255,255,0.2);
+  background: rgba(var(--color-white-rgb), 0.06);
+  color: rgba(var(--color-white-rgb), 0.8);
+  border-color: rgba(var(--color-white-rgb), 0.2);
 }
 .bs-title {
   font-size: 26px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.9);
+  color: rgba(var(--color-white-rgb), 0.9);
   letter-spacing: -0.5px;
 }
 .bs-desc {
   margin-top: 6px;
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.35);
+  color: rgba(var(--color-white-rgb), 0.35);
 }
 .btn-create {
   position: fixed;
@@ -201,17 +201,17 @@ function submitRename() {
   gap: 7px;
   padding: 10px 20px;
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(var(--color-white-rgb), 0.18);
+  background: rgba(var(--color-white-rgb), 0.08);
+  color: rgba(var(--color-white-rgb), 0.85);
   font-size: 13px;
   cursor: pointer;
   transition: all 0.2s;
 }
 .btn-create:hover {
-  background: rgba(255, 255, 255, 0.14);
-  border-color: rgba(255, 255, 255, 0.28);
-  color: #fff;
+  background: rgba(var(--color-white-rgb), 0.14);
+  border-color: rgba(var(--color-white-rgb), 0.28);
+  color: var(--color-white);
 }
 
 /* ── 卡片网格 ── */
@@ -225,7 +225,7 @@ function submitRename() {
   position: relative;
   border: 1px solid var(--color-border);
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.035);
+  background: rgba(var(--color-white-rgb), 0.035);
   overflow: hidden;
   cursor: pointer;
   animation: card-in 0.35s ease both;
@@ -233,8 +233,8 @@ function submitRename() {
   min-height: 150px;
 }
 .bs-card:hover {
-  border-color: rgba(255, 255, 255, 0.22);
-  background: rgba(255, 255, 255, 0.065);
+  border-color: rgba(var(--color-white-rgb), 0.22);
+  background: rgba(var(--color-white-rgb), 0.065);
   transform: translateY(-2px);
 }
 
@@ -243,8 +243,8 @@ function submitRename() {
   position: absolute;
   inset: 0;
   background-image:
-    linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px);
+    linear-gradient(rgba(var(--color-white-rgb), 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(var(--color-white-rgb), 0.04) 1px, transparent 1px);
   background-size: 28px 28px;
   pointer-events: none;
 }
@@ -256,18 +256,18 @@ function submitRename() {
   width: 36px;
   height: 36px;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.07);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(var(--color-white-rgb), 0.07);
+  border: 1px solid rgba(var(--color-white-rgb), 0.1);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(var(--color-white-rgb), 0.5);
   margin-bottom: 14px;
 }
 .card-name {
   font-size: 15px;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.85);
+  color: rgba(var(--color-white-rgb), 0.85);
   margin-bottom: 8px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -275,15 +275,15 @@ function submitRename() {
 }
 .card-date {
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.28);
+  color: rgba(var(--color-white-rgb), 0.28);
 }
 
 .rename-input {
   width: 100%;
-  background: rgba(255,255,255,0.08);
-  border: 1px solid rgba(255,255,255,0.24);
+  background: rgba(var(--color-white-rgb), 0.08);
+  border: 1px solid rgba(var(--color-white-rgb), 0.24);
   border-radius: 6px;
-  color: rgba(255,255,255,0.9);
+  color: rgba(var(--color-white-rgb), 0.9);
   font-size: 14px;
   padding: 4px 8px;
   outline: none;
@@ -299,7 +299,7 @@ function submitRename() {
   border-radius: 6px;
   border: none;
   background: transparent;
-  color: rgba(255,255,255,0.2);
+  color: rgba(var(--color-white-rgb), 0.2);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -308,7 +308,7 @@ function submitRename() {
   transition: all 0.18s;
 }
 .bs-card:hover .card-del { opacity: 1; }
-.card-del:hover { background: rgba(244,63,94,0.2); color: #f43f5e; }
+.card-del:hover { background: rgba(var(--color-danger-rgb), 0.2); color: var(--color-danger); }
 
 /* 新建卡片 */
 .bs-card-new {
@@ -318,14 +318,14 @@ function submitRename() {
   justify-content: center;
   gap: 12px;
   border-style: dashed;
-  border-color: rgba(255,255,255,0.12);
-  color: rgba(255,255,255,0.28);
+  border-color: rgba(var(--color-white-rgb), 0.12);
+  color: rgba(var(--color-white-rgb), 0.28);
   background: transparent;
 }
 .bs-card-new:hover {
-  border-color: rgba(255,255,255,0.24);
-  color: rgba(255,255,255,0.5);
-  background: rgba(255,255,255,0.02);
+  border-color: rgba(var(--color-white-rgb), 0.24);
+  color: rgba(var(--color-white-rgb), 0.5);
+  background: rgba(var(--color-white-rgb), 0.02);
 }
 .new-card-hint {
   font-size: 13px;
@@ -336,7 +336,7 @@ function submitRename() {
   position: fixed;
   inset: 0;
   z-index: 500;
-  background: rgba(0,0,0,0.6);
+  background: rgba(var(--color-black-rgb), 0.6);
   backdrop-filter: blur(8px);
   display: flex;
   align-items: center;
@@ -346,14 +346,14 @@ function submitRename() {
   width: 360px;
   padding: 28px 28px 24px;
   border-radius: 18px;
-  border: 1px solid rgba(255,255,255,0.12);
-  background: rgba(20,22,28,0.98);
-  box-shadow: 0 24px 64px rgba(0,0,0,0.5);
+  border: 1px solid rgba(var(--color-white-rgb), 0.12);
+  background: rgba(var(--color-surface-rgb), 0.98);
+  box-shadow: 0 24px 64px rgba(var(--color-black-rgb), 0.5);
 }
 .modal-title {
   font-size: 16px;
   font-weight: 500;
-  color: rgba(255,255,255,0.9);
+  color: rgba(var(--color-white-rgb), 0.9);
   margin-bottom: 18px;
 }
 .modal-input {
@@ -361,15 +361,15 @@ function submitRename() {
   box-sizing: border-box;
   padding: 11px 14px;
   border-radius: 10px;
-  border: 1px solid rgba(255,255,255,0.14);
-  background: rgba(255,255,255,0.05);
-  color: rgba(255,255,255,0.85);
+  border: 1px solid rgba(var(--color-white-rgb), 0.14);
+  background: rgba(var(--color-white-rgb), 0.05);
+  color: rgba(var(--color-white-rgb), 0.85);
   font-size: 14px;
   outline: none;
   transition: border-color 0.2s;
   margin-bottom: 20px;
 }
-.modal-input:focus { border-color: rgba(255,255,255,0.3); }
+.modal-input:focus { border-color: rgba(var(--color-white-rgb), 0.3); }
 .modal-actions {
   display: flex;
   justify-content: flex-end;
@@ -378,25 +378,25 @@ function submitRename() {
 .btn-cancel {
   padding: 8px 18px;
   border-radius: 8px;
-  border: 1px solid rgba(255,255,255,0.1);
+  border: 1px solid rgba(var(--color-white-rgb), 0.1);
   background: transparent;
-  color: rgba(255,255,255,0.45);
+  color: rgba(var(--color-white-rgb), 0.45);
   font-size: 13px;
   cursor: pointer;
   transition: all 0.15s;
 }
-.btn-cancel:hover { background: rgba(255,255,255,0.05); color: rgba(255,255,255,0.75); }
+.btn-cancel:hover { background: rgba(var(--color-white-rgb), 0.05); color: rgba(var(--color-white-rgb), 0.75); }
 .btn-confirm {
   padding: 8px 22px;
   border-radius: 8px;
-  border: 1px solid rgba(255,255,255,0.22);
-  background: rgba(255,255,255,0.1);
-  color: #fff;
+  border: 1px solid rgba(var(--color-white-rgb), 0.22);
+  background: rgba(var(--color-white-rgb), 0.1);
+  color: var(--color-white);
   font-size: 13px;
   cursor: pointer;
   transition: all 0.15s;
 }
-.btn-confirm:hover { background: rgba(255,255,255,0.18); }
+.btn-confirm:hover { background: rgba(var(--color-white-rgb), 0.18); }
 
 /* ── 动画 ── */
 @keyframes page-enter {

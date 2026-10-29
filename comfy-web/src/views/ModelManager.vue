@@ -225,12 +225,12 @@ onMounted(() => {
 }
 .orb-1 {
   width: 500px; height: 500px;
-  background: radial-gradient(circle, rgba(255,255,255,0.12) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(var(--color-white-rgb), 0.12) 0%, transparent 70%);
   top: -120px; left: -80px;
 }
 .orb-2 {
   width: 400px; height: 400px;
-  background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(var(--color-white-rgb), 0.1) 0%, transparent 70%);
   bottom: -100px; right: -60px;
   animation-delay: 3.5s;
 }
@@ -261,14 +261,14 @@ onMounted(() => {
 .breath-dot {
   width: 8px; height: 8px;
   border-radius: 50%;
-  background: rgba(255,255,255,0.14);
+  background: rgba(var(--color-white-rgb), 0.14);
   animation: pulse-dot 2.5s ease-in-out infinite;
 }
 
 .page-title {
   font-size: 22px;
   font-weight: 600;
-  color: rgba(255,255,255,0.9);
+  color: rgba(var(--color-white-rgb), 0.9);
   letter-spacing: 2px;
   margin: 0;
 }
@@ -282,14 +282,14 @@ onMounted(() => {
 .icon-action-btn {
   width: 36px; height: 36px;
   border-radius: 10px;
-  background: rgba(255,255,255,0.04);
-  border: 1px solid rgba(255,255,255,0.08);
-  color: rgba(255,255,255,0.5);
+  background: rgba(var(--color-white-rgb), 0.04);
+  border: 1px solid rgba(var(--color-white-rgb), 0.08);
+  color: rgba(var(--color-white-rgb), 0.5);
   cursor: pointer;
   display: flex; align-items: center; justify-content: center;
   transition: background 0.2s, color 0.2s;
 }
-.icon-action-btn:hover { background: rgba(255,255,255,0.2); color: #fff; }
+.icon-action-btn:hover { background: rgba(var(--color-white-rgb), 0.2); color: var(--color-white); }
 
 .add-btn {
   display: flex;
@@ -297,9 +297,9 @@ onMounted(() => {
   gap: 6px;
   padding: 8px 16px;
   border-radius: 10px;
-  background: linear-gradient(135deg, rgba(255,255,255,0.14), rgba(255,255,255,0.82));
+  background: linear-gradient(135deg, rgba(var(--color-white-rgb), 0.14), rgba(var(--color-white-rgb), 0.82));
   border: none;
-  color: #fff;
+  color: var(--color-white);
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
@@ -317,8 +317,8 @@ onMounted(() => {
 .config-panel.visible { max-height: 400px; opacity: 1; }
 
 .config-inner {
-  background: rgba(255,255,255,0.03);
-  border: 1px solid rgba(255,255,255,0.07);
+  background: rgba(var(--color-white-rgb), 0.03);
+  border: 1px solid rgba(var(--color-white-rgb), 0.07);
   border-radius: 16px;
   padding: 20px 24px;
   display: flex;
@@ -329,7 +329,7 @@ onMounted(() => {
 
 .config-title {
   font-size: 12px;
-  color: rgba(255,255,255,0.35);
+  color: rgba(var(--color-white-rgb), 0.35);
   letter-spacing: 2px;
   text-transform: uppercase;
 }
@@ -342,7 +342,7 @@ onMounted(() => {
 
 .config-label {
   font-size: 12px;
-  color: rgba(255,255,255,0.4);
+  color: rgba(var(--color-white-rgb), 0.4);
   width: 72px;
   flex-shrink: 0;
 }
@@ -358,17 +358,17 @@ onMounted(() => {
 
 .key-status {
   font-size: 11px;
-  color: rgba(255,255,255,0.25);
+  color: rgba(var(--color-white-rgb), 0.25);
   letter-spacing: 1px;
 }
-.key-status.active { color: rgba(255,255,255,0.7); }
+.key-status.active { color: rgba(var(--color-white-rgb), 0.7); }
 
 .save-btn {
   padding: 7px 20px;
   border-radius: 8px;
-  background: linear-gradient(135deg, rgba(255,255,255,0.14), rgba(255,255,255,0.82));
+  background: linear-gradient(135deg, rgba(var(--color-white-rgb), 0.14), rgba(var(--color-white-rgb), 0.82));
   border: none;
-  color: #fff;
+  color: var(--color-white);
   font-size: 12px;
   cursor: pointer;
   transition: opacity 0.2s;
@@ -385,8 +385,8 @@ onMounted(() => {
 
 .model-card {
   position: relative;
-  background: rgba(255,255,255,0.03);
-  border: 1px solid rgba(255,255,255,0.07);
+  background: rgba(var(--color-white-rgb), 0.03);
+  border: 1px solid rgba(var(--color-white-rgb), 0.07);
   border-radius: 16px;
   padding: 20px;
   display: flex;
@@ -397,15 +397,15 @@ onMounted(() => {
   animation: breathe-border 5s ease-in-out infinite;
 }
 .model-card:hover {
-  border-color: rgba(255,255,255,0.4);
-  background: rgba(255,255,255,0.05);
+  border-color: rgba(var(--color-white-rgb), 0.4);
+  background: rgba(var(--color-white-rgb), 0.05);
   transform: translateY(-2px);
 }
 .model-card:hover .card-glow { opacity: 1; }
 
 .card-glow {
   position: absolute; inset: 0;
-  background: radial-gradient(ellipse at top left, rgba(255,255,255,0.08) 0%, transparent 60%);
+  background: radial-gradient(ellipse at top left, rgba(var(--color-white-rgb), 0.08) 0%, transparent 60%);
   opacity: 0;
   transition: opacity 0.3s;
   pointer-events: none;
@@ -420,40 +420,40 @@ onMounted(() => {
 .model-icon {
   width: 40px; height: 40px;
   border-radius: 12px;
-  background: rgba(255,255,255,0.15);
-  border: 1px solid rgba(255,255,255,0.2);
+  background: rgba(var(--color-white-rgb), 0.15);
+  border: 1px solid rgba(var(--color-white-rgb), 0.2);
   display: flex; align-items: center; justify-content: center;
   font-size: 16px;
   font-weight: 700;
-  color: rgba(255,255,255,0.82);
+  color: rgba(var(--color-white-rgb), 0.82);
 }
 
 .delete-btn {
   width: 28px; height: 28px;
   border-radius: 8px;
   background: none;
-  border: 1px solid rgba(255,255,255,0.06);
-  color: rgba(255,255,255,0.3);
+  border: 1px solid rgba(var(--color-white-rgb), 0.06);
+  color: rgba(var(--color-white-rgb), 0.3);
   cursor: pointer;
   display: flex; align-items: center; justify-content: center;
   font-size: 13px;
   transition: background 0.2s, color 0.2s, border-color 0.2s;
 }
 .delete-btn:hover {
-  background: rgba(248,113,113,0.15);
-  border-color: rgba(248,113,113,0.3);
-  color: #f87171;
+  background: rgba(var(--color-danger-rgb), 0.15);
+  border-color: rgba(var(--color-danger-rgb), 0.3);
+  color: var(--color-danger);
 }
 
 .model-name {
   font-size: 15px;
   font-weight: 600;
-  color: rgba(255,255,255,0.88);
+  color: rgba(var(--color-white-rgb), 0.88);
 }
 
 .model-id {
   font-size: 11px;
-  color: rgba(255,255,255,0.3);
+  color: rgba(var(--color-white-rgb), 0.3);
   letter-spacing: 0.5px;
   font-family: monospace;
 }
@@ -463,16 +463,16 @@ onMounted(() => {
   padding: 2px 8px;
   border-radius: 6px;
   font-size: 10px;
-  color: rgba(255,255,255,0.9);
-  background: rgba(255,255,255,0.15);
-  border: 1px solid rgba(255,255,255,0.2);
+  color: rgba(var(--color-white-rgb), 0.9);
+  background: rgba(var(--color-white-rgb), 0.15);
+  border: 1px solid rgba(var(--color-white-rgb), 0.2);
   letter-spacing: 0.5px;
   width: fit-content;
 }
 
 .model-desc {
   font-size: 12px;
-  color: rgba(255,255,255,0.35);
+  color: rgba(var(--color-white-rgb), 0.35);
   line-height: 1.5;
 }
 
@@ -488,14 +488,14 @@ onMounted(() => {
 .empty-orb {
   width: 60px; height: 60px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(255,255,255,0.12) 0%, transparent 70%);
-  border: 1px solid rgba(255,255,255,0.15);
+  background: radial-gradient(circle, rgba(var(--color-white-rgb), 0.12) 0%, transparent 70%);
+  border: 1px solid rgba(var(--color-white-rgb), 0.15);
   animation: breathe 4s ease-in-out infinite;
 }
 
 .empty-text {
   font-size: 13px;
-  color: rgba(255,255,255,0.25);
+  color: rgba(var(--color-white-rgb), 0.25);
   letter-spacing: 1px;
 }
 

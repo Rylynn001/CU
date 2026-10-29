@@ -80,12 +80,12 @@ const features = [
   max-width: 680px;
   font-size: 50px;
   font-weight: 900;
-  color: #fff;
+  color: var(--color-white);
   letter-spacing: 0;
   line-height: 1.02;
   white-space: nowrap;
   margin: 0;
-  text-shadow: 0 14px 44px rgba(255, 255, 255, 0.12);
+  text-shadow: 0 14px 44px rgba(var(--color-white-rgb), 0.12);
 }
 
 .hero-sub {
@@ -107,12 +107,12 @@ const features = [
 
 .feature-card {
   position: relative;
-  border: 1px solid rgba(255, 255, 255, 0.13);
+  border: 1px solid rgba(var(--color-white-rgb), 0.13);
   border-radius: 24px;
-  background: rgba(255,255,255,0.03);
+  background: rgba(var(--color-white-rgb), 0.03);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+  box-shadow: 0 8px 32px rgba(var(--color-black-rgb), 0.3);
   overflow: hidden;
 }
 
@@ -122,8 +122,8 @@ const features = [
   inset: 0;
   pointer-events: none;
   background:
-    linear-gradient(135deg, rgba(255,255,255,0.16), transparent 42%),
-    radial-gradient(circle at 82% 12%, rgba(255,255,255,0.14), transparent 30%);
+    linear-gradient(135deg, rgba(var(--color-white-rgb), 0.16), transparent 42%),
+    radial-gradient(circle at 82% 12%, rgba(var(--color-white-rgb), 0.14), transparent 30%);
   opacity: 0.5;
 }
 
@@ -142,8 +142,8 @@ const features = [
 
 .feature-card:hover,
 .feature-card:focus-visible {
-  border-color: rgba(255, 255, 255, 0.24);
-  background: rgba(255,255,255,0.045);
+  border-color: rgba(var(--color-white-rgb), 0.24);
+  background: rgba(var(--color-white-rgb), 0.045);
   transform: translateY(-3px);
   box-shadow: var(--shadow-soft);
 }
@@ -162,7 +162,7 @@ const features = [
   position: relative;
   z-index: 1;
   margin: 0;
-  color: rgba(226, 232, 240, 0.48);
+  color: rgba(var(--color-text-soft-rgb), 0.48);
   font-size: 14px;
   line-height: 1.7;
 }

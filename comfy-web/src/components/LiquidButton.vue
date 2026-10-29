@@ -87,7 +87,7 @@ function handleClick(event: MouseEvent) {
 
 .liquid-button:hover:not(:disabled) {
   transform: scale(1.05);
-  color: #fff;
+  color: var(--color-white);
 }
 
 .liquid-button:active:not(:disabled) {
@@ -134,12 +134,12 @@ function handleClick(event: MouseEvent) {
   pointer-events: none;
   transition: opacity 0.25s ease;
   -webkit-mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
+    linear-gradient(var(--color-black) 0 0) content-box,
+    linear-gradient(var(--color-black) 0 0);
   -webkit-mask-composite: xor;
   mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
+    linear-gradient(var(--color-black) 0 0) content-box,
+    linear-gradient(var(--color-black) 0 0);
   mask-composite: exclude;
 }
 
@@ -180,12 +180,12 @@ function handleClick(event: MouseEvent) {
   justify-content: center;
   width: 100%;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.3);
+  border: 1px solid rgba(var(--color-white-rgb), 0.3);
   border-radius: inherit;
 }
 
 .liquid-button:hover:not(:disabled) .liquid-inner {
-  border-color: rgba(255, 255, 255, 0.48);
+  border-color: rgba(var(--color-white-rgb), 0.48);
 }
 
 .liquid-shadow {
@@ -194,10 +194,10 @@ function handleClick(event: MouseEvent) {
   z-index: -1;
   border-radius: inherit;
   box-shadow:
-    0 10px 28px rgba(0, 0, 0, 0.12),
-    inset 1px 1px 1px rgba(255, 255, 255, 0.5),
-    inset -1px -1px 1px rgba(255, 255, 255, 0.16),
-    inset 0 0 14px rgba(255, 255, 255, 0.045);
+    0 10px 28px rgba(var(--color-black-rgb), 0.12),
+    inset 1px 1px 1px rgba(var(--color-white-rgb), 0.5),
+    inset -1px -1px 1px rgba(var(--color-white-rgb), 0.16),
+    inset 0 0 14px rgba(var(--color-white-rgb), 0.045);
 }
 
 .liquid-glass {
@@ -206,7 +206,7 @@ function handleClick(event: MouseEvent) {
   z-index: -1;
   overflow: hidden;
   border-radius: inherit;
-  background: rgba(255, 255, 255, 0.035);
+  background: rgba(var(--color-white-rgb), 0.035);
   backdrop-filter: blur(7px) saturate(135%);
   -webkit-backdrop-filter: blur(7px) saturate(135%);
 }
@@ -216,7 +216,7 @@ function handleClick(event: MouseEvent) {
   inset: 1px;
   z-index: -1;
   border-radius: inherit;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.22), transparent 44%, rgba(255, 255, 255, 0.08));
+  background: linear-gradient(180deg, rgba(var(--color-white-rgb), 0.22), transparent 44%, rgba(var(--color-white-rgb), 0.08));
   opacity: 0.5;
   pointer-events: none;
   transition: opacity 0.3s ease;

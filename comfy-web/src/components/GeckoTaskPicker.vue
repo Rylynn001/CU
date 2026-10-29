@@ -127,7 +127,7 @@ function close() {
   align-items: center;
   justify-content: center;
   padding: 20px;
-  background: rgba(0, 0, 0, 0.75);
+  background: rgba(var(--color-black-rgb), 0.75);
   backdrop-filter: blur(8px);
 }
 
@@ -137,10 +137,10 @@ function close() {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(var(--color-white-rgb), 0.12);
   border-radius: 16px;
-  background: rgba(25, 25, 30, 0.98);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  background: rgba(var(--color-surface-rgb), 0.98);
+  box-shadow: 0 20px 60px rgba(var(--color-black-rgb), 0.5);
 }
 
 .dialog-header {
@@ -148,23 +148,23 @@ function close() {
   align-items: center;
   justify-content: space-between;
   padding: 18px 20px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(var(--color-white-rgb), 0.08);
   flex-shrink: 0;
 }
 
 .dialog-title {
   font-size: 15px;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.9);
+  color: rgba(var(--color-white-rgb), 0.9);
 }
 
 .dialog-close {
   width: 28px;
   height: 28px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(var(--color-white-rgb), 0.1);
   border-radius: 50%;
   background: transparent;
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(var(--color-white-rgb), 0.5);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -173,8 +173,8 @@ function close() {
 }
 
 .dialog-close:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.9);
+  background: rgba(var(--color-white-rgb), 0.08);
+  color: rgba(var(--color-white-rgb), 0.9);
 }
 
 .dialog-body {
@@ -186,7 +186,7 @@ function close() {
 
 .dialog-body::-webkit-scrollbar { width: 6px; }
 .dialog-body::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.16);
+  background: rgba(var(--color-white-rgb), 0.16);
   border-radius: 3px;
 }
 
@@ -201,8 +201,8 @@ function close() {
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  border: 2px solid rgba(255, 255, 255, 0.14);
-  border-top-color: rgba(255, 255, 255, 0.72);
+  border: 2px solid rgba(var(--color-white-rgb), 0.14);
+  border-top-color: rgba(var(--color-white-rgb), 0.72);
   animation: spin 0.8s linear infinite;
 }
 
@@ -212,7 +212,7 @@ function close() {
 
 .empty-hint {
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.3);
+  color: rgba(var(--color-white-rgb), 0.3);
 }
 
 .task-list {
@@ -223,21 +223,21 @@ function close() {
 
 .task-item {
   padding: 12px 14px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(var(--color-white-rgb), 0.08);
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(var(--color-white-rgb), 0.03);
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .task-item:hover {
-  border-color: rgba(255, 255, 255, 0.2);
-  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(var(--color-white-rgb), 0.2);
+  background: rgba(var(--color-white-rgb), 0.06);
 }
 
 .task-item.selected {
-  border-color: rgba(255, 255, 255, 0.32);
-  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(var(--color-white-rgb), 0.32);
+  background: rgba(var(--color-white-rgb), 0.12);
 }
 
 .task-info {
@@ -248,13 +248,13 @@ function close() {
 
 .task-name {
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.9);
+  color: rgba(var(--color-white-rgb), 0.9);
   font-weight: 500;
 }
 
 .task-meta {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.4);
+  color: rgba(var(--color-white-rgb), 0.4);
 }
 
 .dialog-footer {
@@ -263,7 +263,7 @@ function close() {
   justify-content: flex-end;
   gap: 10px;
   padding: 14px 20px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 1px solid rgba(var(--color-white-rgb), 0.08);
   flex-shrink: 0;
 }
 
@@ -277,24 +277,24 @@ function close() {
 }
 
 .dialog-btn.cancel {
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.6);
+  background: rgba(var(--color-white-rgb), 0.04);
+  border-color: rgba(var(--color-white-rgb), 0.1);
+  color: rgba(var(--color-white-rgb), 0.6);
 }
 
 .dialog-btn.cancel:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.9);
+  background: rgba(var(--color-white-rgb), 0.08);
+  color: rgba(var(--color-white-rgb), 0.9);
 }
 
 .dialog-btn.confirm {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(255, 255, 255, 0.24);
-  color: rgba(255, 255, 255, 0.95);
+  background: rgba(var(--color-white-rgb), 0.12);
+  border-color: rgba(var(--color-white-rgb), 0.24);
+  color: rgba(var(--color-white-rgb), 0.95);
 }
 
 .dialog-btn.confirm:hover {
-  background: rgba(255, 255, 255, 0.18);
+  background: rgba(var(--color-white-rgb), 0.18);
 }
 
 .dialog-enter-active,

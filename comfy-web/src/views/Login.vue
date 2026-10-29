@@ -127,12 +127,12 @@ function handleKeydown(e: KeyboardEvent) {
 }
 .orb-1 {
   width: 500px; height: 500px;
-  background: radial-gradient(circle, rgba(255,255,255,0.16) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(var(--color-white-rgb), 0.16) 0%, transparent 70%);
   top: -140px; left: 40px;
 }
 .orb-2 {
   width: 400px; height: 400px;
-  background: radial-gradient(circle, rgba(255,255,255,0.12) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(var(--color-white-rgb), 0.12) 0%, transparent 70%);
   bottom: -100px; right: 60px;
   animation-delay: 3s;
 }
@@ -142,12 +142,12 @@ function handleKeydown(e: KeyboardEvent) {
   z-index: 1;
   width: 100%;
   max-width: 400px;
-  background: rgba(255,255,255,0.03);
-  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(var(--color-white-rgb), 0.03);
+  border: 1px solid rgba(var(--color-white-rgb), 0.08);
   border-radius: 24px;
   padding: 40px 36px;
   backdrop-filter: blur(16px);
-  box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+  box-shadow: 0 8px 32px rgba(var(--color-black-rgb), 0.3);
 }
 
 .card-header {
@@ -158,10 +158,10 @@ function handleKeydown(e: KeyboardEvent) {
 .title {
   font-size: 28px;
   font-weight: 700;
-  color: rgba(255,255,255,0.92);
+  color: rgba(var(--color-white-rgb), 0.92);
   letter-spacing: 3px;
   margin: 0 0 8px;
-  background: linear-gradient(135deg, rgba(255,255,255,0.14), rgba(255,255,255,0.82));
+  background: linear-gradient(135deg, rgba(var(--color-white-rgb), 0.14), rgba(var(--color-white-rgb), 0.82));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -169,7 +169,7 @@ function handleKeydown(e: KeyboardEvent) {
 
 .subtitle {
   font-size: 12px;
-  color: rgba(255,255,255,0.35);
+  color: rgba(var(--color-white-rgb), 0.35);
   letter-spacing: 2px;
   text-transform: uppercase;
   margin: 0;
@@ -189,7 +189,7 @@ function handleKeydown(e: KeyboardEvent) {
 
 .label {
   font-size: 12px;
-  color: rgba(255,255,255,0.5);
+  color: rgba(var(--color-white-rgb), 0.5);
   letter-spacing: 0.5px;
 }
 
@@ -207,8 +207,8 @@ function handleKeydown(e: KeyboardEvent) {
 :deep(.el-input__inner:-webkit-autofill),
 :deep(.el-input__inner:-webkit-autofill:hover),
 :deep(.el-input__inner:-webkit-autofill:focus) {
-  -webkit-text-fill-color: rgba(255, 255, 255, 0.92) !important;
-  caret-color: rgba(255, 255, 255, 0.92);
+  -webkit-text-fill-color: rgba(var(--color-white-rgb), 0.92) !important;
+  caret-color: rgba(var(--color-white-rgb), 0.92);
   box-shadow: 0 0 0 1000px transparent inset !important;
   transition: background-color 9999s ease-out;
 }

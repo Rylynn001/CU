@@ -324,8 +324,7 @@ onUnmounted(() => {
                 :style="{ transform: `translate(${offsetX}px, ${offsetY}px) scale(${scale})` }"
                 draggable="false"
                 @load="onImageLoad"
-                @pointerdown.prevent="startDrag"
-              />
+                @pointerdown.prevent="startDrag" loading="lazy" />
               <video
                 v-else
                 ref="videoRef"
@@ -454,7 +453,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   padding: 20px;
-  background: rgba(3, 5, 8, 0.88);
+  background: rgba(var(--color-surface-rgb), 0.88);
   backdrop-filter: blur(10px);
 }
 
@@ -465,11 +464,11 @@ onUnmounted(() => {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 330px;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(var(--color-white-rgb), 0.14);
   border-radius: 8px;
-  background: #111318;
-  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.62);
-  color: #f4f5f7;
+  background: var(--color-bg);
+  box-shadow: 0 30px 90px rgba(var(--color-black-rgb), 0.62);
+  color: var(--color-text);
 }
 
 .media-main {
@@ -483,9 +482,9 @@ onUnmounted(() => {
   display: inline-flex;
   width: fit-content;
   padding: 3px 7px;
-  border: 1px solid rgba(112, 181, 255, 0.4);
+  border: 1px solid rgba(var(--color-info-rgb), 0.4);
   border-radius: 4px;
-  color: #9bcbff;
+  color: var(--color-text-soft);
   font-size: 11px;
   line-height: 1.4;
 }
@@ -493,7 +492,7 @@ onUnmounted(() => {
 .media-file-name {
   display: block;
   margin-top: 12px;
-  color: rgba(255, 255, 255, 0.94);
+  color: rgba(var(--color-white-rgb), 0.94);
   font-size: 13px;
   font-weight: 600;
   line-height: 1.55;
@@ -510,18 +509,18 @@ onUnmounted(() => {
   justify-content: space-between;
   gap: 16px;
   min-height: 42px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(var(--color-white-rgb), 0.08);
 }
 
 .media-facts dt {
-  color: rgba(255, 255, 255, 0.42);
+  color: rgba(var(--color-white-rgb), 0.42);
   font-size: 11px;
   font-weight: 500;
 }
 
 .media-facts dd {
   margin: 0;
-  color: rgba(255, 255, 255, 0.84);
+  color: rgba(var(--color-white-rgb), 0.84);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   text-align: right;
@@ -532,8 +531,8 @@ onUnmounted(() => {
   min-height: 0;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
-  border-left: 1px solid rgba(255, 255, 255, 0.09);
-  background: #191c22;
+  border-left: 1px solid rgba(var(--color-white-rgb), 0.09);
+  background: var(--color-bg);
 }
 
 .media-details-header {
@@ -542,11 +541,11 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   padding: 10px 14px 10px 20px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.09);
+  border-bottom: 1px solid rgba(var(--color-white-rgb), 0.09);
 }
 
 .media-details-header > span {
-  color: rgba(255, 255, 255, 0.68);
+  color: rgba(var(--color-white-rgb), 0.68);
   font-size: 12px;
   font-weight: 600;
 }
@@ -556,18 +555,18 @@ onUnmounted(() => {
   overflow-y: auto;
   padding: 22px 20px;
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+  scrollbar-color: rgba(var(--color-white-rgb), 0.18) transparent;
 }
 
 .media-project-info {
   margin-top: 30px;
   padding-top: 20px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-top: 1px solid rgba(var(--color-white-rgb), 0.1);
 }
 
 .media-project-info h3 {
   margin: 0;
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(var(--color-white-rgb), 0.5);
   font-size: 11px;
   font-weight: 600;
 }
@@ -578,7 +577,7 @@ onUnmounted(() => {
 
 .media-details-footer {
   padding: 14px;
-  border-top: 1px solid rgba(255, 255, 255, 0.09);
+  border-top: 1px solid rgba(var(--color-white-rgb), 0.09);
 }
 
 .media-download-button {
@@ -588,10 +587,10 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   gap: 7px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(var(--color-white-rgb), 0.18);
   border-radius: 5px;
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.9);
+  background: rgba(var(--color-white-rgb), 0.08);
+  color: rgba(var(--color-white-rgb), 0.9);
   font-size: 12px;
   cursor: pointer;
   transition: background 0.16s, border-color 0.16s, color 0.16s;
@@ -601,8 +600,8 @@ onUnmounted(() => {
 .media-tool-button,
 .media-nav,
 .media-download-button {
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  color: rgba(255, 255, 255, 0.86);
+  border: 1px solid rgba(var(--color-white-rgb), 0.14);
+  color: rgba(var(--color-white-rgb), 0.86);
   cursor: pointer;
   transition: background 0.16s, border-color 0.16s, color 0.16s;
 }
@@ -611,16 +610,16 @@ onUnmounted(() => {
 .media-tool-button:hover:not(:disabled),
 .media-nav:hover,
 .media-download-button:hover {
-  border-color: rgba(255, 255, 255, 0.3);
-  background: rgba(255, 255, 255, 0.13);
-  color: #fff;
+  border-color: rgba(var(--color-white-rgb), 0.3);
+  background: rgba(var(--color-white-rgb), 0.13);
+  color: var(--color-white);
 }
 
 .media-icon-button:focus-visible,
 .media-tool-button:focus-visible,
 .media-nav:focus-visible,
 .media-download-button:focus-visible {
-  outline: 2px solid #70b5ff;
+  outline: 2px solid var(--color-info);
   outline-offset: 2px;
 }
 
@@ -632,7 +631,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   border-radius: 5px;
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(var(--color-white-rgb), 0.06);
   font-size: 17px;
 }
 
@@ -655,12 +654,12 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  background-color: #090b0e;
+  background-color: var(--color-bg);
   background-image:
-    linear-gradient(45deg, rgba(255,255,255,0.025) 25%, transparent 25%),
-    linear-gradient(-45deg, rgba(255,255,255,0.025) 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, rgba(255,255,255,0.025) 75%),
-    linear-gradient(-45deg, transparent 75%, rgba(255,255,255,0.025) 75%);
+    linear-gradient(45deg, rgba(var(--color-white-rgb), 0.025) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(var(--color-white-rgb), 0.025) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(var(--color-white-rgb), 0.025) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(var(--color-white-rgb), 0.025) 75%);
   background-position: 0 0, 0 8px, 8px -8px, -8px 0;
   background-size: 16px 16px;
   user-select: none;
@@ -686,7 +685,7 @@ onUnmounted(() => {
 
 .media-video {
   cursor: pointer;
-  background: #050607;
+  background: var(--color-bg);
 }
 
 .media-nav {
@@ -699,7 +698,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   border-radius: 5px;
-  background: rgba(9, 11, 14, 0.72);
+  background: rgba(var(--color-surface-rgb), 0.72);
   font-size: 20px;
   transform: translateY(-50%);
   backdrop-filter: blur(8px);
@@ -714,8 +713,8 @@ onUnmounted(() => {
   bottom: 14px;
   padding: 4px 8px;
   border-radius: 4px;
-  background: rgba(9, 11, 14, 0.72);
-  color: rgba(255, 255, 255, 0.72);
+  background: rgba(var(--color-surface-rgb), 0.72);
+  color: rgba(var(--color-white-rgb), 0.72);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
   pointer-events: none;
@@ -727,8 +726,8 @@ onUnmounted(() => {
   align-items: center;
   gap: 9px;
   padding: 9px 14px;
-  border-top: 1px solid rgba(255, 255, 255, 0.09);
-  background: #191c22;
+  border-top: 1px solid rgba(var(--color-white-rgb), 0.09);
+  background: var(--color-bg);
 }
 
 .media-tool-button {
@@ -739,7 +738,7 @@ onUnmounted(() => {
   gap: 6px;
   padding: 5px 10px;
   border-radius: 5px;
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(var(--color-white-rgb), 0.06);
   font-size: 12px;
   white-space: nowrap;
 }
@@ -751,7 +750,7 @@ onUnmounted(() => {
 
 .media-scale,
 .media-time {
-  color: rgba(255, 255, 255, 0.62);
+  color: rgba(var(--color-white-rgb), 0.62);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -783,7 +782,7 @@ onUnmounted(() => {
   right: 0;
   height: 4px;
   border-radius: 2px;
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(var(--color-white-rgb), 0.12);
 }
 
 .media-progress-fill {
@@ -791,7 +790,7 @@ onUnmounted(() => {
   z-index: 1;
   height: 4px;
   border-radius: 2px;
-  background: #70b5ff;
+  background: var(--color-info);
 }
 
 .media-notice {
@@ -804,11 +803,11 @@ onUnmounted(() => {
   align-items: center;
   gap: 9px;
   padding: 10px 16px;
-  border: 1px solid rgba(255, 255, 255, 0.22);
+  border: 1px solid rgba(var(--color-white-rgb), 0.22);
   border-radius: 6px;
-  background: #24272e;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
-  color: rgba(255, 255, 255, 0.92);
+  background: var(--color-bg);
+  box-shadow: 0 12px 32px rgba(var(--color-black-rgb), 0.5);
+  color: rgba(var(--color-white-rgb), 0.92);
   font-size: 13px;
   transform: translateX(-50%);
 }
@@ -818,12 +817,12 @@ onUnmounted(() => {
   height: 7px;
   flex: 0 0 7px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.72);
+  background: rgba(var(--color-white-rgb), 0.72);
 }
 
-.media-notice.success .media-notice-dot { background: #4ade80; }
-.media-notice.error .media-notice-dot { background: #fb7185; }
-.media-notice.warning .media-notice-dot { background: #facc15; }
+.media-notice.success .media-notice-dot { background: rgb(var(--color-success-rgb)); }
+.media-notice.error .media-notice-dot { background: var(--color-danger); }
+.media-notice.warning .media-notice-dot { background: var(--color-warning); }
 
 .media-viewer-enter-active,
 .media-viewer-leave-active,
@@ -866,7 +865,7 @@ onUnmounted(() => {
     grid-template-rows: minmax(0, 1fr) minmax(220px, 40vh);
   }
   .media-details {
-    border-top: 1px solid rgba(255, 255, 255, 0.09);
+    border-top: 1px solid rgba(var(--color-white-rgb), 0.09);
     border-left: 0;
   }
   .media-details-header {

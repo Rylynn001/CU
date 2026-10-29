@@ -94,6 +94,9 @@ function toggleBusinessTheme() {
 
 <style>
 .main-content {
+  /* 页面内容始终位于主题背景之上，避免纯色背景遮住未定位的页面。 */
+  position: relative;
+  z-index: 1;
   margin-left: 64px;
   min-height: 100vh;
   transition: margin-left 0.25s ease;
@@ -107,16 +110,17 @@ function toggleBusinessTheme() {
   position: fixed;
   inset: 0;
   z-index: 0;
-  background: #000000;
+  background: var(--color-black);
 }
 
-.main-content.theme-dot .studio {
+.main-content.theme-dot .studio,
+.main-content.theme-dot .chat-page {
   background: transparent;
 }
 
 .main-content.theme-black .studio,
 .main-content.theme-black .page {
-  background: #000000;
+  background: var(--color-black);
 }
 
 .main-content.theme-black .orb {

@@ -188,7 +188,7 @@ onMounted(() => {
 .title {
   font-size: 26px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.9);
+  color: rgba(var(--color-white-rgb), 0.9);
   letter-spacing: 2px;
   margin: 0;
 }
@@ -196,16 +196,16 @@ onMounted(() => {
 .refresh-btn {
   padding: 7px 18px;
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.13);
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(var(--color-white-rgb), 0.13);
+  background: rgba(var(--color-white-rgb), 0.08);
+  color: rgba(var(--color-white-rgb), 0.8);
   font-size: 13px;
   cursor: pointer;
   transition: all 0.2s;
 }
 .refresh-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(255, 255, 255, 0.24);
+  background: rgba(var(--color-white-rgb), 0.12);
+  border-color: rgba(var(--color-white-rgb), 0.24);
 }
 .refresh-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
@@ -221,41 +221,41 @@ onMounted(() => {
 }
 
 .gecko-task-table {
-  --el-table-bg-color: rgba(9, 12, 18, 0.44);
-  --el-table-tr-bg-color: rgba(9, 12, 18, 0.34);
-  --el-table-header-bg-color: rgba(255, 255, 255, 0.08);
-  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.08);
-  --el-table-current-row-bg-color: rgba(255, 255, 255, 0.1);
-  --el-table-text-color: rgba(255, 255, 255, 0.78);
-  --el-table-header-text-color: rgba(255, 255, 255, 0.9);
-  --el-table-border-color: rgba(255, 255, 255, 0.1);
+  --el-table-bg-color: rgba(var(--color-surface-rgb), 0.44);
+  --el-table-tr-bg-color: rgba(var(--color-surface-rgb), 0.34);
+  --el-table-header-bg-color: rgba(var(--color-white-rgb), 0.08);
+  --el-table-row-hover-bg-color: rgba(var(--color-white-rgb), 0.08);
+  --el-table-current-row-bg-color: rgba(var(--color-white-rgb), 0.1);
+  --el-table-text-color: rgba(var(--color-white-rgb), 0.78);
+  --el-table-header-text-color: rgba(var(--color-white-rgb), 0.9);
+  --el-table-border-color: rgba(var(--color-white-rgb), 0.1);
   background: transparent;
-  color: rgba(255, 255, 255, 0.78);
+  color: rgba(var(--color-white-rgb), 0.78);
 }
 
 .gecko-task-table :deep(.el-table__inner-wrapper::before) {
-  background-color: rgba(255, 255, 255, 0.1);
+  background-color: rgba(var(--color-white-rgb), 0.1);
 }
 
 .gecko-task-table :deep(.el-table__body tr:hover > td.el-table__cell) {
-  background-color: rgba(255, 255, 255, 0.08) !important;
+  background-color: rgba(var(--color-white-rgb), 0.08) !important;
 }
 
 .gecko-task-table :deep(th.el-table__cell) {
-  background-color: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.9);
+  background-color: rgba(var(--color-white-rgb), 0.08);
+  color: rgba(var(--color-white-rgb), 0.9);
 }
 
 .gecko-task-table :deep(td.el-table__cell) {
-  background-color: rgba(9, 12, 18, 0.34);
-  color: rgba(255, 255, 255, 0.78);
-  border-bottom-color: rgba(255, 255, 255, 0.1);
+  background-color: rgba(var(--color-surface-rgb), 0.34);
+  color: rgba(var(--color-white-rgb), 0.78);
+  border-bottom-color: rgba(var(--color-white-rgb), 0.1);
 }
 
 .empty-text {
   text-align: center;
   padding: 40px 0;
-  color: rgba(255, 255, 255, 0.3);
+  color: rgba(var(--color-white-rgb), 0.3);
   font-size: 13px;
 }
 
@@ -267,21 +267,21 @@ onMounted(() => {
 
 .pagination-bar :deep(.el-pagination) {
   --el-pagination-bg-color: transparent;
-  --el-pagination-button-color: rgba(255, 255, 255, 0.8);
-  --el-pagination-hover-color: rgba(255, 255, 255, 0.95);
+  --el-pagination-button-color: rgba(var(--color-white-rgb), 0.8);
+  --el-pagination-hover-color: rgba(var(--color-white-rgb), 0.95);
 }
 
 .pagination-bar :deep(.el-pagination__total) {
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(var(--color-white-rgb), 0.5);
 }
 
 .pagination-bar :deep(.btn-prev),
 .pagination-bar :deep(.btn-next),
 .pagination-bar :deep(.el-pager li) {
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.13);
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(var(--color-white-rgb), 0.13);
+  background: rgba(var(--color-white-rgb), 0.08);
+  color: rgba(var(--color-white-rgb), 0.8);
   margin: 0 4px;
   transition: all 0.2s;
 }
@@ -289,9 +289,9 @@ onMounted(() => {
 .pagination-bar :deep(.btn-prev:hover),
 .pagination-bar :deep(.btn-next:hover),
 .pagination-bar :deep(.el-pager li:hover) {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(255, 255, 255, 0.24);
-  color: rgba(255, 255, 255, 0.95);
+  background: rgba(var(--color-white-rgb), 0.12);
+  border-color: rgba(var(--color-white-rgb), 0.24);
+  color: rgba(var(--color-white-rgb), 0.95);
 }
 
 .pagination-bar :deep(.btn-prev:disabled) {
@@ -300,18 +300,18 @@ onMounted(() => {
 }
 
 .pagination-bar :deep(.el-pager li.is-active) {
-  background: rgba(255, 255, 255, 0.2);
-  border-color: rgba(255, 255, 255, 0.34);
-  color: #ffffff;
+  background: rgba(var(--color-white-rgb), 0.2);
+  border-color: rgba(var(--color-white-rgb), 0.34);
+  color: var(--color-white);
   font-weight: 600;
 }
 
 .gecko-dialog-warning {
   padding: 10px 12px;
-  border: 1px solid rgba(245, 108, 108, 0.65);
+  border: 1px solid rgba(var(--color-danger-rgb), 0.65);
   border-radius: 6px;
-  background: rgba(245, 108, 108, 0.08);
-  color: #f56c6c;
+  background: rgba(var(--color-danger-rgb), 0.08);
+  color: var(--color-danger);
   font-size: 13px;
   line-height: 1.6;
   margin: 0;
@@ -322,7 +322,7 @@ onMounted(() => {
 }
 
 .gecko-dialog-info {
-  color: #ffffff;
+  color: var(--color-white);
   font-size: 13px;
   line-height: 1.8;
 }
@@ -332,11 +332,11 @@ onMounted(() => {
 }
 
 .gecko-info-label {
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(var(--color-white-rgb), 0.6);
 }
 
 .gecko-info-value {
-  color: #ffffff;
+  color: var(--color-white);
 }
 
 .dlg-btn {
@@ -349,10 +349,10 @@ onMounted(() => {
 }
 
 .dlg-btn.confirm {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(255, 255, 255, 0.24);
-  color: rgba(255, 255, 255, 0.95);
+  background: rgba(var(--color-white-rgb), 0.12);
+  border-color: rgba(var(--color-white-rgb), 0.24);
+  color: rgba(var(--color-white-rgb), 0.95);
 }
 
-.dlg-btn.confirm:hover:not(:disabled) { background: rgba(255, 255, 255, 0.18); }
+.dlg-btn.confirm:hover:not(:disabled) { background: rgba(var(--color-white-rgb), 0.18); }
 </style>

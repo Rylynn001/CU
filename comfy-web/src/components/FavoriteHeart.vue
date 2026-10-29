@@ -137,9 +137,9 @@ onBeforeUnmount(() => { if (closeTimer) clearTimeout(closeTimer) })
 .heart-btn {
   width: 30px; height: 30px;
   border-radius: 50%;
-  background: rgba(0,0,0,0.5);
+  background: rgba(var(--color-black-rgb), 0.5);
   border: none;
-  color: rgba(255,255,255,0.6);
+  color: rgba(var(--color-white-rgb), 0.6);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -159,10 +159,10 @@ onBeforeUnmount(() => { if (closeTimer) clearTimeout(closeTimer) })
   gap: 6px;
   padding: 7px 9px;
   border-radius: 999px;
-  background: rgba(24,24,27,0.92);
-  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(var(--color-surface-rgb), 0.92);
+  border: 1px solid rgba(var(--color-white-rgb), 0.12);
   backdrop-filter: blur(10px);
-  box-shadow: 0 10px 28px rgba(0,0,0,0.4);
+  box-shadow: 0 10px 28px rgba(var(--color-black-rgb), 0.4);
   z-index: 3000;
   opacity: 1;
   transition: opacity 0.5s;
@@ -185,15 +185,15 @@ onBeforeUnmount(() => { if (closeTimer) clearTimeout(closeTimer) })
   width: 24px; height: 24px;
   border-radius: 50%;
   border: none;
-  background: rgba(255,255,255,0.06);
+  background: rgba(var(--color-white-rgb), 0.06);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: background 0.15s, transform 0.15s;
 }
-.mini-heart:hover { background: rgba(255,255,255,0.14); transform: scale(1.2); }
-.mini-heart.active { background: rgba(255,255,255,0.18); box-shadow: 0 0 0 1.5px currentColor inset; }
+.mini-heart:hover { background: rgba(var(--color-white-rgb), 0.14); transform: scale(1.2); }
+.mini-heart.active { background: rgba(var(--color-white-rgb), 0.18); box-shadow: 0 0 0 1.5px currentColor inset; }
 .mini-heart.empty svg { opacity: 0.85; }
 
 .heart-pop-enter-from { opacity: 0; }

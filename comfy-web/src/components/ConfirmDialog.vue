@@ -117,7 +117,7 @@ const typeColors = computed(() => {
   position: fixed;
   inset: 0;
   z-index: 3000;
-  background: rgba(0, 0, 0, 0.6);
+  background: rgba(var(--color-black-rgb), 0.6);
   backdrop-filter: blur(8px);
   display: flex;
   align-items: center;
@@ -129,11 +129,11 @@ const typeColors = computed(() => {
   position: relative;
   width: 100%;
   max-width: 420px;
-  background: linear-gradient(135deg, rgba(20, 20, 35, 0.98) 0%, rgba(15, 15, 25, 0.98) 100%);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: linear-gradient(135deg, rgba(var(--color-surface-rgb), 0.98) 0%, rgba(var(--color-surface-rgb), 0.98) 100%);
+  border: 1px solid rgba(var(--color-white-rgb), 0.1);
   border-radius: 20px;
   padding: 32px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 20px 60px rgba(var(--color-black-rgb), 0.5);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -152,21 +152,21 @@ const typeColors = computed(() => {
 }
 
 .dialog-icon.danger {
-  background: rgba(248, 113, 113, 0.1);
-  border: 2px solid rgba(248, 113, 113, 0.3);
-  color: #f87171;
+  background: rgba(var(--color-danger-rgb), 0.1);
+  border: 2px solid rgba(var(--color-danger-rgb), 0.3);
+  color: var(--color-danger);
 }
 
 .dialog-icon.warning {
-  background: rgba(251, 191, 36, 0.1);
-  border: 2px solid rgba(251, 191, 36, 0.3);
-  color: #fbbf24;
+  background: rgba(var(--color-warning-rgb), 0.1);
+  border: 2px solid rgba(var(--color-warning-rgb), 0.3);
+  color: var(--color-warning);
 }
 
 .dialog-icon.info {
-  background: rgba(255,255,255, 0.1);
-  border: 2px solid rgba(255,255,255, 0.3);
-  color: rgba(255,255,255,0.82);
+  background: rgba(var(--color-white-rgb), 0.1);
+  border: 2px solid rgba(var(--color-white-rgb), 0.3);
+  color: rgba(var(--color-white-rgb), 0.82);
 }
 
 @keyframes icon-pulse {
@@ -183,7 +183,7 @@ const typeColors = computed(() => {
 .dialog-title {
   font-size: 20px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.95);
+  color: rgba(var(--color-white-rgb), 0.95);
   margin: 0;
   text-align: center;
   letter-spacing: 0.3px;
@@ -191,7 +191,7 @@ const typeColors = computed(() => {
 
 .dialog-message {
   font-size: 14px;
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(var(--color-white-rgb), 0.6);
   margin: 0;
   text-align: center;
   line-height: 1.6;
@@ -227,15 +227,15 @@ const typeColors = computed(() => {
 }
 
 .cancel-btn {
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.7);
+  background: rgba(var(--color-white-rgb), 0.04);
+  border-color: rgba(var(--color-white-rgb), 0.1);
+  color: rgba(var(--color-white-rgb), 0.7);
 }
 
 .cancel-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.2);
-  color: rgba(255, 255, 255, 0.9);
+  background: rgba(var(--color-white-rgb), 0.08);
+  border-color: rgba(var(--color-white-rgb), 0.2);
+  color: rgba(var(--color-white-rgb), 0.9);
   transform: translateY(-1px);
 }
 
@@ -249,7 +249,7 @@ const typeColors = computed(() => {
 
 .confirm-btn:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 8px 20px rgba(var(--color-black-rgb), 0.3);
   opacity: 0.9;
 }
 
@@ -258,24 +258,24 @@ const typeColors = computed(() => {
 }
 
 .confirm-btn.danger:hover:not(:disabled) {
-  background: rgba(248, 113, 113, 0.25) !important;
-  border-color: rgba(248, 113, 113, 0.5) !important;
+  background: rgba(var(--color-danger-rgb), 0.25) !important;
+  border-color: rgba(var(--color-danger-rgb), 0.5) !important;
 }
 
 .confirm-btn.warning:hover:not(:disabled) {
-  background: rgba(251, 191, 36, 0.25) !important;
-  border-color: rgba(251, 191, 36, 0.5) !important;
+  background: rgba(var(--color-warning-rgb), 0.25) !important;
+  border-color: rgba(var(--color-warning-rgb), 0.5) !important;
 }
 
 .confirm-btn.info:hover:not(:disabled) {
-  background: rgba(255,255,255, 0.25) !important;
-  border-color: rgba(255,255,255, 0.5) !important;
+  background: rgba(var(--color-white-rgb), 0.25) !important;
+  border-color: rgba(var(--color-white-rgb), 0.5) !important;
 }
 
 .loading-spinner {
   width: 16px;
   height: 16px;
-  border: 2px solid rgba(255, 255, 255, 0.2);
+  border: 2px solid rgba(var(--color-white-rgb), 0.2);
   border-top-color: currentColor;
   border-radius: 50%;
   animation: spin 0.6s linear infinite;

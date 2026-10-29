@@ -845,7 +845,7 @@ onUnmounted(() => {
                   preload="metadata"
                   @click="previewInputMedia(item)"
                 />
-                <img v-else :src="item.preview.url" class="preview-media" @click="previewInputMedia(item)" />
+                <img v-else :src="item.preview.url" class="preview-media" @click="previewInputMedia(item)" loading="lazy" />
                 <button v-if="item.preview.type === 'image'" class="edit-btn" @click="openInputEditor(item.source, item.index)" title="编辑图片">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19l7-7-3-3-7 7v3h3z"/><path d="M18 13l1.5-1.5a2.12 2.12 0 0 0-3-3L15 10"/></svg>
                 </button>
@@ -915,7 +915,7 @@ onUnmounted(() => {
                 @mousedown.prevent="insertMention(idx)"
               >
                 <video v-if="media.type === 'video'" :src="media.url" class="mention-thumb" />
-                <img v-else :src="media.url" class="mention-thumb" />
+                <img v-else :src="media.url" class="mention-thumb" loading="lazy" />
                 <span>@{{ media.type === 'video' ? '视频' : '图片' }}{{ idx + 1 }}</span>
               </div>
             </div>
@@ -1065,7 +1065,7 @@ onUnmounted(() => {
 /* ── 视频页专属样式 ── */
 
 .prompt-hint {
-  color: rgba(255,255,255,0.6);
+  color: rgba(var(--color-white-rgb), 0.6);
   font-size: 10px;
   margin-left: 8px;
 }
@@ -1075,40 +1075,40 @@ onUnmounted(() => {
 
 .filter-btn {
   padding: 5px 12px; border-radius: 6px;
-  border: 1px solid rgba(255,255,255,0.1);
-  background: rgba(255,255,255,0.03);
-  color: rgba(255,255,255,0.5); font-size: 11px;
+  border: 1px solid rgba(var(--color-white-rgb), 0.1);
+  background: rgba(var(--color-white-rgb), 0.03);
+  color: rgba(var(--color-white-rgb), 0.5); font-size: 11px;
   cursor: pointer; transition: all 0.2s;
 }
-.filter-btn:hover { border-color: rgba(255,255,255,0.3); background: rgba(255,255,255,0.05); }
+.filter-btn:hover { border-color: rgba(var(--color-white-rgb), 0.3); background: rgba(var(--color-white-rgb), 0.05); }
 .filter-btn.active {
-  border-color: rgba(255,255,255,0.6);
-  background: rgba(255,255,255,0.2);
-  color: rgba(255,255,255,0.9);
+  border-color: rgba(var(--color-white-rgb), 0.6);
+  background: rgba(var(--color-white-rgb), 0.2);
+  color: rgba(var(--color-white-rgb), 0.9);
 }
 
 /* stepper */
 .stepper {
   display: flex; align-items: center;
-  background: rgba(255,255,255,0.04);
-  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(var(--color-white-rgb), 0.04);
+  border: 1px solid rgba(var(--color-white-rgb), 0.08);
   border-radius: 8px; overflow: hidden;
   height: 34px; width: 120px; transition: border-color 0.2s;
 }
-.stepper:hover { border-color: rgba(255,255,255,0.35); }
+.stepper:hover { border-color: rgba(var(--color-white-rgb), 0.35); }
 
 .stepper-btn {
   width: 30px; height: 100%;
   background: none; border: none;
-  color: rgba(255,255,255,0.45); font-size: 15px; cursor: pointer;
+  color: rgba(var(--color-white-rgb), 0.45); font-size: 15px; cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
-.stepper-btn:hover { background: rgba(255,255,255,0.2); color: #fff; }
+.stepper-btn:hover { background: rgba(var(--color-white-rgb), 0.2); color: var(--color-white); }
 
 .stepper-input {
   flex: 1; height: 100%;
   background: transparent; border: none; outline: none;
-  color: rgba(255,255,255,0.9); font-size: 13px; text-align: center;
+  color: rgba(var(--color-white-rgb), 0.9); font-size: 13px; text-align: center;
   -moz-appearance: textfield;
 }
 .stepper-input::-webkit-outer-spin-button,
@@ -1120,50 +1120,50 @@ onUnmounted(() => {
 .audio-upload-btn {
   display: inline-flex; align-items: center; justify-content: center;
   height: 36px; padding: 0 16px; border-radius: 8px;
-  border: 1px dashed rgba(255,255,255,0.15);
-  background: transparent; color: rgba(255,255,255,0.4);
+  border: 1px dashed rgba(var(--color-white-rgb), 0.15);
+  background: transparent; color: rgba(var(--color-white-rgb), 0.4);
   font-size: 12px; cursor: pointer; transition: all 0.2s;
 }
-.audio-upload-btn:hover { border-color: rgba(255,255,255,0.45); color: rgba(255,255,255,0.8); }
+.audio-upload-btn:hover { border-color: rgba(var(--color-white-rgb), 0.45); color: rgba(var(--color-white-rgb), 0.8); }
 .audio-file-card {
   display: inline-flex; align-items: center; gap: 8px;
   height: 36px; padding: 0 10px 0 12px; border-radius: 8px;
-  background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
-  color: rgba(255,255,255,0.6); font-size: 12px; max-width: 100%;
+  background: rgba(var(--color-white-rgb), 0.05); border: 1px solid rgba(var(--color-white-rgb), 0.1);
+  color: rgba(var(--color-white-rgb), 0.6); font-size: 12px; max-width: 100%;
 }
 .audio-file-name {
   max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .audio-remove-btn {
   flex-shrink: 0; width: 18px; height: 18px; border-radius: 50%;
-  border: none; background: rgba(255,255,255,0.1);
-  color: rgba(255,255,255,0.5); font-size: 12px; line-height: 1;
+  border: none; background: rgba(var(--color-white-rgb), 0.1);
+  color: rgba(var(--color-white-rgb), 0.5); font-size: 12px; line-height: 1;
   cursor: pointer; display: flex; align-items: center; justify-content: center;
   transition: background 0.2s;
 }
-.audio-remove-btn:hover { background: rgba(255,80,80,0.3); color: #fff; }
+.audio-remove-btn:hover { background: rgba(var(--color-danger-rgb), 0.3); color: var(--color-white); }
 
 .asset-btn, .local-upload-btn {
   flex: 1; min-width: 120px; height: 60px;
-  border-radius: 10px; border: 1px dashed rgba(255,255,255,0.1);
-  background: rgba(255,255,255,0.03); color: rgba(255,255,255,0.5);
+  border-radius: 10px; border: 1px dashed rgba(var(--color-white-rgb), 0.1);
+  background: rgba(var(--color-white-rgb), 0.03); color: rgba(var(--color-white-rgb), 0.5);
   font-size: 12px; cursor: pointer;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 6px; transition: all 0.3s;
 }
 .asset-btn:hover, .local-upload-btn:hover {
-  border-color: rgba(255,255,255,0.45);
-  background: rgba(255,255,255,0.04);
-  color: rgba(255,255,255,0.8);
+  border-color: rgba(var(--color-white-rgb), 0.45);
+  background: rgba(var(--color-white-rgb), 0.04);
+  color: rgba(var(--color-white-rgb), 0.8);
 }
 
 .clear-all-btn-small {
   height: 60px; padding: 0 16px; border-radius: 10px;
-  border: 1px solid rgba(248,113,113,0.2);
-  background: rgba(248,113,113,0.1); color: #f87171;
+  border: 1px solid rgba(var(--color-danger-rgb), 0.2);
+  background: rgba(var(--color-danger-rgb), 0.1); color: var(--color-danger);
   font-size: 12px; cursor: pointer; transition: all 0.2s;
 }
-.clear-all-btn-small:hover { background: rgba(248,113,113,0.2); border-color: rgba(248,113,113,0.4); }
+.clear-all-btn-small:hover { background: rgba(var(--color-danger-rgb), 0.2); border-color: rgba(var(--color-danger-rgb), 0.4); }
 
 /* previews grid */
 .previews-grid {
@@ -1175,8 +1175,8 @@ onUnmounted(() => {
 .preview-item {
   position: relative; aspect-ratio: 16 / 9;
   border-radius: 8px; overflow: hidden;
-  border: 1px solid rgba(255,255,255,0.08);
-  background: rgba(0,0,0,0.3);
+  border: 1px solid rgba(var(--color-white-rgb), 0.08);
+  background: rgba(var(--color-black-rgb), 0.3);
 }
 
 .preview-media { width: 100%; height: 100%; object-fit: cover; display: block; cursor: pointer; }
@@ -1184,31 +1184,31 @@ onUnmounted(() => {
 .remove-btn {
   position: absolute; top: 4px; right: 4px;
   width: 20px; height: 20px; border-radius: 50%;
-  background: rgba(0,0,0,0.7); border: none;
+  background: rgba(var(--color-black-rgb), 0.7); border: none;
   color: white; font-size: 14px; line-height: 1; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
   transition: all 0.2s;
 }
-.remove-btn:hover { background: rgba(220,50,50,0.9); transform: scale(1.1); }
+.remove-btn:hover { background: rgba(var(--color-danger-rgb), 0.9); transform: scale(1.1); }
 
 .edit-btn {
   position: absolute; top: 4px; right: 28px;
   width: 20px; height: 20px; border-radius: 50%;
-  background: rgba(0,0,0,0.6); border: none; color: white;
+  background: rgba(var(--color-black-rgb), 0.6); border: none; color: white;
   cursor: pointer; display: flex; align-items: center; justify-content: center;
   transition: all 0.2s; z-index: 2;
 }
-.edit-btn:hover { background: rgba(255,255,255,0.9); transform: scale(1.1); }
+.edit-btn:hover { background: rgba(var(--color-white-rgb), 0.9); transform: scale(1.1); }
 
 .preview-badge {
   position: absolute; bottom: 4px; left: 4px;
   padding: 2px 6px; border-radius: 4px;
-  background: rgba(0,0,0,0.7); color: rgba(255,255,255,0.8); font-size: 10px;
+  background: rgba(var(--color-black-rgb), 0.7); color: rgba(var(--color-white-rgb), 0.8); font-size: 10px;
 }
 
 /* 视频结果 */
 .card-video {
-  position: relative; border-radius: 12px; overflow: hidden; background: #000;
+  position: relative; border-radius: 12px; overflow: hidden; background: var(--color-black);
   display: inline-block;
 }
 
@@ -1232,12 +1232,12 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   font-size: 36px;
-  color: rgba(255,255,255,0.85);
-  background: rgba(0,0,0,0.3);
+  color: rgba(var(--color-white-rgb), 0.85);
+  background: rgba(var(--color-black-rgb), 0.3);
   transition: background 0.2s;
 }
 .video-thumb:hover .video-play-icon {
-  background: rgba(0,0,0,0.5);
+  background: rgba(var(--color-black-rgb), 0.5);
 }
 .video-thumb:hover .download-btn {
   opacity: 1;
@@ -1262,9 +1262,9 @@ onUnmounted(() => {
   top: 10px; right: 38px;
   width: 28px; height: 28px;
   border-radius: 50%;
-  background: rgba(0, 0, 0, 0.65);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  color: rgba(255, 255, 255, 0.8);
+  background: rgba(var(--color-black-rgb), 0.65);
+  border: 1px solid rgba(var(--color-white-rgb), 0.15);
+  color: rgba(var(--color-white-rgb), 0.8);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -1273,8 +1273,8 @@ onUnmounted(() => {
   opacity: 0;
 }
 .add-to-project-btn:hover {
-  background: rgba(255,255,255, 0.8);
-  border-color: rgba(255,255,255, 0.5);
+  background: rgba(var(--color-white-rgb), 0.8);
+  border-color: rgba(var(--color-white-rgb), 0.5);
   transform: scale(1.1);
 }
 
@@ -1286,9 +1286,9 @@ onUnmounted(() => {
   animation: record-locate-pulse 1.8s ease;
 }
 @keyframes record-locate-pulse {
-  0% { box-shadow: 0 0 0 0 rgba(255,255,255,0.6); background: rgba(255,255,255,0.12); }
-  60% { box-shadow: 0 0 0 8px rgba(255,255,255,0); background: rgba(255,255,255,0.12); }
-  100% { box-shadow: 0 0 0 0 rgba(255,255,255,0); background: transparent; }
+  0% { box-shadow: 0 0 0 0 rgba(var(--color-white-rgb), 0.6); background: rgba(var(--color-white-rgb), 0.12); }
+  60% { box-shadow: 0 0 0 8px rgba(var(--color-white-rgb), 0); background: rgba(var(--color-white-rgb), 0.12); }
+  100% { box-shadow: 0 0 0 0 rgba(var(--color-white-rgb), 0); background: transparent; }
 }
 
 .history-pagination {
@@ -1307,42 +1307,42 @@ onUnmounted(() => {
 
 .page-size-label {
   font-size: 11px;
-  color: rgba(255,255,255,0.35);
+  color: rgba(var(--color-white-rgb), 0.35);
 }
 
 .page-size-btn {
   padding: 3px 10px;
   border-radius: 5px;
-  border: 1px solid rgba(255,255,255,0.1);
-  background: rgba(255,255,255,0.03);
-  color: rgba(255,255,255,0.45);
+  border: 1px solid rgba(var(--color-white-rgb), 0.1);
+  background: rgba(var(--color-white-rgb), 0.03);
+  color: rgba(var(--color-white-rgb), 0.45);
   font-size: 11px;
   cursor: pointer;
   transition: all 0.2s;
 }
-.page-size-btn:hover { border-color: rgba(255,255,255,0.3); color: rgba(255,255,255,0.8); }
+.page-size-btn:hover { border-color: rgba(var(--color-white-rgb), 0.3); color: rgba(var(--color-white-rgb), 0.8); }
 .page-size-btn.active {
-  border-color: rgba(255,255,255,0.6);
-  background: rgba(255,255,255,0.2);
-  color: rgba(255,255,255,0.9);
+  border-color: rgba(var(--color-white-rgb), 0.6);
+  background: rgba(var(--color-white-rgb), 0.2);
+  color: rgba(var(--color-white-rgb), 0.9);
 }
 
 .load-more-btn {
   padding: 4px 16px;
   border-radius: 6px;
-  border: 1px solid rgba(255,255,255,0.4);
-  background: rgba(255,255,255,0.12);
-  color: rgba(255,255,255,0.7);
+  border: 1px solid rgba(var(--color-white-rgb), 0.4);
+  background: rgba(var(--color-white-rgb), 0.12);
+  color: rgba(var(--color-white-rgb), 0.7);
   font-size: 12px;
   cursor: pointer;
   transition: all 0.2s;
 }
-.load-more-btn:hover:not(:disabled) { background: rgba(255,255,255,0.25); color: #fff; }
+.load-more-btn:hover:not(:disabled) { background: rgba(var(--color-white-rgb), 0.25); color: var(--color-white); }
 .load-more-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .no-more-text {
   font-size: 11px;
-  color: rgba(255,255,255,0.25);
+  color: rgba(var(--color-white-rgb), 0.25);
 }
 
 /* 统一为参数面板风格 */
@@ -1352,17 +1352,17 @@ onUnmounted(() => {
 
 .filter-btn {
   border-color: var(--color-border);
-  background: rgba(255,255,255,0.03);
+  background: rgba(var(--color-white-rgb), 0.03);
   color: var(--color-faint);
 }
 .filter-btn:hover {
-  border-color: rgba(255,255,255,0.22);
-  background: rgba(255,255,255,0.06);
+  border-color: rgba(var(--color-white-rgb), 0.22);
+  background: rgba(var(--color-white-rgb), 0.06);
   color: var(--color-muted);
 }
 .filter-btn.active {
-  border-color: rgba(255,255,255,0.24);
-  background: rgba(255,255,255,0.1);
+  border-color: rgba(var(--color-white-rgb), 0.24);
+  background: rgba(var(--color-white-rgb), 0.1);
   color: var(--color-text);
 }
 
@@ -1370,24 +1370,24 @@ onUnmounted(() => {
 .asset-btn:hover,
 .local-upload-btn:hover,
 .audio-upload-btn:hover {
-  border-color: rgba(255,255,255,0.24);
-  background: rgba(255,255,255,0.06);
+  border-color: rgba(var(--color-white-rgb), 0.24);
+  background: rgba(var(--color-white-rgb), 0.06);
   color: var(--color-text);
 }
 .stepper-btn:hover,
 .edit-btn:hover,
 .add-to-project-btn:hover {
-  background: rgba(255,255,255,0.18);
-  border-color: rgba(255,255,255,0.34);
+  background: rgba(var(--color-white-rgb), 0.18);
+  border-color: rgba(var(--color-white-rgb), 0.34);
 }
 
 .record-row.record-located {
   animation: record-locate-soft 1.8s ease;
 }
 @keyframes record-locate-soft {
-  0% { box-shadow: 0 0 0 0 rgba(255,255,255,0.32); background: rgba(255,255,255,0.08); }
-  60% { box-shadow: 0 0 0 8px rgba(255,255,255,0); background: rgba(255,255,255,0.08); }
-  100% { box-shadow: 0 0 0 0 rgba(255,255,255,0); background: transparent; }
+  0% { box-shadow: 0 0 0 0 rgba(var(--color-white-rgb), 0.32); background: rgba(var(--color-white-rgb), 0.08); }
+  60% { box-shadow: 0 0 0 8px rgba(var(--color-white-rgb), 0); background: rgba(var(--color-white-rgb), 0.08); }
+  100% { box-shadow: 0 0 0 0 rgba(var(--color-white-rgb), 0); background: transparent; }
 }
 
 .page-size-btn:hover,
@@ -1396,15 +1396,15 @@ onUnmounted(() => {
   border-color: var(--color-border);
 }
 .page-size-btn.active {
-  background: rgba(255,255,255,0.1);
+  background: rgba(var(--color-white-rgb), 0.1);
   color: var(--color-text);
 }
 .load-more-btn {
-  background: rgba(255,255,255,0.055);
+  background: rgba(var(--color-white-rgb), 0.055);
   color: var(--color-muted);
 }
 .load-more-btn:hover:not(:disabled) {
-  background: rgba(255,255,255,0.1);
+  background: rgba(var(--color-white-rgb), 0.1);
   color: var(--color-text);
 }
 </style>

@@ -502,7 +502,7 @@ watch(() => props.items, (newItems, oldItems) => {
           muted
           playsinline
         />
-        <img v-else :src="item.url" class="cf-drag-preview-media" />
+        <img v-else :src="item.url" class="cf-drag-preview-media" loading="lazy" />
       </div>
       <span class="cf-drag-preview-count">{{ selectedItems.length }} 张</span>
     </div>
@@ -524,9 +524,9 @@ watch(() => props.items, (newItems, oldItems) => {
 .cf-selection-box {
   position: absolute;
   z-index: 2100;
-  border: 1px solid rgba(255, 255, 255, 0.82);
-  background: rgba(255, 255, 255, 0.08);
-  box-shadow: 0 0 0 1px rgba(8, 10, 16, 0.36);
+  border: 1px solid rgba(var(--color-white-rgb), 0.82);
+  background: rgba(var(--color-white-rgb), 0.08);
+  box-shadow: 0 0 0 1px rgba(var(--color-surface-rgb), 0.36);
   pointer-events: none;
 }
 
@@ -536,10 +536,10 @@ watch(() => props.items, (newItems, oldItems) => {
   bottom: 10px;
   z-index: 2100;
   padding: 4px 9px;
-  border: 1px solid rgba(255, 255, 255, 0.28);
+  border: 1px solid rgba(var(--color-white-rgb), 0.28);
   border-radius: 6px;
-  background: rgba(8, 10, 16, 0.82);
-  color: rgba(255, 255, 255, 0.82);
+  background: rgba(var(--color-surface-rgb), 0.82);
+  color: rgba(var(--color-white-rgb), 0.82);
   font-size: 11px;
   pointer-events: none;
 }
@@ -555,8 +555,8 @@ watch(() => props.items, (newItems, oldItems) => {
   width: max-content;
   padding: 5px;
   border-radius: 7px;
-  background: rgba(8, 10, 16, 0.9);
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
+  background: rgba(var(--color-surface-rgb), 0.9);
+  box-shadow: 0 12px 30px rgba(var(--color-black-rgb), 0.45);
   pointer-events: none;
 }
 
@@ -564,9 +564,9 @@ watch(() => props.items, (newItems, oldItems) => {
   width: 58px;
   height: 70px;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(var(--color-white-rgb), 0.82);
   border-radius: 5px;
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(var(--color-white-rgb), 0.06);
 }
 
 .cf-drag-preview-media {
@@ -586,10 +586,10 @@ watch(() => props.items, (newItems, oldItems) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(255, 255, 255, 0.42);
+  border: 1px solid rgba(var(--color-white-rgb), 0.42);
   border-radius: 12px;
-  background: rgba(8, 10, 16, 0.96);
-  color: #fff;
+  background: rgba(var(--color-surface-rgb), 0.96);
+  color: var(--color-white);
   font-size: 11px;
   box-sizing: border-box;
 }
@@ -601,8 +601,8 @@ watch(() => props.items, (newItems, oldItems) => {
   border-radius: 12px;
   overflow: hidden;
   border: 1px solid var(--color-border);
-  background: rgba(255, 255, 255, 0.04);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+  background: rgba(var(--color-white-rgb), 0.04);
+  box-shadow: 0 12px 40px rgba(var(--color-black-rgb), 0.4);
   will-change: transform, opacity;
   cursor: pointer;
   transition: box-shadow 0.2s, border-color 0.2s, filter 0.2s;
@@ -610,13 +610,13 @@ watch(() => props.items, (newItems, oldItems) => {
 
 /* 溯源命中高亮 */
 .cf-card.cf-highlight {
-  border-color: rgba(255,255,255, 0.9);
-  box-shadow: 0 0 0 2px rgba(255,255,255, 0.6), 0 12px 40px rgba(0, 0, 0, 0.4);
+  border-color: rgba(var(--color-white-rgb), 0.9);
+  box-shadow: 0 0 0 2px rgba(var(--color-white-rgb), 0.6), 0 12px 40px rgba(var(--color-black-rgb), 0.4);
 }
 
 .cf-card.cf-selected {
-  border-color: rgba(255, 255, 255, 0.9);
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.32), 0 12px 40px rgba(0, 0, 0, 0.4);
+  border-color: rgba(var(--color-white-rgb), 0.9);
+  box-shadow: 0 0 0 2px rgba(var(--color-white-rgb), 0.32), 0 12px 40px rgba(var(--color-black-rgb), 0.4);
 }
 
 .cf-card:not(.cf-placeholder) {
@@ -626,7 +626,7 @@ watch(() => props.items, (newItems, oldItems) => {
 }
 
 .cf-card.cf-selected:not(.cf-placeholder) {
-  box-shadow: 0 0 14px rgba(255, 255, 255, 0.68), 0 0 34px rgba(82, 163, 255, 0.52);
+  box-shadow: 0 0 14px rgba(var(--color-white-rgb), 0.68), 0 0 34px rgba(var(--color-info-rgb), 0.52);
   filter: brightness(1.16) saturate(1.12);
 }
 
@@ -657,8 +657,8 @@ watch(() => props.items, (newItems, oldItems) => {
   align-items: center;
   justify-content: center;
   font-size: 24px;
-  color: rgba(255, 255, 255, 0.9);
-  background: rgba(0, 0, 0, 0.26);
+  color: rgba(var(--color-white-rgb), 0.9);
+  background: rgba(var(--color-black-rgb), 0.26);
   pointer-events: none;
 }
 
@@ -669,9 +669,9 @@ watch(() => props.items, (newItems, oldItems) => {
   width: 24px;
   height: 24px;
   border-radius: 50%;
-  background: rgba(0, 0, 0, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  color: rgba(255, 255, 255, 0.85);
+  background: rgba(var(--color-black-rgb), 0.6);
+  border: 1px solid rgba(var(--color-white-rgb), 0.2);
+  color: rgba(var(--color-white-rgb), 0.85);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -686,57 +686,57 @@ watch(() => props.items, (newItems, oldItems) => {
 /* 占位符卡片 */
 .cf-card.cf-placeholder {
   border-style: dashed;
-  border-color: rgba(255, 255, 255, 0.2);
-  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(var(--color-white-rgb), 0.2);
+  background: rgba(var(--color-white-rgb), 0.03);
   cursor: pointer;
 }
 .cf-card.cf-placeholder:hover {
-  border-color: rgba(255,255,255, 0.5);
-  background: rgba(255,255,255, 0.05);
+  border-color: rgba(var(--color-white-rgb), 0.5);
+  background: rgba(var(--color-white-rgb), 0.05);
 }
 .cf-card.cf-placeholder.cf-drop-target {
   border-style: solid;
-  border-color: rgba(255,255,255, 1);
-  background: rgba(255,255,255, 0.16);
+  border-color: rgba(var(--color-white-rgb), 1);
+  background: rgba(var(--color-white-rgb), 0.16);
   box-shadow:
-    0 0 0 3px rgba(255,255,255, 0.34),
-    0 0 32px rgba(255,255,255, 0.34),
-    0 12px 40px rgba(0, 0, 0, 0.4);
+    0 0 0 3px rgba(var(--color-white-rgb), 0.34),
+    0 0 32px rgba(var(--color-white-rgb), 0.34),
+    0 12px 40px rgba(var(--color-black-rgb), 0.4);
 }
 .cf-card.cf-placeholder.cf-drop-target .cf-gen-inner {
-  color: rgba(255, 255, 255, 0.95);
+  color: rgba(var(--color-white-rgb), 0.95);
   transform: scale(1.04);
 }
 .cf-card.cf-highlight.cf-placeholder {
   border-style: solid;
-  border-color: rgba(255, 255, 255, 0.9);
+  border-color: rgba(var(--color-white-rgb), 0.9);
   box-shadow:
-    0 0 0 2px rgba(255, 255, 255, 0.45),
-    0 0 18px 5px rgba(255, 255, 255, 0.22),
-    0 0 48px 10px rgba(255, 255, 255, 0.1),
-    0 12px 40px rgba(0, 0, 0, 0.4);
+    0 0 0 2px rgba(var(--color-white-rgb), 0.45),
+    0 0 18px 5px rgba(var(--color-white-rgb), 0.22),
+    0 0 48px 10px rgba(var(--color-white-rgb), 0.1),
+    0 12px 40px rgba(var(--color-black-rgb), 0.4);
 }
 .cf-card.cf-highlight.cf-placeholder .cf-gen-inner {
-  color: rgba(255, 255, 255, 0.7);
+  color: rgba(var(--color-white-rgb), 0.7);
 }
 .cf-card.cf-placeholder.cf-generating {
   border-style: solid;
-  border-color: rgba(255,255,255, 0.75);
-  background: rgba(255,255,255, 0.1);
-  box-shadow: 0 0 0 2px rgba(255,255,255, 0.18), 0 0 28px rgba(255,255,255, 0.2);
+  border-color: rgba(var(--color-white-rgb), 0.75);
+  background: rgba(var(--color-white-rgb), 0.1);
+  box-shadow: 0 0 0 2px rgba(var(--color-white-rgb), 0.18), 0 0 28px rgba(var(--color-white-rgb), 0.2);
 }
 .cf-card.cf-placeholder.cf-generating .cf-gen-inner {
-  color: rgba(255,255,255, 0.9);
+  color: rgba(var(--color-white-rgb), 0.9);
   animation: cf-generating-pulse 1.6s ease-in-out infinite;
 }
 .cf-card.cf-placeholder.cf-failed {
   border-style: solid;
-  border-color: rgba(255, 104, 104, 0.8);
-  background: rgba(255, 80, 80, 0.1);
-  box-shadow: 0 0 0 2px rgba(255, 80, 80, 0.16), 0 0 28px rgba(255, 80, 80, 0.2);
+  border-color: rgba(var(--color-danger-rgb), 0.8);
+  background: rgba(var(--color-danger-rgb), 0.1);
+  box-shadow: 0 0 0 2px rgba(var(--color-danger-rgb), 0.16), 0 0 28px rgba(var(--color-danger-rgb), 0.2);
 }
 .cf-card.cf-placeholder.cf-failed .cf-gen-inner {
-  color: rgba(255, 140, 140, 0.95);
+  color: rgba(var(--color-danger-rgb), 0.95);
 }
 @keyframes cf-generating-pulse {
   0%, 100% { opacity: 0.65; }
@@ -750,7 +750,7 @@ watch(() => props.items, (newItems, oldItems) => {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  color: rgba(255, 255, 255, 0.35);
+  color: rgba(var(--color-white-rgb), 0.35);
   pointer-events: none;
   transition: color 0.18s, transform 0.18s;
 }
@@ -760,7 +760,7 @@ watch(() => props.items, (newItems, oldItems) => {
 }
 .cf-gen-hint {
   font-size: 10px;
-  color: rgba(255, 255, 255, 0.2);
+  color: rgba(var(--color-white-rgb), 0.2);
   letter-spacing: 0.5px;
 }
 </style>

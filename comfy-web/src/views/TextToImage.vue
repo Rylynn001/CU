@@ -20,6 +20,7 @@ import ProjectManager from '../components/ProjectManager.vue'
 import MediaViewer from '../components/MediaViewer.vue'
 import RecordContextMenu from '../components/RecordContextMenu.vue'
 import MentionTextarea from '../components/MentionTextarea.vue'
+import SegmentedControl from '../components/SegmentedControl.vue'
 // 本地 ComfyUI 接口：获取模型列表、采样器信息、提交任务、上传图片
 // import { getModels, getKSamplerInfo, submitPrompt, uploadImage, type PromptParams } from '../api/comfyui'
 // WebSocket 连接：实时接收本地 ComfyUI 的生成进度和结果图片
@@ -167,6 +168,7 @@ const apiModels = ref<ApiModel[]>([])
 const apiModel = ref('')
 // API 模式下的生成质量：low / medium / high
 const apiQuality = ref('medium')
+const qualityOptions = ['low', 'medium', 'high'].map((value) => ({ value, label: value }))
 // 本地 ComfyUI 的 checkpoint 模型列表（文件名字符串）
 const models = ref<string[]>([])
 // 本地 ComfyUI 支持的采样器列表
@@ -899,7 +901,7 @@ onUnmounted(() => {
                   :src="img.preview"
                   class="preview-img"
                   @click="previewImage(img.preview, inputImages.map(item => item.preview))"
-                />
+                 loading="lazy" />
                 <button class="edit-btn" @click="openEditor(idx)" title="编辑图片">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19l7-7-3-3-7 7v3h3z"/><path d="M18 13l1.5-1.5a2.12 2.12 0 0 0-3-3L15 10"/></svg>
                 </button>
@@ -946,7 +948,7 @@ onUnmounted(() => {
                 :class="{ active: atMentionIndex === idx }"
                 @mousedown.prevent="insertMention(idx)"
               >
-                <img :src="img.preview" class="mention-thumb" />
+                <img :src="img.preview" class="mention-thumb" loading="lazy" />
                 <span>@图{{ idx + 1 }}</span>
               </div>
             </div>
@@ -965,22 +967,14 @@ onUnmounted(() => {
           <!-- resolution：本地模式显示像素档位，API 模式显示清晰度档位 -->
           <div class="row-item">
             <span class="row-label">清晰度</span>
-            <div class="source-toggle">
-              <template v-if="modelSource === 'local'">
-                <button
-                  v-for="r in resolutions" :key="r.label"
-                  :class="{ active: !sizeCustomized && activeResolution.label === r.label }"
-                  @click="setResolution(r)"
-                >{{ r.label }}</button>
-              </template>
-              <template v-else>
-                <button
-                  v-for="q in ['low', 'medium', 'high']" :key="q"
-                  :class="{ active: apiQuality === q }"
-                  @click="apiQuality = q"
-                >{{ q }}</button>
-              </template>
+            <div v-if="modelSource === 'local'" class="source-toggle">
+              <button
+                v-for="r in resolutions" :key="r.label"
+                :class="{ active: !sizeCustomized && activeResolution.label === r.label }"
+                @click="setResolution(r)"
+              >{{ r.label }}</button>
             </div>
+            <SegmentedControl v-else v-model="apiQuality" :options="qualityOptions" label="清晰度" />
           </div>
 
           <!-- ratio -->
@@ -1176,7 +1170,7 @@ onUnmounted(() => {
                 v-for="(src, i) in rec.images" :key="i" class="card-image-wrap"
                 @contextmenu.prevent="rec.outputAssetIds?.[i] && openRecordMenu($event, rec.outputAssetIds[i], src)"
               >
-                <img :src="src" class="card-image" @click="previewImage(src, rec.images)" />
+                <img :src="src" class="card-image" @click="previewImage(src, rec.images)" loading="lazy" />
                 <button class="download-btn" @click="downloadImage(src)" title="下载">
                   <span>⬇</span>
                 </button>
@@ -1218,7 +1212,7 @@ onUnmounted(() => {
           :aria-pressed="selectedEditImageIndex === index"
           @click="selectedEditImageIndex = index"
         >
-          <img :src="src" :alt="`第 ${index + 1} 张生成结果`" />
+          <img :src="src" :alt="`第 ${index + 1} 张生成结果`" loading="lazy" />
           <span>{{ index + 1 }}</span>
         </button>
       </div>
@@ -1295,26 +1289,26 @@ onUnmounted(() => {
   min-width: 0;
   padding: 0;
   overflow: hidden;
-  border: 2px solid rgba(255,255,255,0.1);
+  border: 2px solid rgba(var(--color-white-rgb), 0.1);
   border-radius: 8px;
-  background: rgba(255,255,255,0.035);
+  background: rgba(var(--color-white-rgb), 0.035);
   cursor: pointer;
   transition: border-color 0.18s, box-shadow 0.18s, transform 0.18s;
 }
 
 .edit-image-option:hover {
-  border-color: rgba(255,255,255,0.4);
+  border-color: rgba(var(--color-white-rgb), 0.4);
   transform: translateY(-1px);
 }
 
 .edit-image-option:focus-visible {
-  outline: 2px solid rgba(255,255,255,0.85);
+  outline: 2px solid rgba(var(--color-white-rgb), 0.85);
   outline-offset: 2px;
 }
 
 .edit-image-option.selected {
-  border-color: #60a5fa;
-  box-shadow: 0 0 0 2px rgba(96,165,250,0.2);
+  border-color: var(--color-info);
+  box-shadow: 0 0 0 2px rgba(var(--color-info-rgb), 0.2);
 }
 
 .edit-image-option img {
@@ -1332,8 +1326,8 @@ onUnmounted(() => {
   height: 24px;
   padding: 0 7px;
   border-radius: 6px;
-  background: rgba(0,0,0,0.72);
-  color: rgba(255,255,255,0.92);
+  background: rgba(var(--color-black-rgb), 0.72);
+  color: rgba(var(--color-white-rgb), 0.92);
   font-size: 12px;
   line-height: 24px;
   text-align: center;
@@ -1350,32 +1344,32 @@ onUnmounted(() => {
   height: 34px;
   padding: 0 16px;
   border-radius: 7px;
-  border: 1px solid rgba(255,255,255,0.12);
-  color: rgba(255,255,255,0.82);
+  border: 1px solid rgba(var(--color-white-rgb), 0.12);
+  color: rgba(var(--color-white-rgb), 0.82);
   font-size: 13px;
   cursor: pointer;
 }
 
-.edit-image-cancel { background: rgba(255,255,255,0.04); }
-.edit-image-confirm { background: #2563eb; border-color: #3b82f6; color: #fff; }
-.edit-image-cancel:hover { background: rgba(255,255,255,0.09); }
-.edit-image-confirm:hover:not(:disabled) { background: #3b82f6; }
+.edit-image-cancel { background: rgba(var(--color-white-rgb), 0.04); }
+.edit-image-confirm { background: var(--color-info); border-color: var(--color-info); color: var(--color-white); }
+.edit-image-cancel:hover { background: rgba(var(--color-white-rgb), 0.09); }
+.edit-image-confirm:hover:not(:disabled) { background: var(--color-info); }
 .edit-image-confirm:disabled { opacity: 0.38; cursor: not-allowed; }
 
 .local-tip {
   font-size: 10px;
-  color: rgba(255,255,255,0.7);
+  color: rgba(var(--color-white-rgb), 0.7);
   letter-spacing: 0;
 }
 
 .prompt-input.neg :deep(.el-textarea__inner) {
-  background: rgba(248,113,113,0.04) !important;
-  border-color: rgba(248,113,113,0.1) !important;
+  background: rgba(var(--color-danger-rgb), 0.04) !important;
+  border-color: rgba(var(--color-danger-rgb), 0.1) !important;
 }
 
 .size-preview {
   font-size: 11px;
-  color: rgba(255,255,255,0.25);
+  color: rgba(var(--color-white-rgb), 0.25);
   text-align: right;
   letter-spacing: 1px;
   margin-top: -4px;
@@ -1393,20 +1387,20 @@ onUnmounted(() => {
   align-items: center;
   gap: 8px;
   padding: 5px 10px;
-  background: rgba(255,255,255,0.04);
-  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(var(--color-white-rgb), 0.04);
+  border: 1px solid rgba(var(--color-white-rgb), 0.08);
   border-radius: 8px;
   cursor: pointer;
   transition: border-color 0.2s;
   user-select: none;
 }
-.ratio-current:hover { border-color: rgba(255,255,255,0.4); }
+.ratio-current:hover { border-color: rgba(var(--color-white-rgb), 0.4); }
 .ratio-current.dimmed { opacity: 0.45; }
 
 .ratio-icon { font-size: 13px; line-height: 1; flex-shrink: 0; }
-.ratio-label-text { font-size: 12px; color: rgba(255,255,255,0.8); flex: 1; }
+.ratio-label-text { font-size: 12px; color: rgba(var(--color-white-rgb), 0.8); flex: 1; }
 .ratio-arrow {
-  font-size: 14px; color: rgba(255,255,255,0.3);
+  font-size: 14px; color: rgba(var(--color-white-rgb), 0.3);
   transition: transform 0.2s; display: inline-block;
 }
 .ratio-arrow.open { transform: rotate(90deg); }
@@ -1414,8 +1408,8 @@ onUnmounted(() => {
 .ratio-dropdown {
   position: absolute;
   top: calc(100% + 6px); left: 0; right: 0;
-  background: rgba(14,14,26,0.97);
-  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(var(--color-surface-rgb), 0.97);
+  border: 1px solid rgba(var(--color-white-rgb), 0.08);
   border-radius: 10px; overflow: hidden;
   z-index: 50; backdrop-filter: blur(16px);
 }
@@ -1423,21 +1417,21 @@ onUnmounted(() => {
 .ratio-option {
   display: flex; align-items: center; gap: 10px;
   padding: 8px 12px; font-size: 12px;
-  color: rgba(255,255,255,0.6); cursor: pointer;
+  color: rgba(var(--color-white-rgb), 0.6); cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
-.ratio-option:hover { background: rgba(255,255,255,0.15); color: rgba(255,255,255,0.9); }
-.ratio-option.active { color: rgba(255,255,255,0.82); background: rgba(255,255,255,0.1); }
+.ratio-option:hover { background: rgba(var(--color-white-rgb), 0.15); color: rgba(var(--color-white-rgb), 0.9); }
+.ratio-option.active { color: rgba(var(--color-white-rgb), 0.82); background: rgba(var(--color-white-rgb), 0.1); }
 
 /* advanced toggle */
 .advanced-toggle {
   display: flex; align-items: center; gap: 6px;
   background: none; border: none;
-  color: rgba(255,255,255,0.35); font-size: 12px;
+  color: rgba(var(--color-white-rgb), 0.35); font-size: 12px;
   cursor: pointer; padding: 4px 0; letter-spacing: 0.5px;
   transition: color 0.2s;
 }
-.advanced-toggle:hover { color: rgba(255,255,255,0.65); }
+.advanced-toggle:hover { color: rgba(var(--color-white-rgb), 0.65); }
 
 .toggle-arrow {
   margin-left: auto; font-size: 16px;
@@ -1459,25 +1453,25 @@ onUnmounted(() => {
 /* stepper */
 .stepper {
   display: flex; align-items: center;
-  background: rgba(255,255,255,0.04);
-  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(var(--color-white-rgb), 0.04);
+  border: 1px solid rgba(var(--color-white-rgb), 0.08);
   border-radius: 8px; overflow: hidden; height: 34px;
   transition: border-color 0.2s;
 }
-.stepper:hover { border-color: rgba(255,255,255,0.35); }
+.stepper:hover { border-color: rgba(var(--color-white-rgb), 0.35); }
 
 .stepper-btn {
   width: 30px; height: 100%;
   background: none; border: none;
-  color: rgba(255,255,255,0.45); font-size: 15px; cursor: pointer;
+  color: rgba(var(--color-white-rgb), 0.45); font-size: 15px; cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
-.stepper-btn:hover { background: rgba(255,255,255,0.2); color: #fff; }
+.stepper-btn:hover { background: rgba(var(--color-white-rgb), 0.2); color: var(--color-white); }
 
 .stepper-input {
   flex: 1; height: 100%;
   background: transparent; border: none; outline: none;
-  color: rgba(255,255,255,0.9); font-size: 13px; text-align: center;
+  color: rgba(var(--color-white-rgb), 0.9); font-size: 13px; text-align: center;
   -moz-appearance: textfield;
 }
 .stepper-input::-webkit-outer-spin-button,
@@ -1488,13 +1482,13 @@ onUnmounted(() => {
 
 .icon-btn {
   width: 34px; height: 34px; border-radius: 8px;
-  background: rgba(255,255,255,0.04);
-  border: 1px solid rgba(255,255,255,0.08);
-  color: rgba(255,255,255,0.5); cursor: pointer;
+  background: rgba(var(--color-white-rgb), 0.04);
+  border: 1px solid rgba(var(--color-white-rgb), 0.08);
+  color: rgba(var(--color-white-rgb), 0.5); cursor: pointer;
   display: flex; align-items: center; justify-content: center;
   transition: background 0.2s, color 0.2s; flex-shrink: 0;
 }
-.icon-btn:hover { background: rgba(255,255,255,0.2); color: #fff; }
+.icon-btn:hover { background: rgba(var(--color-white-rgb), 0.2); color: var(--color-white); }
 
 .full-width { width: 100%; }
 
@@ -1503,12 +1497,12 @@ onUnmounted(() => {
 .preview-item {
   position: relative; width: calc(50% - 4px);
   border-radius: 10px; overflow: hidden;
-  border: 1px solid rgba(255,255,255,0.08);
+  border: 1px solid rgba(var(--color-white-rgb), 0.08);
 }
 .preview-item .preview-img { max-height: 120px; cursor: pointer; }
 .img-label {
   position: absolute; top: 6px; left: 6px;
-  background: rgba(0,0,0,0.65); color: rgba(255,255,255,0.82);
+  background: rgba(var(--color-black-rgb), 0.65); color: rgba(var(--color-white-rgb), 0.82);
   font-size: 11px; padding: 2px 7px; border-radius: 6px;
   font-weight: 600; letter-spacing: 1px;
 }
@@ -1522,7 +1516,7 @@ onUnmounted(() => {
 .card-images:has(.card-image-wrap:only-child) .card-image-wrap { max-width: 480px; }
 .card-image {
   width: 100%; max-height: 400px;
-  border-radius: 12px; box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+  border-radius: 12px; box-shadow: 0 4px 24px rgba(var(--color-black-rgb), 0.4);
   display: block; object-fit: contain; cursor: pointer;
 }
 .card-image-wrap:hover .download-btn { opacity: 1; }
@@ -1542,9 +1536,9 @@ onUnmounted(() => {
   top: 8px; right: 36px;
   width: 28px; height: 28px;
   border-radius: 50%;
-  background: rgba(0, 0, 0, 0.65);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  color: rgba(255, 255, 255, 0.8);
+  background: rgba(var(--color-black-rgb), 0.65);
+  border: 1px solid rgba(var(--color-white-rgb), 0.15);
+  color: rgba(var(--color-white-rgb), 0.8);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -1553,16 +1547,16 @@ onUnmounted(() => {
   opacity: 0;
 }
 .add-to-project-btn:hover {
-  background: rgba(255,255,255, 0.8);
-  border-color: rgba(255,255,255, 0.5);
+  background: rgba(var(--color-white-rgb), 0.8);
+  border-color: rgba(var(--color-white-rgb), 0.5);
   transform: scale(1.1);
 }
 
 /* 进度 */
-.loading-text { font-size: 12px; color: rgba(255,255,255,0.35); }
+.loading-text { font-size: 12px; color: rgba(var(--color-white-rgb), 0.35); }
 
 .record-row.editing {
-  outline: 1px solid rgba(255,255,255,0.3);
+  outline: 1px solid rgba(var(--color-white-rgb), 0.3);
   border-radius: 16px;
 }
 
@@ -1571,9 +1565,9 @@ onUnmounted(() => {
   animation: record-locate-pulse 1.8s ease;
 }
 @keyframes record-locate-pulse {
-  0% { box-shadow: 0 0 0 0 rgba(255,255,255,0.6); background: rgba(255,255,255,0.12); }
-  60% { box-shadow: 0 0 0 8px rgba(255,255,255,0); background: rgba(255,255,255,0.12); }
-  100% { box-shadow: 0 0 0 0 rgba(255,255,255,0); background: transparent; }
+  0% { box-shadow: 0 0 0 0 rgba(var(--color-white-rgb), 0.6); background: rgba(var(--color-white-rgb), 0.12); }
+  60% { box-shadow: 0 0 0 8px rgba(var(--color-white-rgb), 0); background: rgba(var(--color-white-rgb), 0.12); }
+  100% { box-shadow: 0 0 0 0 rgba(var(--color-white-rgb), 0); background: transparent; }
 }
 
 .history-pagination {
@@ -1592,42 +1586,42 @@ onUnmounted(() => {
 
 .page-size-label {
   font-size: 11px;
-  color: rgba(255,255,255,0.35);
+  color: rgba(var(--color-white-rgb), 0.35);
 }
 
 .page-size-btn {
   padding: 3px 10px;
   border-radius: 5px;
-  border: 1px solid rgba(255,255,255,0.1);
-  background: rgba(255,255,255,0.03);
-  color: rgba(255,255,255,0.45);
+  border: 1px solid rgba(var(--color-white-rgb), 0.1);
+  background: rgba(var(--color-white-rgb), 0.03);
+  color: rgba(var(--color-white-rgb), 0.45);
   font-size: 11px;
   cursor: pointer;
   transition: all 0.2s;
 }
-.page-size-btn:hover { border-color: rgba(255,255,255,0.3); color: rgba(255,255,255,0.8); }
+.page-size-btn:hover { border-color: rgba(var(--color-white-rgb), 0.3); color: rgba(var(--color-white-rgb), 0.8); }
 .page-size-btn.active {
-  border-color: rgba(255,255,255,0.6);
-  background: rgba(255,255,255,0.2);
-  color: rgba(255,255,255,0.9);
+  border-color: rgba(var(--color-white-rgb), 0.6);
+  background: rgba(var(--color-white-rgb), 0.2);
+  color: rgba(var(--color-white-rgb), 0.9);
 }
 
 .load-more-btn {
   padding: 4px 16px;
   border-radius: 6px;
-  border: 1px solid rgba(255,255,255,0.4);
-  background: rgba(255,255,255,0.12);
-  color: rgba(255,255,255,0.7);
+  border: 1px solid rgba(var(--color-white-rgb), 0.4);
+  background: rgba(var(--color-white-rgb), 0.12);
+  color: rgba(var(--color-white-rgb), 0.7);
   font-size: 12px;
   cursor: pointer;
   transition: all 0.2s;
 }
-.load-more-btn:hover:not(:disabled) { background: rgba(255,255,255,0.25); color: #fff; }
+.load-more-btn:hover:not(:disabled) { background: rgba(var(--color-white-rgb), 0.25); color: var(--color-white); }
 .load-more-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .no-more-text {
   font-size: 11px;
-  color: rgba(255,255,255,0.25);
+  color: rgba(var(--color-white-rgb), 0.25);
 }
 
 </style>

@@ -1,4 +1,7 @@
 # AGENTS.md
+
+前端 UI 修改先阅读《UI规范.md》，复用现有组件；互斥选项统一使用 `src/components/SegmentedControl.vue`，不得自行增加同类样式。
+
 ## 1. 编码前先思考
 
 **不要想当然。不要掩盖困惑。坦诚地权衡利弊。**

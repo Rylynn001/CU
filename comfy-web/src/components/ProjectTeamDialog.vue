@@ -473,7 +473,7 @@ const roleLabel: Record<MemberRole, string> = { owner: '所有者', admin: '管�
                   <div class="pending-top">
                     <div class="pending-thumb">
                       <video v-if="isVideoLoc(item.location)" :src="getMediaUrl(item.location)" preload="metadata" />
-                      <img v-else :src="getMediaUrl(item.location)" />
+                      <img v-else :src="getMediaUrl(item.location)" loading="lazy" />
                     </div>
                     <div class="pending-info">
                       <span class="pending-cat">{{ item.project_name }} · {{ item.category_name }}</span>
@@ -519,7 +519,7 @@ const roleLabel: Record<MemberRole, string> = { owner: '所有者', admin: '管�
                   <div class="pending-top">
                     <div class="pending-thumb">
                       <video v-if="isVideoLoc(item.location)" :src="getMediaUrl(item.location)" preload="metadata" />
-                      <img v-else :src="getMediaUrl(item.location)" />
+                      <img v-else :src="getMediaUrl(item.location)" loading="lazy" />
                     </div>
                     <div class="pending-info">
                       <span class="pending-cat">{{ item.project_name }} · {{ item.category_name }}</span>
@@ -579,7 +579,7 @@ const roleLabel: Record<MemberRole, string> = { owner: '所有者', admin: '管�
                   <div v-if="ev.comment" class="timeline-comment">{{ ev.comment }}</div>
                   <div v-if="ev.action === 'submit' && ev.location" class="timeline-thumb-wrap" @click.stop="previewTimelineAsset(ev.location)">
                     <video v-if="isTimelineVideo(ev.location)" :src="getTimelineMediaUrl(ev.location)" class="timeline-thumb" preload="metadata" />
-                    <img v-else :src="getTimelineMediaUrl(ev.location)" class="timeline-thumb" />
+                    <img v-else :src="getTimelineMediaUrl(ev.location)" class="timeline-thumb" loading="lazy" />
                     <div class="timeline-thumb-zoom">⤢</div>
                   </div>
                 </div>
@@ -598,7 +598,7 @@ const roleLabel: Record<MemberRole, string> = { owner: '所有者', admin: '管�
         <div class="timeline-preview-modal" @click.stop>
           <button class="dialog-close" style="position:absolute;top:12px;right:12px" @click="showTimelinePreview = false">✕</button>
           <video v-if="timelinePreviewIsVideo" :src="timelinePreviewUrl" class="timeline-preview-media" controls autoplay />
-          <img v-else :src="timelinePreviewUrl" class="timeline-preview-media" />
+          <img v-else :src="timelinePreviewUrl" class="timeline-preview-media" loading="lazy" />
         </div>
       </div>
     </Transition>
@@ -610,7 +610,7 @@ const roleLabel: Record<MemberRole, string> = { owner: '所有者', admin: '管�
   position: fixed;
   inset: 0;
   z-index: 4000;
-  background: rgba(0, 0, 0, 0.75);
+  background: rgba(var(--color-black-rgb), 0.75);
   backdrop-filter: blur(8px);
   display: flex;
   align-items: center;
@@ -621,10 +621,10 @@ const roleLabel: Record<MemberRole, string> = { owner: '所有者', admin: '管�
   width: 90%;
   max-width: 520px;
   max-height: 75vh;
-  background: rgba(25, 25, 30, 0.98);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(var(--color-surface-rgb), 0.98);
+  border: 1px solid rgba(var(--color-white-rgb), 0.12);
   border-radius: 16px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 20px 60px rgba(var(--color-black-rgb), 0.5);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -634,22 +634,22 @@ const roleLabel: Record<MemberRole, string> = { owner: '所有者', admin: '管�
   align-items: center;
   justify-content: space-between;
   padding: 18px 20px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(var(--color-white-rgb), 0.08);
   flex-shrink: 0;
 }
-.dialog-title { font-size: 15px; font-weight: 500; color: rgba(255, 255, 255, 0.9); }
+.dialog-title { font-size: 15px; font-weight: 500; color: rgba(var(--color-white-rgb), 0.9); }
 .dialog-close {
   width: 28px; height: 28px;
   border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(var(--color-white-rgb), 0.1);
   background: transparent;
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(var(--color-white-rgb), 0.5);
   font-size: 16px;
   cursor: pointer;
   display: flex; align-items: center; justify-content: center;
   transition: all 0.2s;
 }
-.dialog-close:hover { background: rgba(255, 255, 255, 0.08); color: rgba(255, 255, 255, 0.9); transform: rotate(90deg); }
+.dialog-close:hover { background: rgba(var(--color-white-rgb), 0.08); color: rgba(var(--color-white-rgb), 0.9); transform: rotate(90deg); }
 
 .tab-bar {
   display: flex;
@@ -661,14 +661,14 @@ const roleLabel: Record<MemberRole, string> = { owner: '所有者', admin: '管�
   padding: 8px 18px;
   border: none;
   background: transparent;
-  color: rgba(255, 255, 255, 0.4);
+  color: rgba(var(--color-white-rgb), 0.4);
   font-size: 13px;
   cursor: pointer;
   border-bottom: 2px solid transparent;
   transition: all 0.2s;
 }
-.tab:hover { color: rgba(255, 255, 255, 0.7); }
-.tab.active { color: rgba(255, 255, 255, 0.95); border-bottom-color: rgba(255,255,255, 0.8); }
+.tab:hover { color: rgba(var(--color-white-rgb), 0.7); }
+.tab.active { color: rgba(var(--color-white-rgb), 0.95); border-bottom-color: rgba(var(--color-white-rgb), 0.8); }
 
 .dialog-body {
   flex: 1;
@@ -677,7 +677,7 @@ const roleLabel: Record<MemberRole, string> = { owner: '所有者', admin: '管�
   min-height: 240px;
 }
 .dialog-body::-webkit-scrollbar { width: 4px; }
-.dialog-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+.dialog-body::-webkit-scrollbar-thumb { background: rgba(var(--color-white-rgb), 0.1); border-radius: 2px; }
 
 /* 角色下拉（成员列表用） */
 .role-select {
@@ -687,35 +687,35 @@ const roleLabel: Record<MemberRole, string> = { owner: '所有者', admin: '管�
 .role-select :deep(.el-select__wrapper) {
   min-height: 30px;
   padding: 4px 10px;
-  background: rgba(255,255,255,0.05) !important;
-  border-color: rgba(255,255,255,0.14) !important;
+  background: rgba(var(--color-white-rgb), 0.05) !important;
+  border-color: rgba(var(--color-white-rgb), 0.14) !important;
   border-radius: 8px !important;
 }
 .role-select :deep(.el-select__selected-item) {
-  color: rgba(255,255,255,0.85);
+  color: rgba(var(--color-white-rgb), 0.85);
   font-size: 12px;
 }
 :global(.role-select-popper.el-popper) {
   z-index: 4100 !important;
-  background: #202126 !important;
-  border: 1px solid rgba(255,255,255,0.14) !important;
+  background: var(--color-bg) !important;
+  border: 1px solid rgba(var(--color-white-rgb), 0.14) !important;
   border-radius: 8px !important;
-  box-shadow: 0 12px 30px rgba(0,0,0,0.45) !important;
+  box-shadow: 0 12px 30px rgba(var(--color-black-rgb), 0.45) !important;
 }
 :global(.role-select-popper .el-select-dropdown__item) {
   height: 32px;
   line-height: 32px;
-  color: rgba(255,255,255,0.72) !important;
+  color: rgba(var(--color-white-rgb), 0.72) !important;
   font-size: 12px !important;
 }
 :global(.role-select-popper .el-select-dropdown__item.is-hovering),
 :global(.role-select-popper .el-select-dropdown__item.is-selected) {
-  background: rgba(255,255,255,0.1) !important;
-  color: #fff !important;
+  background: rgba(var(--color-white-rgb), 0.1) !important;
+  color: var(--color-white) !important;
 }
 :global(.role-select-popper .el-popper__arrow::before) {
-  background: #202126 !important;
-  border-color: rgba(255,255,255,0.14) !important;
+  background: var(--color-bg) !important;
+  border-color: rgba(var(--color-white-rgb), 0.14) !important;
 }
 
 /* 添加成员按钮 */
@@ -728,14 +728,14 @@ const roleLabel: Record<MemberRole, string> = { owner: '所有者', admin: '管�
   margin-bottom: 14px;
   padding: 9px 0;
   border-radius: 8px;
-  border: 1px dashed rgba(255,255,255,0.2);
-  background: rgba(255,255,255,0.03);
-  color: rgba(255,255,255,0.7);
+  border: 1px dashed rgba(var(--color-white-rgb), 0.2);
+  background: rgba(var(--color-white-rgb), 0.03);
+  color: rgba(var(--color-white-rgb), 0.7);
   font-size: 13px;
   cursor: pointer;
   transition: all 0.2s;
 }
-.add-member-btn:hover { background: rgba(255,255,255,0.07); border-color: rgba(255,255,255,0.35); color: rgba(255,255,255,0.95); }
+.add-member-btn:hover { background: rgba(var(--color-white-rgb), 0.07); border-color: rgba(var(--color-white-rgb), 0.35); color: rgba(var(--color-white-rgb), 0.95); }
 .add-icon { font-size: 15px; line-height: 1; }
 
 /* 候选选人面板 */
@@ -744,15 +744,15 @@ const roleLabel: Record<MemberRole, string> = { owner: '所有者', admin: '管�
   display: flex; align-items: center; gap: 4px;
   padding: 7px 10px;
   border-radius: 8px;
-  border: 1px solid rgba(255,255,255,0.12);
+  border: 1px solid rgba(var(--color-white-rgb), 0.12);
   background: transparent;
-  color: rgba(255,255,255,0.6);
+  color: rgba(var(--color-white-rgb), 0.6);
   font-size: 12px;
   cursor: pointer;
   flex-shrink: 0;
   transition: all 0.2s;
 }
-.back-link:hover { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.9); }
+.back-link:hover { background: rgba(var(--color-white-rgb), 0.06); color: rgba(var(--color-white-rgb), 0.9); }
 .search-box {
   display: flex;
   gap: 8px;
@@ -760,27 +760,27 @@ const roleLabel: Record<MemberRole, string> = { owner: '所有者', admin: '管�
 }
 .search-input {
   flex: 1;
-  background: rgba(255,255,255,0.06);
-  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(var(--color-white-rgb), 0.06);
+  border: 1px solid rgba(var(--color-white-rgb), 0.14);
   border-radius: 8px;
-  color: rgba(255,255,255,0.9);
+  color: rgba(var(--color-white-rgb), 0.9);
   font-size: 13px;
   padding: 8px 12px;
   outline: none;
 }
-.search-input:focus { border-color: rgba(255,255,255,0.6); }
+.search-input:focus { border-color: rgba(var(--color-white-rgb), 0.6); }
 .search-btn {
   padding: 8px 20px;
   border-radius: 8px;
-  border: 1px solid rgba(255,255,255,0.6);
-  background: rgba(255,255,255,0.3);
-  color: rgba(255,255,255,0.95);
+  border: 1px solid rgba(var(--color-white-rgb), 0.6);
+  background: rgba(var(--color-white-rgb), 0.3);
+  color: rgba(var(--color-white-rgb), 0.95);
   font-size: 13px;
   cursor: pointer;
   transition: all 0.2s;
   flex-shrink: 0;
 }
-.search-btn:hover { background: rgba(255,255,255,0.45); }
+.search-btn:hover { background: rgba(var(--color-white-rgb), 0.45); }
 
 .candidate-list {
   display: flex;
@@ -795,22 +795,22 @@ const roleLabel: Record<MemberRole, string> = { owner: '所有者', admin: '管�
   gap: 10px;
   padding: 10px 12px;
   border-radius: 8px;
-  background: rgba(255,255,255,0.03);
-  border: 1px solid rgba(255,255,255,0.06);
+  background: rgba(var(--color-white-rgb), 0.03);
+  border: 1px solid rgba(var(--color-white-rgb), 0.06);
 }
-.candidate-name { flex: 1; font-size: 13px; color: rgba(255,255,255,0.85); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.candidate-name { flex: 1; font-size: 13px; color: rgba(var(--color-white-rgb), 0.85); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .candidate-add {
   padding: 5px 16px;
   border-radius: 8px;
-  border: 1px solid rgba(255,255,255,0.6);
-  background: rgba(255,255,255,0.3);
-  color: rgba(255,255,255,0.95);
+  border: 1px solid rgba(var(--color-white-rgb), 0.6);
+  background: rgba(var(--color-white-rgb), 0.3);
+  color: rgba(var(--color-white-rgb), 0.95);
   font-size: 12px;
   cursor: pointer;
   flex-shrink: 0;
   transition: all 0.2s;
 }
-.candidate-add:hover:not(:disabled) { background: rgba(255,255,255,0.45); }
+.candidate-add:hover:not(:disabled) { background: rgba(var(--color-white-rgb), 0.45); }
 .candidate-add:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .loading-more {
@@ -827,28 +827,28 @@ const roleLabel: Record<MemberRole, string> = { owner: '所有者', admin: '管�
   gap: 10px;
   padding: 10px 12px;
   border-radius: 8px;
-  background: rgba(255,255,255,0.03);
-  border: 1px solid rgba(255,255,255,0.06);
+  background: rgba(var(--color-white-rgb), 0.03);
+  border: 1px solid rgba(var(--color-white-rgb), 0.06);
 }
-.member-name { flex: 1; font-size: 13px; color: rgba(255,255,255,0.85); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.member-name { flex: 1; font-size: 13px; color: rgba(var(--color-white-rgb), 0.85); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .role-badge {
   font-size: 11px;
   padding: 3px 10px;
   border-radius: 10px;
-  background: rgba(255,255,255,0.08);
-  color: rgba(255,255,255,0.6);
+  background: rgba(var(--color-white-rgb), 0.08);
+  color: rgba(var(--color-white-rgb), 0.6);
 }
-.role-badge.owner { background: rgba(234,179,8,0.15); color: #eab308; }
+.role-badge.owner { background: rgba(var(--color-warning-rgb), 0.15); color: var(--color-warning); }
 .member-del {
   width: 24px; height: 24px;
   border-radius: 6px;
   border: none;
   background: transparent;
-  color: rgba(255,255,255,0.3);
+  color: rgba(var(--color-white-rgb), 0.3);
   cursor: pointer;
   transition: all 0.2s;
 }
-.member-del:hover { background: rgba(244,63,94,0.15); color: #f43f5e; }
+.member-del:hover { background: rgba(var(--color-danger-rgb), 0.15); color: var(--color-danger); }
 
 /* 待审核 */
 .pending-list { display: flex; flex-direction: column; gap: 8px; }
@@ -859,8 +859,8 @@ const roleLabel: Record<MemberRole, string> = { owner: '所有者', admin: '管�
   gap: 8px;
   padding: 10px;
   border-radius: 10px;
-  background: rgba(255,255,255,0.03);
-  border: 1px solid rgba(255,255,255,0.06);
+  background: rgba(var(--color-white-rgb), 0.03);
+  border: 1px solid rgba(var(--color-white-rgb), 0.06);
 }
 .pending-top {
   display: flex;
@@ -871,13 +871,13 @@ const roleLabel: Record<MemberRole, string> = { owner: '所有者', admin: '管�
   width: 56px; height: 56px;
   border-radius: 8px;
   overflow: hidden;
-  background: rgba(0,0,0,0.3);
+  background: rgba(var(--color-black-rgb), 0.3);
   flex-shrink: 0;
 }
 .pending-thumb img, .pending-thumb video { width: 100%; height: 100%; object-fit: cover; display: block; }
 .pending-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
-.pending-cat { font-size: 13px; color: rgba(255,255,255,0.85); }
-.pending-meta { font-size: 11px; color: rgba(255,255,255,0.35); }
+.pending-cat { font-size: 13px; color: rgba(var(--color-white-rgb), 0.85); }
+.pending-meta { font-size: 11px; color: rgba(var(--color-white-rgb), 0.35); }
 .pending-actions { display: flex; gap: 6px; flex-shrink: 0; justify-content: flex-end; }
 .review-btn {
   padding: 6px 14px;
@@ -888,42 +888,42 @@ const roleLabel: Record<MemberRole, string> = { owner: '所有者', admin: '管�
   transition: all 0.2s;
 }
 .review-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.review-btn.approve { background: rgba(34,197,94,0.15); border-color: rgba(34,197,94,0.35); color: #4ade80; }
-.review-btn.approve:hover:not(:disabled) { background: rgba(34,197,94,0.28); }
-.review-btn.reject { background: rgba(244,63,94,0.15); border-color: rgba(244,63,94,0.35); color: #fb7185; }
-.review-btn.reject:hover:not(:disabled) { background: rgba(244,63,94,0.28); }
-.review-btn.detail { background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.14); color: rgba(255,255,255,0.7); }
-.review-btn.detail:hover { background: rgba(255,255,255,0.12); color: rgba(255,255,255,0.9); }
+.review-btn.approve { background: rgba(var(--color-success-rgb), 0.15); border-color: rgba(var(--color-success-rgb), 0.35); color: rgb(var(--color-success-rgb)); }
+.review-btn.approve:hover:not(:disabled) { background: rgba(var(--color-success-rgb), 0.28); }
+.review-btn.reject { background: rgba(var(--color-danger-rgb), 0.15); border-color: rgba(var(--color-danger-rgb), 0.35); color: var(--color-danger); }
+.review-btn.reject:hover:not(:disabled) { background: rgba(var(--color-danger-rgb), 0.28); }
+.review-btn.detail { background: rgba(var(--color-white-rgb), 0.06); border-color: rgba(var(--color-white-rgb), 0.14); color: rgba(var(--color-white-rgb), 0.7); }
+.review-btn.detail:hover { background: rgba(var(--color-white-rgb), 0.12); color: rgba(var(--color-white-rgb), 0.9); }
 
 /* 评语输入框 */
 .review-comment {
   width: 100%;
   box-sizing: border-box;
-  background: rgba(255,255,255,0.04);
-  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(var(--color-white-rgb), 0.04);
+  border: 1px solid rgba(var(--color-white-rgb), 0.1);
   border-radius: 8px;
-  color: rgba(255,255,255,0.85);
+  color: rgba(var(--color-white-rgb), 0.85);
   font-size: 12px;
   padding: 8px 10px;
   resize: vertical;
   outline: none;
   font-family: inherit;
 }
-.review-comment:focus { border-color: rgba(255,255,255,0.6); }
+.review-comment:focus { border-color: rgba(var(--color-white-rgb), 0.6); }
 
 /* 驳回次数徽标（可点开时间线） */
 .reject-count-badge {
   align-self: flex-start;
   padding: 2px 8px;
   border-radius: 8px;
-  border: 1px solid rgba(244,63,94,0.35);
-  background: rgba(244,63,94,0.12);
-  color: #fb7185;
+  border: 1px solid rgba(var(--color-danger-rgb), 0.35);
+  background: rgba(var(--color-danger-rgb), 0.12);
+  color: var(--color-danger);
   font-size: 11px;
   cursor: pointer;
   transition: all 0.2s;
 }
-.reject-count-badge:hover { background: rgba(244,63,94,0.22); }
+.reject-count-badge:hover { background: rgba(var(--color-danger-rgb), 0.22); }
 
 /* 我的提交状态徽标 */
 .status-badge {
@@ -932,19 +932,19 @@ const roleLabel: Record<MemberRole, string> = { owner: '所有者', admin: '管�
   padding: 2px 10px;
   border-radius: 10px;
 }
-.status-badge.pending { background: rgba(234,179,8,0.15); color: #eab308; }
-.status-badge.approved { background: rgba(255,255,255,0.15); color: rgba(255,255,255,0.82); }
-.status-badge.rejected { background: rgba(244,63,94,0.15); color: #fb7185; }
+.status-badge.pending { background: rgba(var(--color-warning-rgb), 0.15); color: var(--color-warning); }
+.status-badge.approved { background: rgba(var(--color-white-rgb), 0.15); color: rgba(var(--color-white-rgb), 0.82); }
+.status-badge.rejected { background: rgba(var(--color-danger-rgb), 0.15); color: var(--color-danger); }
 
 /* 时间线弹窗 */
 .timeline-content {
   width: 90%;
   max-width: 440px;
   max-height: 70vh;
-  background: rgba(25,25,30,0.98);
-  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(var(--color-surface-rgb), 0.98);
+  border: 1px solid rgba(var(--color-white-rgb), 0.12);
   border-radius: 16px;
-  box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+  box-shadow: 0 20px 60px rgba(var(--color-black-rgb), 0.5);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -961,12 +961,12 @@ const roleLabel: Record<MemberRole, string> = { owner: '所有者', admin: '管�
   font-size: 11px;
   padding: 2px 10px;
   border-radius: 10px;
-  background: rgba(255,255,255,0.08);
-  color: rgba(255,255,255,0.7);
+  background: rgba(var(--color-white-rgb), 0.08);
+  color: rgba(var(--color-white-rgb), 0.7);
 }
-.timeline-action.submit { background: rgba(96,165,250,0.15); color: rgba(255,255,255,0.82); }
-.timeline-action.approve { background: rgba(255,255,255,0.15); color: rgba(255,255,255,0.82); }
-.timeline-action.reject { background: rgba(244,63,94,0.15); color: #fb7185; }
+.timeline-action.submit { background: rgba(var(--color-info-rgb), 0.15); color: rgba(var(--color-white-rgb), 0.82); }
+.timeline-action.approve { background: rgba(var(--color-white-rgb), 0.15); color: rgba(var(--color-white-rgb), 0.82); }
+.timeline-action.reject { background: rgba(var(--color-danger-rgb), 0.15); color: var(--color-danger); }
 .timeline-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .timeline-meta {
   display: flex;
@@ -974,13 +974,13 @@ const roleLabel: Record<MemberRole, string> = { owner: '所有者', admin: '管�
   justify-content: space-between;
   gap: 8px;
   font-size: 11px;
-  color: rgba(255,255,255,0.5);
+  color: rgba(var(--color-white-rgb), 0.5);
 }
-.timeline-time { font-size: 10px; color: rgba(255,255,255,0.3); flex-shrink: 0; }
+.timeline-time { font-size: 10px; color: rgba(var(--color-white-rgb), 0.3); flex-shrink: 0; }
 .timeline-comment {
   font-size: 12px;
-  color: rgba(255,255,255,0.7);
-  background: rgba(255,255,255,0.04);
+  color: rgba(var(--color-white-rgb), 0.7);
+  background: rgba(var(--color-white-rgb), 0.04);
   border-radius: 6px;
   padding: 6px 8px;
   white-space: pre-wrap;
@@ -989,12 +989,12 @@ const roleLabel: Record<MemberRole, string> = { owner: '所有者', admin: '管�
 
 /* 状态 */
 .center-state { display: flex; align-items: center; justify-content: center; flex-direction: column; padding: 48px 0; }
-.empty-hint { font-size: 12px; color: rgba(255,255,255,0.2); letter-spacing: 1px; }
+.empty-hint { font-size: 12px; color: rgba(var(--color-white-rgb), 0.2); letter-spacing: 1px; }
 .mini-spin {
   width: 24px; height: 24px;
   border-radius: 50%;
-  border: 2px solid rgba(255,255,255,0.14);
-  border-top-color: rgba(255,255,255,0.9);
+  border: 2px solid rgba(var(--color-white-rgb), 0.14);
+  border-top-color: rgba(var(--color-white-rgb), 0.9);
   animation: spin 0.8s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -1027,8 +1027,8 @@ const roleLabel: Record<MemberRole, string> = { owner: '所有者', admin: '管�
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0,0,0,0.45);
-  color: rgba(255,255,255,0.9);
+  background: rgba(var(--color-black-rgb), 0.45);
+  color: rgba(var(--color-white-rgb), 0.9);
   font-size: 18px;
   opacity: 0;
   transition: opacity 0.2s;

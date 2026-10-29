@@ -100,7 +100,7 @@ defineExpose({ textarea })
   position: relative;
   width: 100%;
   border-radius: var(--radius-md, 8px);
-  background: rgba(255, 255, 255, 0.035);
+  background: rgba(var(--color-white-rgb), 0.035);
 }
 
 .mention-highlight {
@@ -136,15 +136,15 @@ defineExpose({ textarea })
 }
 
 .mention-highlight :deep(.mention-token.image) {
-  color: #6ee7d8;
-  background: rgba(20, 184, 166, 0.2);
-  box-shadow: 0 0 0 2px rgba(20, 184, 166, 0.2);
+  color: var(--color-info);
+  background: rgba(var(--color-success-rgb), 0.2);
+  box-shadow: 0 0 0 2px rgba(var(--color-success-rgb), 0.2);
 }
 
 .mention-highlight :deep(.mention-token.video) {
-  color: #fcd27a;
-  background: rgba(245, 158, 11, 0.2);
-  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.2);
+  color: var(--color-warning);
+  background: rgba(var(--color-danger-rgb), 0.2);
+  box-shadow: 0 0 0 2px rgba(var(--color-danger-rgb), 0.2);
 }
 
 .mention-textarea-input {

@@ -40,7 +40,7 @@
                 <el-button class="model-trigger" :disabled="disabled">
                   <AIProviderIcons :name="selectedModel.iconName" :size="15" :class="selectedModel.badgeColor" />
                   <span class="model-name">{{ selectedModel.name }}</span>
-                  <el-tag size="small" effect="plain">{{ currentEffort.label }}</el-tag>
+                  <el-tag class="model-effort" size="small" effect="plain">{{ currentEffort.label }}</el-tag>
                   <IconComponents name="caret-down" :size="12" />
                 </el-button>
               </template>
@@ -72,12 +72,15 @@
                     <span>{{ selectedModel.reasoningTitle }}</span>
                     <strong>{{ currentEffort.label }}</strong>
                   </div>
-                  <el-radio-group :model-value="effortId" size="small" @change="setEffort(String($event))">
-                    <el-radio-button v-for="level in selectedModel.levels" :key="level.id" :value="level.id">
-                      {{ level.label }}
-                    </el-radio-button>
-                  </el-radio-group>
+                  <SegmentedControl
+                    :model-value="effortId"
+                    :options="effortOptions"
+                    :label="selectedModel.reasoningTitle"
+                    :disabled="disabled"
+                    @update:model-value="setEffort"
+                  />
                   <p>{{ currentEffort.desc }}</p>
+                  <p>当前聊天接口尚未启用推理强度设置。</p>
                 </div>
               </div>
             </el-popover>
@@ -136,6 +139,7 @@ import { computed, onUnmounted, ref } from 'vue'
 import RobotBeta from './RobotBeta.vue'
 import AIProviderIcons from './icons/AIProviderIcons.vue'
 import IconComponents from './icons/IconComponents.vue'
+import SegmentedControl from './SegmentedControl.vue'
 import type { AIModel, AttachedFile, ChatSubmitData } from '@/types/ai-models'
 import { DEFAULT_AI_MODELS } from '@/types/ai-models'
 
@@ -188,6 +192,7 @@ const selectedModel = ref(props.models.find((model) => model.id === props.defaul
 const modelEfforts = ref<Record<string, string>>(Object.fromEntries(props.models.map((model) => [model.id, model.defaultLevel])))
 const effortId = computed(() => modelEfforts.value[selectedModel.value.id] || selectedModel.value.defaultLevel)
 const currentEffort = computed(() => selectedModel.value.levels.find((level) => level.id === effortId.value) || selectedModel.value.levels[0])
+const effortOptions = computed(() => selectedModel.value.levels.map((level) => ({ value: level.id, label: level.label })))
 const isSending = computed(() => props.isProcessing ?? sending.value)
 const isListening = ref(false)
 const isTyping = computed(() => Boolean(prompt.value || file.value || isListening.value))
@@ -298,50 +303,50 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.ai-input { width: 100%; color: #f4f4f5; }
+.ai-input { width: 100%; color: var(--color-text); }
 .welcome-row { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; }
-.welcome-row h2 { margin: 0; color: #fafafa; font-size: 24px; font-weight: 700; line-height: 1.25; }
-.welcome-row p { margin: 4px 0 0; color: #a1a1aa; font-size: 14px; }
+.welcome-row h2 { margin: 0; color: var(--color-text); font-size: 24px; font-weight: 700; line-height: 1.25; }
+.welcome-row p { margin: 4px 0 0; color: var(--color-text-soft); font-size: 14px; }
 .robot-slot { flex: 0 0 auto; }
 .composer-wrap { position: relative; width: 100%; transition: padding-top .3s ease; }
 .composer-wrap.typing { padding-top: 72px; }
 .floating-robot { position: absolute; z-index: 2; top: 4px; right: 20px; pointer-events: none; }
-.composer-card { position: relative; z-index: 1; width: 100%; padding: 16px 20px; border: 1px solid rgba(255,255,255,.12); border-radius: 24px; background: #18181b; box-shadow: 0 20px 50px rgba(0,0,0,.45); transition: border-color .2s, box-shadow .2s; }
-.composer-card:focus-within { border-color: rgba(255,255,255,.3); box-shadow: 0 24px 56px rgba(0,0,0,.52); }
+.composer-card { position: relative; z-index: 1; width: 100%; padding: 16px 20px; border: 1px solid rgba(var(--color-white-rgb), .12); border-radius: 24px; background: var(--color-bg); box-shadow: 0 20px 50px rgba(var(--color-black-rgb), .45); transition: border-color .2s, box-shadow .2s; }
+.composer-card:focus-within { border-color: rgba(var(--color-white-rgb), .3); box-shadow: 0 24px 56px rgba(var(--color-black-rgb), .52); }
 .composer-card.disabled { opacity: .6; }
 .attachment-tag { display: inline-flex; max-width: 100%; margin-bottom: 8px; }
 .attachment-tag span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .prompt-input { margin-bottom: 14px; }
-.prompt-input :deep(.el-textarea__inner) { min-height: 96px !important; max-height: 260px; padding: 4px 0; resize: none; border: 0 !important; background: transparent !important; box-shadow: none !important; color: #f4f4f5 !important; font-size: 16px; line-height: 1.55; }
-.prompt-input :deep(.el-textarea__inner::placeholder) { color: #8b8b95 !important; }
-.composer-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.1); }
+.prompt-input :deep(.el-textarea__inner) { min-height: 96px !important; max-height: 260px; padding: 4px 0; resize: none; border: 0 !important; background: transparent !important; box-shadow: none !important; color: var(--color-text) !important; font-size: 16px; line-height: 1.55; }
+.prompt-input :deep(.el-textarea__inner::placeholder) { color: var(--color-muted) !important; }
+.composer-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 12px; border-top: 1px solid rgba(var(--color-white-rgb), .1); }
 .toolbar-tools, .toolbar-actions { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .toolbar-actions { flex: 0 0 auto; }
 .model-selector { min-width: 0; }
-.model-trigger { display: inline-flex; max-width: 280px; align-items: center; gap: 7px; padding: 7px 10px; border: 0; border-radius: 999px; background: rgba(255,255,255,.08); color: #f4f4f5; }
-.model-trigger:hover { background: rgba(255,255,255,.14); color: #fff; }
+.model-trigger { display: inline-flex; max-width: 280px; align-items: center; gap: 7px; padding: 7px 10px; border: 0; border-radius: 999px; background: rgba(var(--color-white-rgb), .08); color: var(--color-text); }
+.model-trigger:hover { background: rgba(var(--color-white-rgb), .14); color: var(--color-white); }
+.model-trigger :deep(> span) { min-width: 0; gap: 7px; }
+.model-effort { flex-shrink: 0; background: rgba(var(--color-white-rgb), .08); border-color: var(--color-border); color: var(--color-text); }
 .model-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.model-menu h3 { margin: 0 0 8px; color: #a1a1aa; font-size: 11px; font-weight: 700; }
+.model-menu h3 { margin: 0 0 8px; color: var(--color-text-soft); font-size: 11px; font-weight: 700; }
 .model-list { display: grid; gap: 3px; }
 .model-option { display: flex; width: 100%; height: auto; justify-content: flex-start; gap: 10px; padding: 8px; border: 0; text-align: left; white-space: normal; }
-.model-option.selected, .model-option:hover { background: rgba(255,255,255,.08); }
+.model-option.selected, .model-option:hover { background: rgba(var(--color-white-rgb), .08); }
 .model-option-copy { display: grid; flex: 1; gap: 3px; min-width: 0; }
-.model-option-title { display: flex; align-items: center; gap: 6px; color: #f4f4f5; font-size: 12px; font-weight: 600; }
-.model-option-meta { color: #a1a1aa; font-size: 10px; }
-.effort-setting { margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,.1); }
-.effort-heading { display: flex; justify-content: space-between; margin-bottom: 8px; color: #a1a1aa; font-size: 11px; }
-.effort-heading strong { color: #f4f4f5; }
-.effort-setting p { margin: 7px 0 0; color: #a1a1aa; font-size: 11px; }
+.model-option-title { display: flex; align-items: center; gap: 6px; color: var(--color-text); font-size: 12px; font-weight: 600; }
+.model-option-meta { color: var(--color-text-soft); font-size: 10px; }
+.effort-setting { margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(var(--color-white-rgb), .1); }
+.effort-heading { display: flex; justify-content: space-between; margin-bottom: 8px; color: var(--color-text-soft); font-size: 11px; }
+.effort-heading strong { color: var(--color-text); }
+.effort-setting p { margin: 7px 0 0; color: var(--color-text-soft); font-size: 11px; }
 .file-input { display: none; }
-.voice-wave { display: flex; align-items: center; gap: 4px; height: 32px; padding: 0 10px; border: 1px solid rgba(248,113,113,.25); border-radius: 12px; background: rgba(239,68,68,.1); }
-.voice-wave span { width: 4px; border-radius: 4px; background: #ef4444; animation: wave .5s ease-in-out infinite alternate; }
+.voice-wave { display: flex; align-items: center; gap: 4px; height: 32px; padding: 0 10px; border: 1px solid rgba(var(--color-danger-rgb), .25); border-radius: 12px; background: rgba(var(--color-danger-rgb), .1); }
+.voice-wave span { width: 4px; border-radius: 4px; background: var(--color-danger); animation: wave .5s ease-in-out infinite alternate; }
 .voice-wave span:nth-child(even) { animation-duration: .7s; }
 @keyframes wave { to { transform: scaleY(.45); } }
 .welcome-enter-active, .welcome-leave-active, .robot-float-enter-active, .robot-float-leave-active, .voice-wave-enter-active, .voice-wave-leave-active { transition: opacity .2s, transform .2s; }
 .welcome-enter-from, .welcome-leave-to, .robot-float-enter-from, .robot-float-leave-to, .voice-wave-enter-from, .voice-wave-leave-to { opacity: 0; transform: translateY(6px); }
-:deep(.el-popper) { --el-bg-color-overlay: #18181b; --el-border-color-light: rgba(255,255,255,.12); color: #f4f4f5; }
-:deep(.el-radio-button__inner) { background: #27272a; border-color: #3f3f46; color: #d4d4d8; }
-:deep(.el-radio-button__original-radio:checked + .el-radio-button__inner) { background: #fff; border-color: #fff; color: #18181b; box-shadow: -1px 0 0 0 #fff; }
+:deep(.el-popper) { --el-bg-color-overlay: var(--color-bg); --el-border-color-light: rgba(var(--color-white-rgb), .12); color: var(--color-text); }
 @media (max-width: 640px) {
   .welcome-row { align-items: flex-start; gap: 12px; }
   .welcome-row h2 { font-size: 20px; }

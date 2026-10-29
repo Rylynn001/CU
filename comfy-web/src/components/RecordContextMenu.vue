@@ -191,7 +191,7 @@ defineExpose({ open })
               <div class="reference-grid">
                 <div v-for="(asset, idx) in detail.input_asset_urls" :key="idx" class="reference-item">
                   <video v-if="asset.type === 'video'" :src="asset.url" class="reference-media" controls />
-                  <img v-else :src="asset.url" class="reference-media" />
+                  <img v-else :src="asset.url" class="reference-media" loading="lazy" />
                   <span class="reference-badge">{{ asset.type === 'video' ? '视频' : '图片' }}{{ idx + 1 }}</span>
                 </div>
               </div>
@@ -278,7 +278,7 @@ defineExpose({ open })
               <div class="output-grid">
                 <div v-for="(output, idx) in detail.output_urls" :key="idx" class="output-item">
                   <video v-if="output.type === 'video'" :src="output.url" class="output-media" controls />
-                  <img v-else :src="output.url" class="output-media" />
+                  <img v-else :src="output.url" class="output-media" loading="lazy" />
                 </div>
               </div>
             </div>
@@ -308,9 +308,9 @@ defineExpose({ open })
   min-width: 140px;
   padding: 5px;
   border-radius: 10px;
-  background: rgba(30,30,36,0.95);
-  border: 1px solid rgba(255,255,255,0.1);
-  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  background: rgba(var(--color-surface-rgb), 0.95);
+  border: 1px solid rgba(var(--color-white-rgb), 0.1);
+  box-shadow: 0 8px 24px rgba(var(--color-black-rgb), 0.4);
   backdrop-filter: blur(12px);
   transform-origin: top left;
 }
@@ -321,11 +321,11 @@ defineExpose({ open })
   padding: 8px 10px;
   border-radius: 6px;
   font-size: 12px;
-  color: rgba(255,255,255,0.85);
+  color: rgba(var(--color-white-rgb), 0.85);
   cursor: pointer;
   transition: background 0.15s;
 }
-.context-menu-item:hover { background: rgba(255,255,255,0.1); }
+.context-menu-item:hover { background: rgba(var(--color-white-rgb), 0.1); }
 .context-menu-item .context-menu-icon {
   font-size: 13px;
   color: var(--color-muted);
@@ -345,7 +345,7 @@ defineExpose({ open })
   position: fixed;
   inset: 0;
   z-index: 3500;
-  background: rgba(0, 0, 0, 0.75);
+  background: rgba(var(--color-black-rgb), 0.75);
   backdrop-filter: blur(12px);
   display: flex;
   align-items: center;
@@ -356,10 +356,10 @@ defineExpose({ open })
   width: 90%;
   max-width: 800px;
   max-height: 85vh;
-  background: rgba(25, 25, 30, 0.98);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(var(--color-surface-rgb), 0.98);
+  border: 1px solid rgba(var(--color-white-rgb), 0.12);
   border-radius: 20px;
-  box-shadow: 0 25px 80px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 25px 80px rgba(var(--color-black-rgb), 0.6);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -369,22 +369,22 @@ defineExpose({ open })
   align-items: center;
   justify-content: space-between;
   padding: 20px 24px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(var(--color-white-rgb), 0.08);
   flex-shrink: 0;
 }
 .modal-title {
   font-size: 16px;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.9);
+  color: rgba(var(--color-white-rgb), 0.9);
   letter-spacing: 0.5px;
 }
 .modal-close-btn {
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(var(--color-white-rgb), 0.1);
   background: transparent;
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(var(--color-white-rgb), 0.5);
   font-size: 18px;
   cursor: pointer;
   display: flex;
@@ -393,9 +393,9 @@ defineExpose({ open })
   transition: all 0.2s;
 }
 .modal-close-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.2);
-  color: rgba(255, 255, 255, 0.9);
+  background: rgba(var(--color-white-rgb), 0.08);
+  border-color: rgba(var(--color-white-rgb), 0.2);
+  color: rgba(var(--color-white-rgb), 0.9);
   transform: rotate(90deg);
 }
 .modal-body {
@@ -407,9 +407,9 @@ defineExpose({ open })
   gap: 24px;
 }
 .modal-body::-webkit-scrollbar { width: 6px; }
-.modal-body::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.03); }
+.modal-body::-webkit-scrollbar-track { background: rgba(var(--color-white-rgb), 0.03); }
 .modal-body::-webkit-scrollbar-thumb {
-  background: rgba(255,255,255,0.16);
+  background: rgba(var(--color-white-rgb), 0.16);
   border-radius: 3px;
 }
 .detail-section {
@@ -434,8 +434,8 @@ defineExpose({ open })
   aspect-ratio: 16 / 9;
   border-radius: 10px;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(var(--color-white-rgb), 0.1);
+  background: rgba(var(--color-black-rgb), 0.3);
 }
 .reference-media {
   width: 100%;
@@ -449,17 +449,17 @@ defineExpose({ open })
   left: 6px;
   padding: 3px 8px;
   border-radius: 6px;
-  background: rgba(0, 0, 0, 0.75);
-  color: rgba(255, 255, 255, 0.85);
+  background: rgba(var(--color-black-rgb), 0.75);
+  color: rgba(var(--color-white-rgb), 0.85);
   font-size: 10px;
   backdrop-filter: blur(4px);
 }
 .prompt-box {
   padding: 14px 16px;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.8);
+  background: rgba(var(--color-white-rgb), 0.04);
+  border: 1px solid rgba(var(--color-white-rgb), 0.08);
+  color: rgba(var(--color-white-rgb), 0.8);
   font-size: 13px;
   line-height: 1.6;
   white-space: pre-wrap;
@@ -469,7 +469,7 @@ defineExpose({ open })
   display: inline-flex;
   padding: 8px 16px;
   border-radius: 8px;
-  background: rgba(255,255,255,0.04);
+  background: rgba(var(--color-white-rgb), 0.04);
   border: 1px solid var(--color-border);
   color: var(--color-muted);
   font-size: 13px;
@@ -481,16 +481,16 @@ defineExpose({ open })
   gap: 8px;
   padding: 8px 12px;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(var(--color-white-rgb), 0.03);
 }
 .param-label {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.45);
+  color: rgba(var(--color-white-rgb), 0.45);
   min-width: 60px;
 }
 .param-value {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.75);
+  color: rgba(var(--color-white-rgb), 0.75);
 }
 .output-grid {
   display: grid;
@@ -501,7 +501,7 @@ defineExpose({ open })
   border-radius: 12px;
   overflow: hidden;
   border: 1px solid var(--color-border);
-  background: rgba(255,255,255,0.04);
+  background: rgba(var(--color-white-rgb), 0.04);
   aspect-ratio: 16 / 9;
 }
 .output-media {
@@ -516,7 +516,7 @@ defineExpose({ open })
   justify-content: flex-end;
   gap: 12px;
   padding: 16px 24px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 1px solid rgba(var(--color-white-rgb), 0.08);
   flex-shrink: 0;
 }
 .modal-btn {
@@ -532,24 +532,24 @@ defineExpose({ open })
   border: 1px solid transparent;
 }
 .cancel-btn {
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.6);
+  background: rgba(var(--color-white-rgb), 0.04);
+  border-color: rgba(var(--color-white-rgb), 0.1);
+  color: rgba(var(--color-white-rgb), 0.6);
 }
 .cancel-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.2);
-  color: rgba(255, 255, 255, 0.9);
+  background: rgba(var(--color-white-rgb), 0.08);
+  border-color: rgba(var(--color-white-rgb), 0.2);
+  color: rgba(var(--color-white-rgb), 0.9);
 }
 .reuse-btn {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.24);
-  color: rgba(255, 255, 255, 0.95);
+  background: rgba(var(--color-white-rgb), 0.1);
+  border-color: rgba(var(--color-white-rgb), 0.24);
+  color: rgba(var(--color-white-rgb), 0.95);
 }
 .reuse-btn:hover {
-  border-color: rgba(255, 255, 255, 0.32);
+  border-color: rgba(var(--color-white-rgb), 0.32);
   transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  box-shadow: 0 8px 24px rgba(var(--color-black-rgb), 0.28);
 }
 .reuse-btn:active {
   transform: translateY(0);

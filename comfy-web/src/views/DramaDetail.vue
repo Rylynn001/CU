@@ -131,68 +131,68 @@ onMounted(load)
 .back-btn {
   display: flex; align-items: center; gap: 6px;
   background: none; border: none; cursor: pointer;
-  color: rgba(255,255,255,0.4); font-size: 13px;
+  color: rgba(var(--color-white-rgb), 0.4); font-size: 13px;
   padding: 0; transition: color 0.2s;
 }
-.back-btn:hover { color: rgba(255,255,255,0.8); }
+.back-btn:hover { color: rgba(var(--color-white-rgb), 0.8); }
 
-.page-title { font-size: 26px; font-weight: 700; color: #fff; margin: 0; }
+.page-title { font-size: 26px; font-weight: 700; color: var(--color-white); margin: 0; }
 .drama-meta { display: flex; align-items: center; gap: 10px; }
 .style-tag {
   font-size: 11px; font-weight: 500; padding: 2px 8px;
-  background: rgba(255,255,255,0.12); color: rgba(255,255,255,0.82); border-radius: 99px;
-  border: 1px solid rgba(255,255,255,0.2);
+  background: rgba(var(--color-white-rgb), 0.12); color: rgba(var(--color-white-rgb), 0.82); border-radius: 99px;
+  border: 1px solid rgba(var(--color-white-rgb), 0.2);
 }
-.meta-item { font-size: 12px; color: rgba(255,255,255,0.4); }
+.meta-item { font-size: 12px; color: rgba(var(--color-white-rgb), 0.4); }
 
 .empty-state {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 12px; padding: 80px 32px;
-  color: rgba(255,255,255,0.3);
+  color: rgba(var(--color-white-rgb), 0.3);
 }
-.empty-title { font-size: 15px; font-weight: 600; color: rgba(255,255,255,0.6); margin: 0; }
-.empty-desc { font-size: 13px; color: rgba(255,255,255,0.3); margin: 0; }
+.empty-title { font-size: 15px; font-weight: 600; color: rgba(var(--color-white-rgb), 0.6); margin: 0; }
+.empty-desc { font-size: 13px; color: rgba(var(--color-white-rgb), 0.3); margin: 0; }
 
 .episode-list { display: flex; flex-direction: column; gap: 10px; }
 
 .ep-card {
   display: flex; align-items: center; gap: 16px;
-  background: rgba(255,255,255,0.04);
-  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(var(--color-white-rgb), 0.04);
+  border: 1px solid rgba(var(--color-white-rgb), 0.08);
   border-radius: 12px; padding: 16px 20px;
   cursor: pointer; transition: all 0.2s ease;
 }
 .ep-card:hover {
-  border-color: rgba(255,255,255,0.82);
-  background: rgba(255,255,255,0.06);
+  border-color: rgba(var(--color-white-rgb), 0.82);
+  background: rgba(var(--color-white-rgb), 0.06);
   transform: translateX(4px);
 }
 
 .ep-number {
   width: 40px; height: 40px; border-radius: 10px; flex-shrink: 0;
-  background: rgba(255,255,255,0.12); color: rgba(255,255,255,0.82);
+  background: rgba(var(--color-white-rgb), 0.12); color: rgba(var(--color-white-rgb), 0.82);
   display: flex; align-items: center; justify-content: center;
   font-size: 15px; font-weight: 700;
 }
 
 .ep-info { flex: 1; display: flex; flex-direction: column; gap: 5px; }
-.ep-title { font-size: 15px; font-weight: 600; color: #fff; }
+.ep-title { font-size: 15px; font-weight: 600; color: var(--color-white); }
 .ep-meta { display: flex; align-items: center; gap: 8px; }
 
 .ep-status {
   font-size: 11px; font-weight: 500; padding: 2px 7px; border-radius: 99px;
 }
-.status-draft { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.4); }
-.status-processing { background: rgba(250,204,21,0.12); color: #fbbf24; }
-.status-done { background: rgba(255,255,255,0.12); color: rgba(255,255,255,0.82); }
+.status-draft { background: rgba(var(--color-white-rgb), 0.08); color: rgba(var(--color-white-rgb), 0.4); }
+.status-processing { background: rgba(var(--color-warning-rgb), 0.12); color: var(--color-warning); }
+.status-done { background: rgba(var(--color-white-rgb), 0.12); color: rgba(var(--color-white-rgb), 0.82); }
 
 .ep-badge {
   font-size: 11px; padding: 2px 7px; border-radius: 99px;
-  background: rgba(255,255,255,0.12); color: rgba(255,255,255,0.82);
+  background: rgba(var(--color-white-rgb), 0.12); color: rgba(var(--color-white-rgb), 0.82);
 }
 
-.ep-arrow { color: rgba(255,255,255,0.2); transition: color 0.2s; }
-.ep-card:hover .ep-arrow { color: rgba(255,255,255,0.82); }
+.ep-arrow { color: rgba(var(--color-white-rgb), 0.2); transition: color 0.2s; }
+.ep-card:hover .ep-arrow { color: rgba(var(--color-white-rgb), 0.82); }
 
 .loading-center {
   display: flex; align-items: center; justify-content: center; height: 100%;
@@ -202,33 +202,33 @@ onMounted(load)
 
 .btn-primary {
   display: flex; align-items: center; gap: 6px;
-  background: rgba(255,255,255,0.14); color: #fff; border: none;
+  background: rgba(var(--color-white-rgb), 0.14); color: var(--color-white); border: none;
   border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 500;
   cursor: pointer; transition: background 0.2s;
 }
-.btn-primary:hover { background: rgba(255,255,255,0.14); }
+.btn-primary:hover { background: rgba(var(--color-white-rgb), 0.14); }
 
 /* 统一为参数面板的玻璃风格 */
 .style-tag,
 .ep-badge,
 .ep-status {
-  background: rgba(255,255,255,0.08);
+  background: rgba(var(--color-white-rgb), 0.08);
   border: 1px solid var(--color-border);
   color: var(--color-muted);
 }
 .ep-card {
-  background: linear-gradient(180deg, rgba(25, 29, 39, 0.5), rgba(6, 8, 13, 0.34));
+  background: linear-gradient(180deg, rgba(var(--color-surface-rgb), 0.5), rgba(var(--color-surface-rgb), 0.34));
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-soft);
   backdrop-filter: var(--glass-blur);
 }
 .ep-card:hover {
-  border-color: rgba(255,255,255,0.24);
-  background: linear-gradient(180deg, rgba(32, 37, 49, 0.54), rgba(8, 10, 16, 0.4));
+  border-color: rgba(var(--color-white-rgb), 0.24);
+  background: linear-gradient(180deg, rgba(var(--color-surface-rgb), 0.54), rgba(var(--color-surface-rgb), 0.4));
 }
 .ep-number {
-  background: rgba(255,255,255,0.08);
+  background: rgba(var(--color-white-rgb), 0.08);
   border: 1px solid var(--color-border);
   color: var(--color-muted);
 }
@@ -236,13 +236,13 @@ onMounted(load)
   color: var(--color-muted);
 }
 .btn-primary {
-  background: rgba(255,255,255,0.12);
-  border: 1px solid rgba(255,255,255,0.24);
+  background: rgba(var(--color-white-rgb), 0.12);
+  border: 1px solid rgba(var(--color-white-rgb), 0.24);
   color: var(--color-text);
-  box-shadow: 0 12px 32px rgba(0,0,0,0.24);
+  box-shadow: 0 12px 32px rgba(var(--color-black-rgb), 0.24);
 }
 .btn-primary:hover {
-  background: rgba(255,255,255,0.18);
-  border-color: rgba(255,255,255,0.34);
+  background: rgba(var(--color-white-rgb), 0.18);
+  border-color: rgba(var(--color-white-rgb), 0.34);
 }
 </style>

@@ -1357,7 +1357,7 @@ function stopResize() {
                 muted
                 playsinline
               />
-              <img v-else :src="traceTarget.url" alt="被溯源图片" />
+              <img v-else :src="traceTarget.url" alt="被溯源图片" loading="lazy" />
             </div>
             <div v-else class="trace-target-empty">暂无预览</div>
           </div>
@@ -1417,7 +1417,7 @@ function stopResize() {
   content: '';
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(var(--color-black-rgb), 0.5);
   pointer-events: none;
   z-index: 200;
 }
@@ -1435,7 +1435,7 @@ function stopResize() {
   bottom: -100px;
   width: 440px;
   height: 440px;
-  background: radial-gradient(circle, rgba(255, 255, 255, 0.07) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(var(--color-white-rgb), 0.07) 0%, transparent 70%);
 }
 
 /* ── 工具栏 ── */
@@ -1450,7 +1450,7 @@ function stopResize() {
 }
 .tb-doc {
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.45);
+  color: rgba(var(--color-white-rgb), 0.45);
   letter-spacing: 0.5px;
 }
 .tb-right {
@@ -1461,9 +1461,9 @@ function stopResize() {
 }
 .tb-status {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.35);
+  color: rgba(var(--color-white-rgb), 0.35);
 }
-.tb-status.dirty { color: #f0b429; }
+.tb-status.dirty { color: var(--color-warning); }
 .tb-btn {
   display: flex;
   align-items: center;
@@ -1471,20 +1471,20 @@ function stopResize() {
   padding: 7px 14px;
   border-radius: 9px;
   border: 1px solid var(--color-border);
-  background: rgba(255, 255, 255, 0.04);
-  color: rgba(255, 255, 255, 0.75);
+  background: rgba(var(--color-white-rgb), 0.04);
+  color: rgba(var(--color-white-rgb), 0.75);
   font-size: 13px;
   cursor: pointer;
   transition: all 0.2s;
 }
 .tb-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
+  background: rgba(var(--color-white-rgb), 0.1);
+  color: var(--color-white);
 }
 .tb-btn.primary {
-  background: rgba(255, 255, 255, 0.14);
-  border-color: rgba(255, 255, 255, 0.28);
-  color: #fff;
+  background: rgba(var(--color-white-rgb), 0.14);
+  border-color: rgba(var(--color-white-rgb), 0.28);
+  color: var(--color-white);
 }
 .tb-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
@@ -1555,13 +1555,13 @@ function stopResize() {
   padding: 14px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
-  background: rgba(7, 9, 15, 0.42);
+  background: rgba(var(--color-surface-rgb), 0.42);
   box-shadow: var(--shadow-soft);
 }
 
 .trace-target-label {
   flex: 0 0 auto;
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(var(--color-white-rgb), 0.5);
   font-size: 12px;
   letter-spacing: 0.5px;
 }
@@ -1574,7 +1574,7 @@ function stopResize() {
   justify-content: center;
   overflow: hidden;
   border-radius: 8px;
-  background: rgba(0, 0, 0, 0.32);
+  background: rgba(var(--color-black-rgb), 0.32);
 }
 
 .trace-target-media img,
@@ -1590,7 +1590,7 @@ function stopResize() {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: rgba(255, 255, 255, 0.24);
+  color: rgba(var(--color-white-rgb), 0.24);
   font-size: 12px;
 }
 
@@ -1610,7 +1610,7 @@ function stopResize() {
   overflow: hidden;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
-  background: rgba(7, 9, 15, 0.24);
+  background: rgba(var(--color-surface-rgb), 0.24);
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
   box-shadow: var(--shadow-soft);
@@ -1624,11 +1624,11 @@ function stopResize() {
 }
 
 .preview-panel.drag-over {
-  border-color: rgba(255,255,255, 0.5);
-  background: rgba(255,255,255, 0.08);
+  border-color: rgba(var(--color-white-rgb), 0.5);
+  background: rgba(var(--color-white-rgb), 0.08);
 }
 .preview-panel.is-trace {
-  border-color: rgba(255,255,255, 0.4);
+  border-color: rgba(var(--color-white-rgb), 0.4);
 }
 
 .panel-tag {
@@ -1640,15 +1640,15 @@ function stopResize() {
   align-items: center;
   gap: 8px;
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.35);
+  color: rgba(var(--color-white-rgb), 0.35);
   letter-spacing: 1px;
   pointer-events: none;
 }
 .trace-tag {
   padding: 2px 8px;
   border-radius: 6px;
-  background: rgba(255,255,255, 0.16);
-  color: rgba(255,255,255,0.82);
+  background: rgba(var(--color-white-rgb), 0.16);
+  color: rgba(var(--color-white-rgb), 0.82);
   letter-spacing: 0;
 }
 
@@ -1697,17 +1697,17 @@ function stopResize() {
   padding: 5px 12px;
   border-radius: 8px;
   border: 1px solid var(--color-border);
-  background: rgba(0, 0, 0, 0.4);
-  color: rgba(255, 255, 255, 0.75);
+  background: rgba(var(--color-black-rgb), 0.4);
+  color: rgba(var(--color-white-rgb), 0.75);
   font-size: 12px;
   cursor: pointer;
   backdrop-filter: blur(6px);
   transition: all 0.2s;
 }
 .gen-btn:hover {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(255, 255, 255, 0.28);
-  color: #fff;
+  background: rgba(var(--color-white-rgb), 0.12);
+  border-color: rgba(var(--color-white-rgb), 0.28);
+  color: var(--color-white);
 }
 
 .panel-empty {
@@ -1716,7 +1716,7 @@ function stopResize() {
   align-items: center;
   justify-content: center;
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.25);
+  color: rgba(var(--color-white-rgb), 0.25);
   letter-spacing: 1px;
 }
 
@@ -1725,9 +1725,9 @@ function stopResize() {
   height: 10px;
   flex: 0 0 10px;
   border: 0;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(255, 255, 255, 0.02);
+  border-top: 1px solid rgba(var(--color-white-rgb), 0.06);
+  border-bottom: 1px solid rgba(var(--color-white-rgb), 0.06);
+  background: rgba(var(--color-white-rgb), 0.02);
   cursor: row-resize;
 }
 
@@ -1739,25 +1739,25 @@ function stopResize() {
   width: 44px;
   height: 2px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.22);
+  background: rgba(var(--color-white-rgb), 0.22);
   transform: translate(-50%, -50%);
 }
 
 .resize-handle:hover,
 .resize-handle:focus-visible {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(var(--color-white-rgb), 0.1);
 }
 
 /* ── 生成参考模式高亮 ── */
 .preview-panel.is-gen-ref {
-  border-color: rgba(255, 255, 255, 0.28);
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
+  border-color: rgba(var(--color-white-rgb), 0.28);
+  box-shadow: 0 0 0 1px rgba(var(--color-white-rgb), 0.08);
 }
 .gen-ref-tag {
   padding: 2px 8px;
   border-radius: 6px;
-  background: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.65);
+  background: rgba(var(--color-white-rgb), 0.1);
+  color: rgba(var(--color-white-rgb), 0.65);
   letter-spacing: 0;
 }
 
@@ -1766,7 +1766,7 @@ function stopResize() {
   content: '';
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.52);
+  background: rgba(var(--color-black-rgb), 0.52);
   z-index: 6;
   pointer-events: none;
   border-radius: inherit;
@@ -1802,7 +1802,7 @@ function stopResize() {
 }
 
 .gen-panel-dock.is-drag-over {
-  outline: 2px solid rgba(255,255,255, 0.72);
+  outline: 2px solid rgba(var(--color-white-rgb), 0.72);
   outline-offset: -2px;
 }
 
@@ -1825,19 +1825,19 @@ function stopResize() {
 /* 实线轨道 */
 .trace-line-base {
   fill: none;
-  stroke: rgba(255, 255, 255, 0.25);
+  stroke: rgba(var(--color-white-rgb), 0.25);
   stroke-width: 1;
   stroke-linecap: round;
-  filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.15));
+  filter: drop-shadow(0 0 2px rgba(var(--color-white-rgb), 0.15));
 }
 /* 移动光点：dasharray 3/500，gap 够大确保线上只有一个点，period=503 */
 .trace-line-dot {
   fill: none;
-  stroke: #ffffff;
+  stroke: var(--color-white);
   stroke-width: 4;
   stroke-linecap: round;
   stroke-dasharray: 3 500;
-  filter: drop-shadow(0 0 8px rgba(255, 255, 255, 1)) drop-shadow(0 0 16px rgba(255, 255, 255, 0.5));
+  filter: drop-shadow(0 0 8px rgba(var(--color-white-rgb), 1)) drop-shadow(0 0 16px rgba(var(--color-white-rgb), 0.5));
   animation: trace-dot 2s linear infinite;
 }
 @keyframes trace-dot {

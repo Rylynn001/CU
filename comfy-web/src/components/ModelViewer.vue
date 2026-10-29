@@ -63,7 +63,7 @@ onBeforeUnmount(() => {
   position: fixed;
   inset: 0;
   z-index: 9999;
-  background: #000;
+  background: var(--color-black);
 }
 
 .mv-frame {

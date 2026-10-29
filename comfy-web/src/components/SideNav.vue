@@ -151,7 +151,7 @@ async function handleLogout() {
 .side-nav:has(:focus-visible) {
   width: 190px;
   align-items: flex-start;
-  background: rgba(5, 7, 12, 0.74);
+  background: rgba(var(--color-surface-rgb), 0.74);
 }
 
 .nav-logo {
@@ -266,13 +266,13 @@ async function handleLogout() {
 .nav-item:hover,
 .nav-item:focus-visible {
   color: var(--color-text);
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(var(--color-white-rgb), 0.06);
   transform: translateX(2px);
 }
 
 .nav-item.active {
   color: var(--color-text);
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(var(--color-white-rgb), 0.1);
 }
 
 .logout-item {
@@ -282,7 +282,7 @@ async function handleLogout() {
 .logout-item:hover,
 .logout-item:focus-visible {
   color: var(--color-danger);
-  background: rgba(248, 113, 113, 0.08);
+  background: rgba(var(--color-danger-rgb), 0.08);
 }
 
 :global(.logout-confirm.el-message-box) {
@@ -290,11 +290,11 @@ async function handleLogout() {
   max-width: 380px;
   padding: 0;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.13);
+  border: 1px solid rgba(var(--color-white-rgb), 0.13);
   border-radius: 16px;
-  background: rgba(9, 12, 18, 0.92);
+  background: rgba(var(--color-surface-rgb), 0.92);
   backdrop-filter: blur(24px) saturate(130%);
-  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.58);
+  box-shadow: 0 28px 90px rgba(var(--color-black-rgb), 0.58);
 }
 
 :global(.logout-confirm.el-message-box::before) {
@@ -302,7 +302,7 @@ async function handleLogout() {
   position: absolute;
   inset: 0 0 auto;
   height: 2px;
-  background: #fb7185;
+  background: var(--color-danger);
 }
 
 :global(.logout-confirm .el-message-box__header) {
@@ -310,14 +310,14 @@ async function handleLogout() {
 }
 
 :global(.logout-confirm .el-message-box__title) {
-  color: rgba(255, 255, 255, 0.94);
+  color: rgba(var(--color-white-rgb), 0.94);
   font-size: 16px;
   font-weight: 600;
 }
 
 :global(.logout-confirm .el-message-box__content) {
   padding: 14px 22px 22px;
-  color: rgba(226, 232, 240, 0.56);
+  color: rgba(var(--color-text-soft-rgb), 0.56);
   font-size: 13px;
 }
 
@@ -333,8 +333,8 @@ async function handleLogout() {
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  background: rgba(251, 113, 133, 0.1);
-  color: #fb7185;
+  background: rgba(var(--color-danger-rgb), 0.1);
+  color: var(--color-danger);
   font-size: 19px;
 }
 
@@ -346,7 +346,7 @@ async function handleLogout() {
 :global(.logout-confirm .el-message-box__btns) {
   gap: 8px;
   padding: 14px 22px 18px;
-  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  border-top: 1px solid rgba(var(--color-white-rgb), 0.07);
 }
 
 :global(.logout-confirm .el-button) {
@@ -359,29 +359,29 @@ async function handleLogout() {
 }
 
 :global(.logout-confirm .logout-cancel-button) {
-  border-color: rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.04);
-  color: rgba(255, 255, 255, 0.72);
+  border-color: rgba(var(--color-white-rgb), 0.12);
+  background: rgba(var(--color-white-rgb), 0.04);
+  color: rgba(var(--color-white-rgb), 0.72);
 }
 
 :global(.logout-confirm .logout-cancel-button:hover),
 :global(.logout-confirm .logout-cancel-button:focus-visible) {
-  border-color: rgba(255, 255, 255, 0.24);
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.94);
+  border-color: rgba(var(--color-white-rgb), 0.24);
+  background: rgba(var(--color-white-rgb), 0.08);
+  color: rgba(var(--color-white-rgb), 0.94);
 }
 
 :global(.logout-confirm .logout-confirm-button) {
-  border-color: #e11d48;
-  background: #e11d48;
-  color: #fff;
+  border-color: var(--color-danger);
+  background: var(--color-danger);
+  color: var(--color-white);
 }
 
 :global(.logout-confirm .logout-confirm-button:hover),
 :global(.logout-confirm .logout-confirm-button:focus-visible) {
-  border-color: #f43f5e;
-  background: #f43f5e;
-  color: #fff;
+  border-color: var(--color-danger);
+  background: var(--color-danger);
+  color: var(--color-white);
 }
 
 .active-bar {
@@ -430,15 +430,15 @@ async function handleLogout() {
 /* Gecko 样式 */
 .gecko-item {
   margin-top: 8px;
-  border: 1px solid rgba(96,165,250,0.3);
-  background: rgba(96,165,250,0.08);
-  color: #60a5fa;
+  border: 1px solid rgba(var(--color-info-rgb), 0.3);
+  background: rgba(var(--color-info-rgb), 0.08);
+  color: var(--color-info);
 }
 
 .gecko-item:hover:not(:disabled),
 .gecko-item:focus-visible:not(:disabled) {
-  background: rgba(96,165,250,0.15);
-  border-color: rgba(96,165,250,0.5);
+  background: rgba(var(--color-info-rgb), 0.15);
+  border-color: rgba(var(--color-info-rgb), 0.5);
 }
 
 @media (prefers-reduced-motion: reduce) {

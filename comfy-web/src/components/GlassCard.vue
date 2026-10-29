@@ -16,7 +16,7 @@ defineProps<{ title?: string }>()
 .glass-card {
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
-  background: linear-gradient(180deg, rgba(32, 36, 48, 0.42), rgba(7, 9, 15, 0.28));
+  background: linear-gradient(180deg, rgba(var(--color-surface-rgb), 0.42), rgba(var(--color-surface-rgb), 0.28));
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   padding: 28px 32px;
@@ -25,8 +25,8 @@ defineProps<{ title?: string }>()
 }
 
 .glass-card:hover {
-  background: linear-gradient(180deg, rgba(46, 50, 64, 0.5), rgba(9, 11, 18, 0.34));
-  border-color: rgba(255, 255, 255, 0.24);
+  background: linear-gradient(180deg, rgba(var(--color-surface-rgb), 0.5), rgba(var(--color-surface-rgb), 0.34));
+  border-color: rgba(var(--color-white-rgb), 0.24);
   transform: translateY(-2px);
 }
 

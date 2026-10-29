@@ -385,7 +385,7 @@ onBeforeUnmount(() => {
 }
 
 .circular-gallery:focus-visible {
-  outline: 2px solid #fff;
+  outline: 2px solid var(--color-white);
   outline-offset: 4px;
 }
 </style>

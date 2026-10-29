@@ -79,8 +79,7 @@ function isVideo(asset: Asset): boolean {
         v-else
         :src="getMediaUrl(asset.location)"
         class="gallery-media"
-        @click="emit('preview', asset)"
-      />
+        @click="emit('preview', asset)" loading="lazy" />
       <div class="gallery-info">
         <span class="gallery-name">{{ asset.location.split(/[/\\]/).pop() }}</span>
         <span v-if="isVideo(asset)" class="gallery-type">视频</span>
@@ -120,7 +119,7 @@ function isVideo(asset: Asset): boolean {
 }
 .loading-text {
   font-size: 13px;
-  color: rgba(255,255,255,0.35);
+  color: rgba(var(--color-white-rgb), 0.35);
   letter-spacing: 2px;
 }
 .breath-ring {
@@ -131,16 +130,16 @@ function isVideo(asset: Asset): boolean {
 .ring {
   position: absolute;
   border-radius: 50%;
-  border: 1.5px solid rgba(255,255,255,0.42);
+  border: 1.5px solid rgba(var(--color-white-rgb), 0.42);
   animation: breathe 3s ease-in-out infinite;
 }
 .r1 { width: 100%; height: 100%; animation-delay: 0s; }
-.r2 { width: 72%; height: 72%; animation-delay: 0.5s; border-color: rgba(255,255,255,0.2); }
-.r3 { width: 44%; height: 44%; animation-delay: 1s; border-color: rgba(255,255,255,0.28); }
+.r2 { width: 72%; height: 72%; animation-delay: 0.5s; border-color: rgba(var(--color-white-rgb), 0.2); }
+.r3 { width: 44%; height: 44%; animation-delay: 1s; border-color: rgba(var(--color-white-rgb), 0.28); }
 .center-dot {
   width: 10px; height: 10px;
   border-radius: 50%;
-  background: rgba(255,255,255,0.72);
+  background: rgba(var(--color-white-rgb), 0.72);
   animation: pulse-dot 2s ease-in-out infinite;
 }
 .empty {
@@ -153,13 +152,13 @@ function isVideo(asset: Asset): boolean {
 .empty-orb {
   width: 60px; height: 60px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(255,255,255,0.12) 0%, transparent 70%);
-  border: 1px solid rgba(255,255,255,0.13);
+  background: radial-gradient(circle, rgba(var(--color-white-rgb), 0.12) 0%, transparent 70%);
+  border: 1px solid rgba(var(--color-white-rgb), 0.13);
   animation: breathe 4s ease-in-out infinite;
 }
 .empty-text {
   font-size: 12px;
-  color: rgba(255,255,255,0.2);
+  color: rgba(var(--color-white-rgb), 0.2);
   letter-spacing: 2px;
 }
 .gallery {
@@ -171,13 +170,13 @@ function isVideo(asset: Asset): boolean {
   position: relative;
   border-radius: 12px;
   overflow: hidden;
-  background: rgba(255,255,255,0.03);
-  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(var(--color-white-rgb), 0.03);
+  border: 1px solid rgba(var(--color-white-rgb), 0.08);
   transition: transform 0.2s, border-color 0.2s;
 }
 .gallery-item:hover {
   transform: translateY(-4px);
-  border-color: rgba(255,255,255,0.24);
+  border-color: rgba(var(--color-white-rgb), 0.24);
 }
 .gallery-media {
   width: 100%;
@@ -189,7 +188,7 @@ function isVideo(asset: Asset): boolean {
 .video-thumb {
   position: relative;
   height: 260px;
-  background: #000;
+  background: var(--color-black);
   cursor: pointer;
 }
 .video-thumb video {
@@ -202,12 +201,12 @@ function isVideo(asset: Asset): boolean {
   align-items: center;
   justify-content: center;
   font-size: 32px;
-  color: rgba(255,255,255,0.8);
-  background: rgba(0,0,0,0.25);
+  color: rgba(var(--color-white-rgb), 0.8);
+  background: rgba(var(--color-black-rgb), 0.25);
   transition: background 0.2s;
 }
 .video-thumb:hover .video-play-icon {
-  background: rgba(0,0,0,0.4);
+  background: rgba(var(--color-black-rgb), 0.4);
 }
 .gallery-info {
   padding: 10px 12px;
@@ -217,7 +216,7 @@ function isVideo(asset: Asset): boolean {
 }
 .gallery-name {
   font-size: 12px;
-  color: rgba(255,255,255,0.4);
+  color: rgba(var(--color-white-rgb), 0.4);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -226,7 +225,7 @@ function isVideo(asset: Asset): boolean {
 .gallery-type {
   font-size: 11px;
   color: var(--color-muted);
-  background: rgba(255,255,255,0.08);
+  background: rgba(var(--color-white-rgb), 0.08);
   padding: 2px 7px;
   border-radius: 10px;
 }
@@ -236,9 +235,9 @@ function isVideo(asset: Asset): boolean {
   right: 10px;
   width: 30px; height: 30px;
   border-radius: 50%;
-  background: rgba(0,0,0,0.5);
+  background: rgba(var(--color-black-rgb), 0.5);
   border: none;
-  color: #fff;
+  color: var(--color-white);
   font-size: 13px;
   cursor: pointer;
   display: flex; align-items: center; justify-content: center;
@@ -247,7 +246,7 @@ function isVideo(asset: Asset): boolean {
   backdrop-filter: blur(4px);
 }
 .gallery-item:hover .download-btn { opacity: 1; }
-.download-btn:hover { background: rgba(255,255,255,0.18); transform: scale(1.1); }
+.download-btn:hover { background: rgba(var(--color-white-rgb), 0.18); transform: scale(1.1); }
 
 .action-buttons {
   position: absolute;
@@ -267,9 +266,9 @@ function isVideo(asset: Asset): boolean {
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background: rgba(0,0,0,0.6);
-  border: 1px solid rgba(255,255,255,0.2);
-  color: rgba(255,255,255,0.85);
+  background: rgba(var(--color-black-rgb), 0.6);
+  border: 1px solid rgba(var(--color-white-rgb), 0.2);
+  color: rgba(var(--color-white-rgb), 0.85);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -279,8 +278,8 @@ function isVideo(asset: Asset): boolean {
 }
 
 .action-btn:hover {
-  background: rgba(255,255,255,0.18);
-  border-color: rgba(255,255,255,0.28);
+  background: rgba(var(--color-white-rgb), 0.18);
+  border-color: rgba(var(--color-white-rgb), 0.28);
   transform: scale(1.1);
 }
 

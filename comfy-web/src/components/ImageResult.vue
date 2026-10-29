@@ -76,17 +76,17 @@ const progressPct = computed(() => Math.round(props.progress))
 .ring {
   position: absolute;
   border-radius: 50%;
-  border: 1.5px solid rgba(255,255,255, 0.5);
+  border: 1.5px solid rgba(var(--color-white-rgb), 0.5);
   animation: breathe 3s ease-in-out infinite;
 }
 .r1 { width: 100%; height: 100%; animation-delay: 0s; }
-.r2 { width: 72%; height: 72%; animation-delay: 0.5s; border-color: rgba(255,255,255,0.5); }
-.r3 { width: 44%; height: 44%; animation-delay: 1s; border-color: rgba(255,255,255,0.6); }
+.r2 { width: 72%; height: 72%; animation-delay: 0.5s; border-color: rgba(var(--color-white-rgb), 0.5); }
+.r3 { width: 44%; height: 44%; animation-delay: 1s; border-color: rgba(var(--color-white-rgb), 0.6); }
 
 .center-dot {
   width: 10px; height: 10px;
   border-radius: 50%;
-  background: rgba(255,255,255,0.14);
+  background: rgba(var(--color-white-rgb), 0.14);
   animation: pulse-dot 2s ease-in-out infinite;
 }
 
@@ -94,21 +94,21 @@ const progressPct = computed(() => Math.round(props.progress))
 .progress-track {
   width: 200px;
   height: 3px;
-  background: rgba(255,255,255,0.08);
+  background: rgba(var(--color-white-rgb), 0.08);
   border-radius: 2px;
   overflow: hidden;
 }
 
 .progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, rgba(255,255,255,0.14), rgba(255,255,255,0.82));
+  background: linear-gradient(90deg, rgba(var(--color-white-rgb), 0.14), rgba(var(--color-white-rgb), 0.82));
   border-radius: 2px;
   transition: width 0.4s ease;
 }
 
 .progress-label {
   font-size: 12px;
-  color: rgba(255,255,255,0.4);
+  color: rgba(var(--color-white-rgb), 0.4);
   letter-spacing: 1px;
 }
 
@@ -123,7 +123,7 @@ const progressPct = computed(() => Math.round(props.progress))
   max-width: 100%;
   max-height: 560px;
   border-radius: 14px;
-  box-shadow: 0 8px 40px rgba(0,0,0,0.5);
+  box-shadow: 0 8px 40px rgba(var(--color-black-rgb), 0.5);
 }
 
 /* empty */
@@ -137,14 +137,14 @@ const progressPct = computed(() => Math.round(props.progress))
 .empty-orb {
   width: 60px; height: 60px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(255,255,255,0.15) 0%, transparent 70%);
-  border: 1px solid rgba(255,255,255,0.15);
+  background: radial-gradient(circle, rgba(var(--color-white-rgb), 0.15) 0%, transparent 70%);
+  border: 1px solid rgba(var(--color-white-rgb), 0.15);
   animation: breathe 4s ease-in-out infinite;
 }
 
 .empty-text {
   font-size: 12px;
-  color: rgba(255,255,255,0.2);
+  color: rgba(var(--color-white-rgb), 0.2);
   letter-spacing: 2px;
 }
 </style>

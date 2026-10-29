@@ -219,7 +219,7 @@ watch(() => props.visible, (newVal) => {
   position: fixed;
   inset: 0;
   z-index: 4000;
-  background: rgba(0, 0, 0, 0.75);
+  background: rgba(var(--color-black-rgb), 0.75);
   backdrop-filter: blur(8px);
   display: flex;
   align-items: center;
@@ -231,10 +231,10 @@ watch(() => props.visible, (newVal) => {
   width: 90%;
   max-width: 480px;
   max-height: 70vh;
-  background: rgba(25, 25, 30, 0.98);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(var(--color-surface-rgb), 0.98);
+  border: 1px solid rgba(var(--color-white-rgb), 0.12);
   border-radius: 16px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 20px 60px rgba(var(--color-black-rgb), 0.5);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -245,23 +245,23 @@ watch(() => props.visible, (newVal) => {
   align-items: center;
   justify-content: space-between;
   padding: 18px 20px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(var(--color-white-rgb), 0.08);
   flex-shrink: 0;
 }
 
 .dialog-title {
   font-size: 15px;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.9);
+  color: rgba(var(--color-white-rgb), 0.9);
 }
 
 .dialog-close {
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(var(--color-white-rgb), 0.1);
   background: transparent;
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(var(--color-white-rgb), 0.5);
   font-size: 16px;
   cursor: pointer;
   display: flex;
@@ -271,8 +271,8 @@ watch(() => props.visible, (newVal) => {
 }
 
 .dialog-close:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.9);
+  background: rgba(var(--color-white-rgb), 0.08);
+  color: rgba(var(--color-white-rgb), 0.9);
   transform: rotate(90deg);
 }
 
@@ -284,9 +284,9 @@ watch(() => props.visible, (newVal) => {
 }
 
 .dialog-body::-webkit-scrollbar { width: 4px; }
-.dialog-body::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.03); }
+.dialog-body::-webkit-scrollbar-track { background: rgba(var(--color-white-rgb), 0.03); }
 .dialog-body::-webkit-scrollbar-thumb {
-  background: rgba(255,255,255, 0.3);
+  background: rgba(var(--color-white-rgb), 0.3);
   border-radius: 2px;
 }
 
@@ -301,8 +301,8 @@ watch(() => props.visible, (newVal) => {
   width: 24px;
   height: 24px;
   border-radius: 50%;
-  border: 2px solid rgba(255,255,255, 0.3);
-  border-top-color: rgba(255,255,255, 0.9);
+  border: 2px solid rgba(var(--color-white-rgb), 0.3);
+  border-top-color: rgba(var(--color-white-rgb), 0.9);
   animation: spin 0.8s linear infinite;
 }
 
@@ -310,7 +310,7 @@ watch(() => props.visible, (newVal) => {
   text-align: center;
   padding: 40px 20px;
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.3);
+  color: rgba(var(--color-white-rgb), 0.3);
 }
 
 .projects-list {
@@ -321,15 +321,15 @@ watch(() => props.visible, (newVal) => {
 
 .project-section {
   border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(var(--color-white-rgb), 0.08);
+  background: rgba(var(--color-white-rgb), 0.02);
   overflow: hidden;
   transition: all 0.2s;
 }
 
 .project-section.expanded {
-  border-color: rgba(255,255,255, 0.3);
-  background: rgba(255,255,255, 0.05);
+  border-color: rgba(var(--color-white-rgb), 0.3);
+  background: rgba(var(--color-white-rgb), 0.05);
 }
 
 .project-header {
@@ -342,17 +342,17 @@ watch(() => props.visible, (newVal) => {
 }
 
 .project-header:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(var(--color-white-rgb), 0.04);
 }
 
 .project-name {
   flex: 1;
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.8);
+  color: rgba(var(--color-white-rgb), 0.8);
 }
 
 .arrow-icon {
-  color: rgba(255, 255, 255, 0.4);
+  color: rgba(var(--color-white-rgb), 0.4);
   transition: transform 0.2s;
 }
 
@@ -371,7 +371,7 @@ watch(() => props.visible, (newVal) => {
   padding: 12px 14px;
   text-align: center;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.25);
+  color: rgba(var(--color-white-rgb), 0.25);
 }
 
 .category-item {
@@ -380,42 +380,42 @@ watch(() => props.visible, (newVal) => {
   justify-content: space-between;
   padding: 10px 14px;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(var(--color-white-rgb), 0.03);
   border: 1px solid transparent;
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .category-item:hover {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255,255,255, 0.2);
+  background: rgba(var(--color-white-rgb), 0.06);
+  border-color: rgba(var(--color-white-rgb), 0.2);
 }
 
 .category-item.selected {
-  background: rgba(255,255,255, 0.2);
-  border-color: rgba(255,255,255, 0.6);
+  background: rgba(var(--color-white-rgb), 0.2);
+  border-color: rgba(var(--color-white-rgb), 0.6);
 }
 
 .category-name {
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.7);
+  color: rgba(var(--color-white-rgb), 0.7);
 }
 
 .category-item.selected .category-name {
-  color: rgba(255, 255, 255, 0.95);
+  color: rgba(var(--color-white-rgb), 0.95);
 }
 
 .category-count {
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.3);
-  background: rgba(255, 255, 255, 0.08);
+  color: rgba(var(--color-white-rgb), 0.3);
+  background: rgba(var(--color-white-rgb), 0.08);
   padding: 2px 8px;
   border-radius: 10px;
 }
 
 .category-item.selected .category-count {
-  background: rgba(255,255,255, 0.25);
-  color: rgba(255,255,255, 0.9);
+  background: rgba(var(--color-white-rgb), 0.25);
+  color: rgba(var(--color-white-rgb), 0.9);
 }
 
 .dialog-footer {
@@ -424,7 +424,7 @@ watch(() => props.visible, (newVal) => {
   justify-content: flex-end;
   gap: 10px;
   padding: 14px 20px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 1px solid rgba(var(--color-white-rgb), 0.08);
   flex-shrink: 0;
 }
 
@@ -438,24 +438,24 @@ watch(() => props.visible, (newVal) => {
 }
 
 .dialog-btn.cancel {
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.5);
+  background: rgba(var(--color-white-rgb), 0.04);
+  border-color: rgba(var(--color-white-rgb), 0.1);
+  color: rgba(var(--color-white-rgb), 0.5);
 }
 
 .dialog-btn.cancel:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.8);
+  background: rgba(var(--color-white-rgb), 0.08);
+  color: rgba(var(--color-white-rgb), 0.8);
 }
 
 .dialog-btn.confirm {
-  background: rgba(255,255,255, 0.3);
-  border-color: rgba(255,255,255, 0.6);
-  color: rgba(255, 255, 255, 0.95);
+  background: rgba(var(--color-white-rgb), 0.3);
+  border-color: rgba(var(--color-white-rgb), 0.6);
+  color: rgba(var(--color-white-rgb), 0.95);
 }
 
 .dialog-btn.confirm:hover:not(:disabled) {
-  background: rgba(255,255,255, 0.45);
+  background: rgba(var(--color-white-rgb), 0.45);
 }
 
 .dialog-btn.confirm:disabled {

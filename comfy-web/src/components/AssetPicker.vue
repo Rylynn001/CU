@@ -264,7 +264,7 @@ watch(() => props.visible, (val) => {
       :append-to-body="true"
     >
       <div class="preview-container" @wheel.prevent.stop>
-        <img :src="previewImageUrl" class="preview-image" @wheel.prevent.stop />
+        <img :src="previewImageUrl" class="preview-image" @wheel.prevent.stop loading="lazy" />
         <button class="preview-download-btn" @click="downloadPreviewImage">⬇ 下载</button>
       </div>
     </el-dialog>
@@ -281,21 +281,21 @@ watch(() => props.visible, (val) => {
 .filter-btn {
   padding: 5px 20px;
   border-radius: 20px;
-  border: 1px solid rgba(255,255,255,0.1);
-  background: rgba(255,255,255,0.03);
-  color: rgba(255,255,255,0.45);
+  border: 1px solid rgba(var(--color-white-rgb), 0.1);
+  background: rgba(var(--color-white-rgb), 0.03);
+  color: rgba(var(--color-white-rgb), 0.45);
   font-size: 13px;
   cursor: pointer;
   transition: all 0.2s;
 }
 .filter-btn:hover {
-  border-color: rgba(255,255,255,0.24);
-  color: rgba(255,255,255,0.8);
+  border-color: rgba(var(--color-white-rgb), 0.24);
+  color: rgba(var(--color-white-rgb), 0.8);
 }
 .filter-btn.active {
-  background: rgba(255,255,255,0.12);
-  border-color: rgba(255,255,255,0.64);
-  color: rgba(255,255,255,0.95);
+  background: rgba(var(--color-white-rgb), 0.12);
+  border-color: rgba(var(--color-white-rgb), 0.64);
+  color: rgba(var(--color-white-rgb), 0.95);
 }
 
 .loading {
@@ -307,7 +307,7 @@ watch(() => props.visible, (val) => {
 }
 .loading-text {
   font-size: 13px;
-  color: rgba(255,255,255,0.35);
+  color: rgba(var(--color-white-rgb), 0.35);
   letter-spacing: 2px;
 }
 
@@ -319,16 +319,16 @@ watch(() => props.visible, (val) => {
 .ring {
   position: absolute;
   border-radius: 50%;
-  border: 1.5px solid rgba(255,255,255,0.36);
+  border: 1.5px solid rgba(var(--color-white-rgb), 0.36);
   animation: breathe 3s ease-in-out infinite;
 }
 .r1 { width: 100%; height: 100%; animation-delay: 0s; }
-.r2 { width: 72%; height: 72%; animation-delay: 0.5s; border-color: rgba(255,255,255,0.3); }
-.r3 { width: 44%; height: 44%; animation-delay: 1s; border-color: rgba(255,255,255,0.6); }
+.r2 { width: 72%; height: 72%; animation-delay: 0.5s; border-color: rgba(var(--color-white-rgb), 0.3); }
+.r3 { width: 44%; height: 44%; animation-delay: 1s; border-color: rgba(var(--color-white-rgb), 0.6); }
 .center-dot {
   width: 10px; height: 10px;
   border-radius: 50%;
-  background: rgba(255,255,255,0.14);
+  background: rgba(var(--color-white-rgb), 0.14);
   animation: pulse-dot 2s ease-in-out infinite;
 }
 
@@ -342,13 +342,13 @@ watch(() => props.visible, (val) => {
 .empty-orb {
   width: 60px; height: 60px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(255,255,255,0.09) 0%, transparent 70%);
-  border: 1px solid rgba(255,255,255,0.14);
+  background: radial-gradient(circle, rgba(var(--color-white-rgb), 0.09) 0%, transparent 70%);
+  border: 1px solid rgba(var(--color-white-rgb), 0.14);
   animation: breathe 4s ease-in-out infinite;
 }
 .empty-text {
   font-size: 12px;
-  color: rgba(255,255,255,0.4);
+  color: rgba(var(--color-white-rgb), 0.4);
   letter-spacing: 2px;
 }
 
@@ -365,15 +365,15 @@ watch(() => props.visible, (val) => {
   position: relative;
   border-radius: 10px;
   overflow: hidden;
-  background: rgba(255,255,255,0.03);
-  border: 2px solid rgba(255,255,255,0.08);
+  background: rgba(var(--color-white-rgb), 0.03);
+  border: 2px solid rgba(var(--color-white-rgb), 0.08);
   transition: border-color 0.2s;
   cursor: pointer;
 }
-.gallery-item:hover { border-color: rgba(255,255,255,0.3); }
+.gallery-item:hover { border-color: rgba(var(--color-white-rgb), 0.3); }
 .gallery-item.selected {
-  border-color: rgba(255,255,255,0.75);
-  box-shadow: 0 0 20px rgba(255,255,255,0.14);
+  border-color: rgba(var(--color-white-rgb), 0.75);
+  box-shadow: 0 0 20px rgba(var(--color-white-rgb), 0.14);
 }
 
 .gallery-image {
@@ -385,7 +385,7 @@ watch(() => props.visible, (val) => {
 
 .gallery-info {
   padding: 8px 10px;
-  background: rgba(0,0,0,0.3);
+  background: rgba(var(--color-black-rgb), 0.3);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -394,7 +394,7 @@ watch(() => props.visible, (val) => {
 
 .gallery-name {
   font-size: 11px;
-  color: rgba(255,255,255,0.6);
+  color: rgba(var(--color-white-rgb), 0.6);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -403,8 +403,8 @@ watch(() => props.visible, (val) => {
 
 .asset-type-badge {
   font-size: 10px;
-  color: rgba(255,255,255,0.82);
-  background: rgba(255,255,255,0.1);
+  color: rgba(var(--color-white-rgb), 0.82);
+  background: rgba(var(--color-white-rgb), 0.1);
   padding: 2px 6px;
   border-radius: 4px;
   flex-shrink: 0;
@@ -415,14 +415,14 @@ watch(() => props.visible, (val) => {
   top: 8px; right: 8px;
   width: 28px; height: 28px;
   border-radius: 50%;
-  background: rgba(255,255,255,0.14);
+  background: rgba(var(--color-white-rgb), 0.14);
   color: white;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 16px;
   font-weight: bold;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  box-shadow: 0 2px 8px rgba(var(--color-black-rgb), 0.3);
 }
 
 .download-btn {
@@ -430,8 +430,8 @@ watch(() => props.visible, (val) => {
   bottom: 36px; right: 8px;
   width: 32px; height: 32px;
   border-radius: 50%;
-  background: rgba(0,0,0,0.7);
-  border: 1px solid rgba(255,255,255,0.2);
+  background: rgba(var(--color-black-rgb), 0.7);
+  border: 1px solid rgba(var(--color-white-rgb), 0.2);
   color: white;
   font-size: 16px;
   cursor: pointer;
@@ -442,7 +442,7 @@ watch(() => props.visible, (val) => {
   transition: all 0.2s;
 }
 .gallery-item:hover .download-btn { opacity: 1; }
-.download-btn:hover { background: rgba(255,255,255,0.14); transform: scale(1.1); }
+.download-btn:hover { background: rgba(var(--color-white-rgb), 0.14); transform: scale(1.1); }
 
 .fav-slot {
   position: absolute;
@@ -456,7 +456,7 @@ watch(() => props.visible, (val) => {
 .filter-divider {
   width: 1px;
   height: 16px;
-  background: rgba(255,255,255,0.12);
+  background: rgba(var(--color-white-rgb), 0.12);
   margin: 0 4px;
   align-self: center;
 }
@@ -469,7 +469,7 @@ watch(() => props.visible, (val) => {
 }
 .select-count {
   font-size: 12px;
-  color: rgba(255,255,255,0.35);
+  color: rgba(var(--color-white-rgb), 0.35);
   margin-right: auto;
 }
 
@@ -482,16 +482,16 @@ watch(() => props.visible, (val) => {
   transition: all 0.2s;
 }
 .cancel-btn {
-  background: rgba(255,255,255,0.08);
-  color: rgba(255,255,255,0.7);
+  background: rgba(var(--color-white-rgb), 0.08);
+  color: rgba(var(--color-white-rgb), 0.7);
 }
-.cancel-btn:hover { background: rgba(255,255,255,0.12); }
+.cancel-btn:hover { background: rgba(var(--color-white-rgb), 0.12); }
 .confirm-btn {
-  background: rgba(255,255,255,0.92);
-  color: #111318;
+  background: rgba(var(--color-white-rgb), 0.92);
+  color: var(--color-bg);
   font-weight: 500;
 }
-.confirm-btn:hover:not(:disabled) { background: #fff; transform: translateY(-1px); }
+.confirm-btn:hover:not(:disabled) { background: var(--color-white); transform: translateY(-1px); }
 .confirm-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 @keyframes breathe {
@@ -505,7 +505,7 @@ watch(() => props.visible, (val) => {
 
 .preview-dialog :deep(.el-dialog__body) {
   padding: 0;
-  background: #000;
+  background: var(--color-black);
 }
 .preview-container {
   position: relative;
@@ -513,7 +513,7 @@ watch(() => props.visible, (val) => {
   align-items: center;
   justify-content: center;
   min-height: 400px;
-  background: #000;
+  background: var(--color-black);
 }
 .preview-image {
   max-width: 100%;
@@ -524,7 +524,7 @@ watch(() => props.visible, (val) => {
   position: absolute;
   bottom: 20px; right: 20px;
   padding: 10px 20px;
-  background: rgba(255,255,255,0.14);
+  background: rgba(var(--color-white-rgb), 0.14);
   border: none;
   border-radius: 8px;
   color: white;
@@ -535,7 +535,7 @@ watch(() => props.visible, (val) => {
   gap: 6px;
   transition: all 0.2s;
 }
-.preview-download-btn:hover { background: rgba(255,255,255,0.94); transform: translateY(-2px); }
+.preview-download-btn:hover { background: rgba(var(--color-white-rgb), 0.94); transform: translateY(-2px); }
 
 .load-more-bar {
   display: flex;
@@ -546,19 +546,19 @@ watch(() => props.visible, (val) => {
 .load-more-btn {
   padding: 6px 20px;
   border-radius: 7px;
-  border: 1px solid rgba(255,255,255,0.28);
-  background: rgba(255,255,255,0.08);
-  color: rgba(255,255,255,0.65);
+  border: 1px solid rgba(var(--color-white-rgb), 0.28);
+  background: rgba(var(--color-white-rgb), 0.08);
+  color: rgba(var(--color-white-rgb), 0.65);
   font-size: 12px;
   cursor: pointer;
   transition: all 0.2s;
 }
-.load-more-btn:hover:not(:disabled) { background: rgba(255,255,255,0.16); color: #fff; }
+.load-more-btn:hover:not(:disabled) { background: rgba(var(--color-white-rgb), 0.16); color: var(--color-white); }
 .load-more-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .no-more-text {
   font-size: 11px;
-  color: rgba(255,255,255,0.25);
+  color: rgba(var(--color-white-rgb), 0.25);
   align-self: center;
 }
 </style>

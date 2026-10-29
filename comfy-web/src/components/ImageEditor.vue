@@ -314,7 +314,7 @@ defineExpose({ getFile })
 .editor-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.75);
+  background: rgba(var(--color-black-rgb), 0.75);
   z-index: 9999;
   display: flex;
   align-items: center;
@@ -323,7 +323,7 @@ defineExpose({ getFile })
 
 .editor-box {
   background: transparent;
-  border: 1px solid rgba(255,255,255,0.06);
+  border: 1px solid rgba(var(--color-white-rgb), 0.06);
   border-radius: 16px;
   overflow: hidden;
   display: flex;
@@ -357,8 +357,8 @@ defineExpose({ getFile })
   align-items: center;
   gap: 6px;
   padding: 10px 14px;
-  background: rgba(255,255,255,0.04);
-  border-bottom: 1px solid rgba(255,255,255,0.08);
+  background: rgba(var(--color-white-rgb), 0.04);
+  border-bottom: 1px solid rgba(var(--color-white-rgb), 0.08);
   flex-wrap: wrap;
 }
 
@@ -371,22 +371,22 @@ defineExpose({ getFile })
   width: 34px;
   height: 34px;
   border-radius: 8px;
-  border: 1px solid rgba(255,255,255,0.1);
+  border: 1px solid rgba(var(--color-white-rgb), 0.1);
   background: transparent;
-  color: rgba(255,255,255,0.6);
+  color: rgba(var(--color-white-rgb), 0.6);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: all 0.15s;
 }
-.tool-btn:hover { background: rgba(255,255,255,0.08); color: white; }
-.tool-btn.active { background: rgba(255,255,255,0.4); border-color: rgba(255,255,255,0.7); color: white; }
+.tool-btn:hover { background: rgba(var(--color-white-rgb), 0.08); color: white; }
+.tool-btn.active { background: rgba(var(--color-white-rgb), 0.4); border-color: rgba(var(--color-white-rgb), 0.7); color: white; }
 
 .divider-v {
   width: 1px;
   height: 24px;
-  background: rgba(255,255,255,0.1);
+  background: rgba(var(--color-white-rgb), 0.1);
   margin: 0 4px;
 }
 
@@ -405,7 +405,7 @@ defineExpose({ getFile })
   width: 26px;
   height: 26px;
   border-radius: 50%;
-  border: 2px solid rgba(255,255,255,0.3);
+  border: 2px solid rgba(var(--color-white-rgb), 0.3);
 }
 
 .size-group {
@@ -415,12 +415,12 @@ defineExpose({ getFile })
 }
 .size-label {
   font-size: 12px;
-  color: rgba(255,255,255,0.5);
+  color: rgba(var(--color-white-rgb), 0.5);
   min-width: 30px;
 }
 .size-slider {
   width: 80px;
-  accent-color: rgba(255,255,255,0.82);
+  accent-color: rgba(var(--color-white-rgb), 0.82);
 }
 
 .action-btn {
@@ -432,18 +432,18 @@ defineExpose({ getFile })
   font-weight: 500;
 }
 .action-btn.cancel {
-  background: rgba(255,255,255,0.08);
-  color: rgba(255,255,255,0.7);
+  background: rgba(var(--color-white-rgb), 0.08);
+  color: rgba(var(--color-white-rgb), 0.7);
 }
-.action-btn.cancel:hover { background: rgba(255,255,255,0.14); }
+.action-btn.cancel:hover { background: rgba(var(--color-white-rgb), 0.14); }
 .action-btn.confirm {
-  background: linear-gradient(135deg, rgba(255,255,255,0.14), rgba(255,255,255,0.82));
+  background: linear-gradient(135deg, rgba(var(--color-white-rgb), 0.14), rgba(var(--color-white-rgb), 0.82));
   color: white;
 }
 .action-btn.confirm:hover { opacity: 0.9; }
 
 .action-btn.generate {
-  background: linear-gradient(135deg, rgba(255,255,255,0.14), rgba(255,255,255,0.82), rgba(255,255,255,0.82));
+  background: linear-gradient(135deg, rgba(var(--color-white-rgb), 0.14), rgba(var(--color-white-rgb), 0.82), rgba(var(--color-white-rgb), 0.82));
   background-size: 200% auto;
   color: white;
   animation: shimmer 3s linear infinite;
