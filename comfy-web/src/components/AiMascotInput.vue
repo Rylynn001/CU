@@ -18,6 +18,7 @@
       </Transition>
 
       <section class="composer-card" :class="[className, { disabled }]">
+        <slot name="attachments" />
         <el-tag v-if="file" class="attachment-tag" closable @close="file = null">
           <IconComponents :name="file.isImage ? 'image' : 'file'" :size="14" />
           <span>{{ file.name }}</span>
@@ -40,7 +41,6 @@
                 <el-button class="model-trigger" :disabled="disabled">
                   <AIProviderIcons :name="selectedModel.iconName" :size="15" :class="selectedModel.badgeColor" />
                   <span class="model-name">{{ selectedModel.name }}</span>
-                  <el-tag class="model-effort" size="small" effect="plain">{{ currentEffort.label }}</el-tag>
                   <IconComponents name="caret-down" :size="12" />
                 </el-button>
               </template>
@@ -61,31 +61,17 @@
                         {{ model.name }}
                         <el-tag v-if="model.tag" size="small" effect="plain">{{ model.tag }}</el-tag>
                       </span>
-                      <small>{{ model.provider }} · {{ (modelEfforts[model.id] || model.defaultLevel).toUpperCase() }}</small>
+                      <small>{{ model.provider }}</small>
                     </span>
                     <IconComponents v-if="selectedModel.id === model.id" name="check" :size="14" />
                   </el-button>
                 </div>
 
-                <div class="effort-setting">
-                  <div class="effort-heading">
-                    <span>{{ selectedModel.reasoningTitle }}</span>
-                    <strong>{{ currentEffort.label }}</strong>
-                  </div>
-                  <SegmentedControl
-                    :model-value="effortId"
-                    :options="effortOptions"
-                    :label="selectedModel.reasoningTitle"
-                    :disabled="disabled"
-                    @update:model-value="setEffort"
-                  />
-                  <p>{{ currentEffort.desc }}</p>
-                  <p>当前聊天接口尚未启用推理强度设置。</p>
-                </div>
               </div>
             </el-popover>
 
             <input ref="fileInput" class="file-input" type="file" :disabled="disabled" @change="onFileChange" />
+            <slot name="tools" />
             <el-tooltip v-if="enableAttachments" content="附加照片或文件">
               <el-button text circle :disabled="disabled" aria-label="附加照片或文件" @click="fileInput?.click()">
                 <IconComponents name="paperclip" :size="17" />
@@ -139,7 +125,6 @@ import { computed, onUnmounted, ref } from 'vue'
 import RobotBeta from './RobotBeta.vue'
 import AIProviderIcons from './icons/AIProviderIcons.vue'
 import IconComponents from './icons/IconComponents.vue'
-import SegmentedControl from './SegmentedControl.vue'
 import type { AIModel, AttachedFile, ChatSubmitData } from '@/types/ai-models'
 import { DEFAULT_AI_MODELS } from '@/types/ai-models'
 
@@ -189,10 +174,6 @@ const modelMenuOpen = ref(false)
 const file = ref<AttachedFile | null>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
 const selectedModel = ref(props.models.find((model) => model.id === props.defaultModelId) || props.models[0] || DEFAULT_AI_MODELS[0])
-const modelEfforts = ref<Record<string, string>>(Object.fromEntries(props.models.map((model) => [model.id, model.defaultLevel])))
-const effortId = computed(() => modelEfforts.value[selectedModel.value.id] || selectedModel.value.defaultLevel)
-const currentEffort = computed(() => selectedModel.value.levels.find((level) => level.id === effortId.value) || selectedModel.value.levels[0])
-const effortOptions = computed(() => selectedModel.value.levels.map((level) => ({ value: level.id, label: level.label })))
 const isSending = computed(() => props.isProcessing ?? sending.value)
 const isListening = ref(false)
 const isTyping = computed(() => Boolean(prompt.value || file.value || isListening.value))
@@ -207,10 +188,6 @@ function selectModel(model: AIModel) {
   modelMenuOpen.value = false
 }
 
-function setEffort(level: string) {
-  modelEfforts.value[selectedModel.value.id] = level
-}
-
 function onFileChange(event: Event) {
   const input = event.target as HTMLInputElement
   const selected = input.files?.[0]
@@ -219,6 +196,8 @@ function onFileChange(event: Event) {
 }
 
 function onEnter(event: KeyboardEvent) {
+  // 中文输入法用 Enter 确认候选词时仍处于组合输入状态，不能当作发送。
+  if (event.isComposing || event.keyCode === 229) return
   if (!event.shiftKey) {
     event.preventDefault()
     submit()
@@ -231,7 +210,6 @@ async function submit() {
   const data: ChatSubmitData = {
     prompt: prompt.value.trim(),
     model: selectedModel.value,
-    effort: effortId.value,
     useWebSearch: searchEnabled.value,
     attachedFile: file.value,
   }
@@ -252,7 +230,7 @@ async function submit() {
     prompt.value = ''
     file.value = null
     sendTimer = null
-  }, (currentEffort.value?.multiplier || 2.8) * 1000 + (searchEnabled.value ? 900 : 0))
+  }, 2800 + (searchEnabled.value ? 900 : 0))
 }
 
 function cancelSend() {
@@ -326,7 +304,6 @@ onUnmounted(() => {
 .model-trigger { display: inline-flex; max-width: 280px; align-items: center; gap: 7px; padding: 7px 10px; border: 0; border-radius: 999px; background: rgba(var(--color-white-rgb), .08); color: var(--color-text); }
 .model-trigger:hover { background: rgba(var(--color-white-rgb), .14); color: var(--color-white); }
 .model-trigger :deep(> span) { min-width: 0; gap: 7px; }
-.model-effort { flex-shrink: 0; background: rgba(var(--color-white-rgb), .08); border-color: var(--color-border); color: var(--color-text); }
 .model-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .model-menu h3 { margin: 0 0 8px; color: var(--color-text-soft); font-size: 11px; font-weight: 700; }
 .model-list { display: grid; gap: 3px; }
@@ -335,10 +312,6 @@ onUnmounted(() => {
 .model-option-copy { display: grid; flex: 1; gap: 3px; min-width: 0; }
 .model-option-title { display: flex; align-items: center; gap: 6px; color: var(--color-text); font-size: 12px; font-weight: 600; }
 .model-option-meta { color: var(--color-text-soft); font-size: 10px; }
-.effort-setting { margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(var(--color-white-rgb), .1); }
-.effort-heading { display: flex; justify-content: space-between; margin-bottom: 8px; color: var(--color-text-soft); font-size: 11px; }
-.effort-heading strong { color: var(--color-text); }
-.effort-setting p { margin: 7px 0 0; color: var(--color-text-soft); font-size: 11px; }
 .file-input { display: none; }
 .voice-wave { display: flex; align-items: center; gap: 4px; height: 32px; padding: 0 10px; border: 1px solid rgba(var(--color-danger-rgb), .25); border-radius: 12px; background: rgba(var(--color-danger-rgb), .1); }
 .voice-wave span { width: 4px; border-radius: 4px; background: var(--color-danger); animation: wave .5s ease-in-out infinite alternate; }

@@ -111,7 +111,8 @@ async function handleConfirm() {
     })
     if (!res.ok) {
       if (res.status === 403) throw new Error('非项目成员，无法提交素材')
-      throw new Error()
+      const data = await res.json().catch(() => ({}))
+      throw new Error(data.detail || '操作失败')
     }
     const data = await res.json()
 

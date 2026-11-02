@@ -69,9 +69,14 @@ class WorkflowRepository:
         )
 
     @staticmethod
-    def add_conversation(session_id: int, role: str, message: str):
-        """向 workflow_conversations 写入一条用户或 Agent 消息。"""
-        execute_query(
+    def add_conversation(session_id: int, role: str, message: str, asset_ids: Optional[List[int]] = None) -> int:
+        """写入一条用户或 Agent 消息并返回消息编号。"""
+        if asset_ids:
+            return execute_query(
+                "INSERT INTO workflow_conversations (session_id, role, message, asset_ids) VALUES (%s, %s, %s, %s)",
+                (session_id, role, message, json.dumps(asset_ids)),
+            )
+        return execute_query(
             """
             INSERT INTO workflow_conversations (session_id, role, message)
             VALUES (%s, %s, %s)
@@ -86,14 +91,34 @@ class WorkflowRepository:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                SELECT role, message, created_at
+                SELECT id, role, message, created_at, asset_ids
                 FROM workflow_conversations
                 WHERE session_id = %s
                 ORDER BY created_at ASC, id ASC
                 """,
                 (session_id,)
             )
-            return cursor.fetchall()
+            rows = cursor.fetchall()
+            for row in rows:
+                row["asset_ids"] = json.loads(row["asset_ids"]) if row["asset_ids"] else []
+            return rows
+
+    @staticmethod
+    def get_session_asset_messages(session_id: int, user_id: int) -> List[Dict[str, Any]]:
+        """仅查询当前用户当前会话中带有引用资产的用户消息。"""
+        rows = execute_query(
+            """SELECT c.message, c.asset_ids
+               FROM workflow_conversations c
+               JOIN workflow_sessions s ON s.id = c.session_id
+               WHERE c.session_id = %s AND s.user_id = %s
+                 AND c.role = 'user' AND c.asset_ids IS NOT NULL
+               ORDER BY c.id DESC LIMIT 100""",
+            (session_id, user_id), fetch_all=True,
+        ) or []
+        for row in rows:
+            if isinstance(row["asset_ids"], (str, bytes)):
+                row["asset_ids"] = json.loads(row["asset_ids"])
+        return rows
 
     @staticmethod
     def get_user_sessions(user_id: int, limit: int = 10) -> List[Dict[str, Any]]:
@@ -140,22 +165,77 @@ class WorkflowRepository:
             """SELECT h.status, h.message, a.id AS asset_id, a.location
                FROM history h
                LEFT JOIN history_assets_rel r ON r.history_id = h.id
-               LEFT JOIN assets a ON a.id = r.asset_id
+               LEFT JOIN assets a ON a.id = r.asset_id AND a.rfid = h.user_id
                WHERE h.id = %s AND h.user_id = %s""",
             (history_id, user_id), fetch_all=True
         ) or []
 
     @staticmethod
-    def create_execution(session_id: int, workflow_definition: Dict[str, Any]) -> str:
+    def add_conversation_assets(
+        conversation_id: Optional[int],
+        session_id: int,
+        user_id: int,
+        asset_ids: List[int],
+    ):
+        """将当前用户拥有的生成资产去重追加到任务对应的用户消息。"""
+        if not conversation_id or not asset_ids:
+            return
+
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """SELECT c.asset_ids
+                   FROM workflow_conversations c
+                   JOIN workflow_sessions s ON s.id = c.session_id
+                   WHERE c.id = %s AND c.session_id = %s
+                     AND c.role = 'user' AND s.user_id = %s
+                   FOR UPDATE""",
+                (conversation_id, session_id, user_id),
+            )
+            conversation = cursor.fetchone()
+            if not conversation:
+                return
+
+            cursor.execute(
+                """SELECT id FROM assets
+                   WHERE rfid = %s AND id IN ({})""".format(
+                    ",".join(["%s"] * len(asset_ids))
+                ),
+                (user_id, *asset_ids),
+            )
+            owned_asset_ids = {row["id"] for row in cursor.fetchall()}
+            if not owned_asset_ids:
+                return
+
+            existing = conversation["asset_ids"]
+            if isinstance(existing, (str, bytes)):
+                existing = json.loads(existing)
+            existing = existing or []
+            updated = list(dict.fromkeys(
+                [*existing, *(asset_id for asset_id in asset_ids if asset_id in owned_asset_ids)]
+            ))
+            if updated != existing:
+                cursor.execute(
+                    "UPDATE workflow_conversations SET asset_ids = %s WHERE id = %s",
+                    (json.dumps(updated), conversation_id),
+                )
+                conn.commit()
+
+    @staticmethod
+    def create_execution(
+        session_id: int,
+        workflow_definition: Dict[str, Any],
+        conversation_id: Optional[int] = None,
+    ) -> str:
         """向 workflow_executions 写入一次工具任务的初始执行记录。"""
         execution_id = str(uuid.uuid4())
 
         execute_query(
             """
-            INSERT INTO workflow_executions (id, session_id, workflow_definition, status)
-            VALUES (%s, %s, %s, 'running')
+            INSERT INTO workflow_executions (id, session_id, conversation_id, workflow_definition, status)
+            VALUES (%s, %s, %s, %s, 'running')
             """,
-            (execution_id, session_id, json.dumps(workflow_definition))
+            (execution_id, session_id, conversation_id, json.dumps(workflow_definition))
         )
 
         return execution_id

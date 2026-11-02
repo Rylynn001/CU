@@ -4,9 +4,9 @@ Skill 节点 - 将外部 Skills 集成到 LangGraph 工作流
 import os
 import logging
 from typing import Dict, Any
-from ..state import TaskState
-from ...agents.skill_agent import SkillManager, ImageGenerationSkill, VideoPromptSkill
-from ...config import settings
+from ..states import TaskState
+from ...skill_agent import SkillManager, ImageGenerationSkill, VideoPromptSkill
+from config import settings
 
 logger = logging.getLogger(__name__)
 

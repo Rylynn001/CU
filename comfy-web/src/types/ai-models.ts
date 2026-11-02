@@ -29,7 +29,6 @@ export interface AttachedFile {
 export interface ChatSubmitData {
   prompt: string
   model: AIModel
-  effort: string
   useWebSearch: boolean
   attachedFile: AttachedFile | null
 }

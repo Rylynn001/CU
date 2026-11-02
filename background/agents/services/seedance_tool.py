@@ -47,7 +47,7 @@ class SeedancePromptTool:
         """
         if skill_dir is None:
             # 默认路径
-            skill_dir = Path(__file__).parent.parent.parent / "Test" / "seedance2.5提示词" / "seedance2.5-prompt-skill-main"
+            skill_dir = Path(__file__).parent.parent.parent.parent / "Test" / "seedance2.5提示词" / "seedance2.5-prompt-skill-main"
 
         self.skill_dir = Path(skill_dir)
         if not self.skill_dir.exists():

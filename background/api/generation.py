@@ -129,7 +129,7 @@ async def txt2img(req: Txt2ImgRequest, user: dict = Depends(get_current_user)):
     """文生图接口。
 
     这是后端真正创建图片任务的接口。被对话 Agent 调用时，参数已经由
-    services/workflow_tools.py 校验过一次；这里仍然按普通 API 再校验和查询，
+    agents/services/workflow_tools.py 校验过一次；这里仍然按普通 API 再校验和查询，
     因为接口不能假设调用方一定可信。
     """
     user_id = user['user_id']

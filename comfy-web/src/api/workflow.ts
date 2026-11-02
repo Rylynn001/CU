@@ -4,6 +4,7 @@ export interface WorkflowMessageRequest {
   message: string
   model_id: number
   session_id?: string
+  asset_ids?: number[]
   generation_options?: {
     media_type: 'image' | 'video' | null
     model: number | null
@@ -18,12 +19,14 @@ export interface WorkflowMessageRequest {
 
 export interface WorkflowMessageResponse {
   session_id: string
+  user_conversation_id?: number | null
+  agent_conversation_id?: number | null
   reply: string
   intent?: string | null
   parameters?: Record<string, unknown> | null
   workflow_ready: boolean
   tasks: WorkflowTask[]
-  generation_request?: { media_type: 'image' | 'video'; prompt: string; models: GenerationModel[] } | null
+  generation_request?: { media_type: 'image' | 'video'; prompt: string; models: GenerationModel[]; input_asset_ids?: number[]; tool_name?: string } | null
 }
 
 export interface LanguageModel {
@@ -49,9 +52,17 @@ export interface WorkflowSession {
 }
 
 export interface ConversationMessage {
+  id?: number
   role: 'user' | 'agent'
   message: string
   created_at: string
+  assets?: ChatAsset[]
+}
+
+export interface ChatAsset {
+  id: number
+  asset_type: 'picture' | 'video'
+  url: string
 }
 
 export interface SessionDetail {
@@ -66,12 +77,15 @@ export interface SessionDetail {
 export interface WorkflowTask {
   task_id: string
   execution_id: string
+  conversation_id?: number | null
   status: 'running' | 'completed' | 'failed' | string
   stage?: string
   error?: string
   model_name?: string
   parameters: { prompt?: string; n?: number; aspect_ratio?: string; quality?: string; ratio?: string; resolution?: string; duration?: number }
   images: Array<{ url: string; asset_id: number }>
+  videos?: Array<{ url: string; asset_id: number }>
+  media_type?: 'image' | 'video'
 }
 
 /**

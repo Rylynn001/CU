@@ -15,7 +15,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from api.generation import Txt2ImgRequest, Txt2VideoRequest, txt2img, txt2video
 from repositories import asset_repo, history_repo, provider_repo
 from repositories.workflow_repo import WorkflowRepository
-from services.seedance_tool import SeedancePromptTool
+from .seedance_tool import SeedancePromptTool
+from .workflow_tool_definitions import WorkflowTool
+from .chat_assets import load_chat_assets
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +30,7 @@ class ImageArguments(BaseModel):
     aspect_ratio: Literal["1:1", "16:9", "9:16", "4:3", "3:4"]
     quality: Literal["low", "medium", "high"]
     regenerate: bool = False
+    input_asset_ids: list[int] = Field(default_factory=list)
 
 
 class VideoArguments(BaseModel):
@@ -36,6 +39,7 @@ class VideoArguments(BaseModel):
     ratio: Literal["16:9", "9:16", "1:1"]
     resolution: Literal["720p", "1080p"]
     duration: int = Field(ge=1, le=60)
+    input_asset_ids: list[int] | None = None
 
 
 def session_tasks(session_id: int, user_id: int) -> list:
@@ -45,13 +49,22 @@ def session_tasks(session_id: int, user_id: int) -> list:
         task = execution["result"]
         if not task.get("task_id"):
             continue
-        task = {**task, "execution_id": execution["id"], "status": execution["status"]}
-        if task["status"] == "running":
+        task = {
+            **task,
+            "execution_id": execution["id"],
+            "conversation_id": execution.get("conversation_id"),
+            "status": execution["status"],
+        }
+        if task["status"] in ("running", "completed") and task.get("history_id"):
             rows = WorkflowRepository.get_generation_result(task["history_id"], user_id)
             if rows:
                 status = rows[0]["status"]
                 if status in ("done", "completed"):
                     task["status"] = "completed"
+                    output_asset_ids = [row["asset_id"] for row in rows if row["asset_id"] is not None]
+                    WorkflowRepository.add_conversation_assets(
+                        task.get("conversation_id"), session_id, user_id, output_asset_ids
+                    )
                     outputs = [
                         {"url": f"/api/api-proxy/output/{PureWindowsPath(row['location']).name}", "asset_id": row["asset_id"]}
                         for row in rows if row["location"]
@@ -79,138 +92,35 @@ def session_tasks(session_id: int, user_id: int) -> list:
 
 
 class WorkflowTools:
-    def __init__(self, user: dict, ensure_session, generation_options: dict | None = None):
+    def __init__(self, user: dict, ensure_session, generation_options: dict | None = None, ensure_conversation=None):
         self.user = user
         self.ensure_session = ensure_session
+        self.ensure_conversation = ensure_conversation
         self.generation_options = generation_options or {}
         self.pending_generation = None
         self.models = None
         self.video_models = None
         self.submitted = []
+        self.asset_ids = []
+        self.allowed_asset_ids = set()
         self.seedance = SeedancePromptTool()
 
         self.tools = {
-            "list_image_models": {
-                "type": "function",
-                "function": {
-                    "name": "list_image_models",
-                    "description": "查询数据库中可用于文生图的真实模型。名称、编号和提供商必须以此结果为准。",
-                    "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
-                },
-                "keywords": ["图片模型", "图像模型", "生图模型", "文生图", "可用模型", "image model", "txt2img"],
-            },
-            "txt2img": {
-                "type": "function",
-                "function": {
-                    "name": "txt2img",
-                    "description": "按用户要求提交文生图任务。调用前必须查询图片模型，并确认用户选定的模型。",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "model": {"type": "integer", "description": "list_image_models 返回的模型编号"},
-                            "prompt": {"type": "string", "description": "图片内容描述"},
-                            "n": {"type": "integer", "minimum": 1, "maximum": 10},
-                            "aspect_ratio": {"type": "string", "enum": ["1:1", "16:9", "9:16", "4:3", "3:4"]},
-                            "quality": {"type": "string", "enum": ["low", "medium", "high"]},
-                            "regenerate": {"type": "boolean", "default": False},
-                        },
-                        "required": ["prompt"],
-                        "additionalProperties": False,
-                    },
-                },
-                "keywords": ["生成图片", "生成一张图", "画一张", "画图", "生图", "图片创作", "图片生成", "image generation", "txt2img"],
-            },
-            "list_video_models": {
-                "type": "function",
-                "function": {
-                    "name": "list_video_models",
-                    "description": "查询数据库中可用于文生视频的真实模型。",
-                    "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
-                },
-                "keywords": ["视频模型", "视频生成模型", "文生视频", "可用视频模型", "video model", "txt2video"],
-            },
-            "txt2video": {
-                "type": "function",
-                "function": {
-                    "name": "txt2video",
-                    "description": "按用户要求提交文生视频任务。调用前必须查询视频模型，并确认用户选定的模型。",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "model": {"type": "integer", "description": "list_video_models 返回的模型编号"},
-                            "prompt": {"type": "string", "description": "视频内容描述"},
-                            "ratio": {"type": "string", "enum": ["16:9", "9:16", "1:1"]},
-                            "resolution": {"type": "string", "enum": ["720p", "1080p"]},
-                            "duration": {"type": "integer", "minimum": 1, "maximum": 60},
-                        },
-                        "required": ["prompt"],
-                        "additionalProperties": False,
-                    },
-                },
-                "keywords": ["生成视频", "生成一段视频", "生一段视频", "做一段视频", "做个视频", "制作视频", "文生视频", "视频创作", "video generation", "txt2video"],
-            },
-            "list_my_images": {
-                "type": "function",
-                "function": {
-                    "name": "list_my_images",
-                    "description": "查询当前用户最近的图片资产。",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {"page": {"type": "integer", "minimum": 1, "default": 1}},
-                        "additionalProperties": False,
-                    },
-                },
-                "keywords": ["我的图片", "图片查询", "查图片", "找图片", "图片资产", "最近图片", "my images", "image search"],
-            },
-            "list_my_generation_history": {
-                "type": "function",
-                "function": {
-                    "name": "list_my_generation_history",
-                    "description": "查询当前用户最近的图片和视频生成历史。",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "type": {"type": "string", "enum": ["image", "video"]},
-                            "page": {"type": "integer", "minimum": 1, "default": 1},
-                        },
-                        "additionalProperties": False,
-                    },
-                },
-                "keywords": ["生成历史", "任务历史", "历史记录", "之前生成", "生成记录", "my history", "generation history"],
-            },
-            "generate_seedance_prompt": {
-                "type": "function",
-                "function": {
-                    "name": "generate_seedance_prompt",
-                    "description": "生成符合字节跳动即梦(Seedance)平台规范的专业视频提示词。此工具包含完整的平台规则、时间戳分镜、运镜编码、美学约束等专业方法论。用户提到视频提示词、视频脚本、短剧、分镜等需求时必须调用此工具，不能自行生成。支持 2.0(15秒) 和 2.5(30秒直出,最长180秒)版本。",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "request": {"type": "string", "description": "用户的视频创意需求描述"},
-                            "version": {"type": "string", "enum": ["2.0", "2.5"], "default": "2.5", "description": "Seedance版本"},
-                            "duration": {"type": "integer", "minimum": 4, "maximum": 180, "description": "目标时长(秒)"},
-                            "aspect_ratio": {"type": "string", "enum": ["16:9", "9:16", "1:1", "4:3", "3:4"], "default": "16:9"},
-                        },
-                        "required": ["request"],
-                        "additionalProperties": False,
-                    },
-                },
-                "keywords": [
-                    "seedance", "即梦", "视频提示词", "短剧", "视频生成", "AI视频",
-                    "小云雀", "豆包", "30秒视频", "长视频", "视频脚本",
-                    "运镜", "镜头", "分镜", "剪辑", "图生视频", "赛博朋克",
-                    "时间戳", "剪辑节奏", "视频创作"
-                ],
-            },
+            tool.value["function"]["name"]: tool.value
+            for tool in WorkflowTool
+            if tool is not WorkflowTool.DISCOVER_TOOLS
         }
         self.handlers = {
-            "list_image_models": lambda args: self.execute("list_image_models", args),
-            "txt2img": lambda args: self.execute("txt2img", args),
-            "list_video_models": self._list_video_models,
-            "txt2video": self._txt2video,
-            "list_my_images": self._list_my_images,
-            "list_my_generation_history": self._list_my_generation_history,
-            "generate_seedance_prompt": self._generate_seedance_prompt,
+            WorkflowTool.IMG2IMG.value["function"]["name"]: lambda args: self.execute(WorkflowTool.IMG2IMG.value["function"]["name"], args),
+            WorkflowTool.IMG2VIDEO.value["function"]["name"]: self._img2video,
+            WorkflowTool.LIST_IMAGE_MODELS.value["function"]["name"]: lambda args: self.execute(WorkflowTool.LIST_IMAGE_MODELS.value["function"]["name"], args),
+            WorkflowTool.TXT2IMG.value["function"]["name"]: lambda args: self.execute(WorkflowTool.TXT2IMG.value["function"]["name"], args),
+            WorkflowTool.LIST_VIDEO_MODELS.value["function"]["name"]: self._list_video_models,
+            WorkflowTool.TXT2VIDEO.value["function"]["name"]: self._txt2video,
+            WorkflowTool.LIST_MY_IMAGES.value["function"]["name"]: self._list_my_images,
+            WorkflowTool.LIST_MY_GENERATION_HISTORY.value["function"]["name"]: self._list_my_generation_history,
+            WorkflowTool.SEARCH_SESSION_REFERENCE_ASSETS.value["function"]["name"]: self._search_session_reference_assets,
+            WorkflowTool.GENERATE_SEEDANCE_PROMPT.value["function"]["name"]: self._generate_seedance_prompt,
         }
 
     def discover(self, query: str) -> list[dict]:
@@ -227,7 +137,12 @@ class WorkflowTools:
                 matches.append((score, tool))
 
         matches.sort(key=lambda item: item[0], reverse=True)
-        return [tool for _, tool in matches[:3]]
+        found = [tool for _, tool in matches[:3]]
+        if any(tool["function"]["name"] == WorkflowTool.IMG2VIDEO.value["function"]["name"] for tool in found):
+            search_tool = WorkflowTool.SEARCH_SESSION_REFERENCE_ASSETS.value
+            if not any(tool["function"]["name"] == search_tool["function"]["name"] for tool in found):
+                found.append(search_tool)
+        return found
 
     async def discover_and_execute(self, name: str, arguments: dict) -> dict:
         handler = self.handlers.get(name)
@@ -244,6 +159,9 @@ class WorkflowTools:
         return {"models": self.video_models}
 
     async def _txt2video(self, arguments: dict) -> dict:
+        input_asset_ids = self._input_assets(arguments, "video")
+        if input_asset_ids:
+            arguments = {**arguments, "input_asset_ids": input_asset_ids}
         options = self._selected_generation_options("video", ("model", "ratio", "resolution", "duration"))
         if options is None:
             return self._request_generation_selection("video", arguments)
@@ -260,7 +178,8 @@ class WorkflowTools:
                 if execution["result"].get("task_id"):
                     return {**execution["result"], "reused": True}
                 raise ValueError("相同视频请求已存在提交记录，请先检查任务状态")
-        execution_id = WorkflowRepository.create_execution(session_id, definition)
+        conversation_id = self.ensure_conversation() if self.ensure_conversation else None
+        execution_id = WorkflowRepository.create_execution(session_id, definition, conversation_id)
         try:
             response = await txt2video(args, user=self.user)
         except Exception as error:
@@ -275,6 +194,11 @@ class WorkflowTools:
         WorkflowRepository.update_session(session_id, intent="text_to_video", parameters=args.model_dump(), status="executing")
         self.submitted.append(task)
         return task
+
+    async def _img2video(self, arguments: dict) -> dict:
+        if not arguments.get("input_asset_ids", self.asset_ids):
+            raise ValueError("请先引入参考图片或视频资产")
+        return await self._txt2video(arguments)
 
     async def _list_my_images(self, arguments: dict) -> dict:
         page = max(1, min(int(arguments.get("page", 1)), 1000))
@@ -305,6 +229,39 @@ class WorkflowTools:
                 filename = Path(row["out_location"]).name if row.get("out_location") else ""
                 item["outputs"].append({"asset_id": row["out_asset_id"], "url": f"/api/api-proxy/output/{filename}"})
         return {"page": page, "records": list(records.values())}
+
+    async def _search_session_reference_assets(self, arguments: dict) -> dict:
+        keywords = arguments.get("keywords")
+        if not isinstance(keywords, list) or not 1 <= len(keywords) <= 8 or any(not isinstance(word, str) or not word.strip() for word in keywords):
+            raise ValueError("请提供图片描述关键词")
+        session_id = self.ensure_session()
+        messages = WorkflowRepository.get_session_asset_messages(session_id, self.user["user_id"])
+        keywords = list(dict.fromkeys(word.strip().casefold() for word in keywords))
+        matching_messages = [
+            message for message in messages
+            if any(keyword in message["message"].casefold() for keyword in keywords)
+        ]
+        asset_ids = list(dict.fromkeys(
+            asset_id for message in matching_messages for asset_id in message["asset_ids"]
+        ))
+        assets = {
+            asset["id"]: asset for asset in asset_repo.get_assets_by_ids(asset_ids)
+            if asset["rfid"] == self.user["user_id"] and asset["asset_type"] == "picture"
+        }
+        records = {}
+        for index, message in enumerate(matching_messages):
+            record = records.setdefault(index, {
+                "message": message["message"], "assets": [],
+            })
+            for asset_id in message["asset_ids"]:
+                asset = assets.get(asset_id)
+                if asset and not any(item["id"] == asset_id for item in record["assets"]):
+                    self.allowed_asset_ids.add(asset_id)
+                    record["assets"].append({
+                        "id": asset_id, "type": asset["asset_type"],
+                        "url": f"/api/api-proxy/output/{Path(asset['location']).name}",
+                    })
+        return {"keywords": keywords, "records": [record for record in records.values() if record["assets"]]}
 
     async def _generate_seedance_prompt(self, arguments: dict) -> dict:
         """生成 Seedance 视频提示词
@@ -373,8 +330,13 @@ class WorkflowTools:
             ]
             logger.info("对话工具查询图片模型 count=%s", len(self.models))
             return {"models": self.models}
-        if name != "txt2img":
+        if name not in ("txt2img", "img2img"):
             raise ValueError(f"不支持的工具：{name}")
+        input_asset_ids = self._input_assets(arguments, "image")
+        if name == "img2img" and not input_asset_ids:
+            raise ValueError("请先引入参考图片资产")
+        if input_asset_ids:
+            arguments = {**arguments, "input_asset_ids": input_asset_ids}
         options = self._selected_generation_options("image", ("model", "n", "aspect_ratio", "quality"))
         if options is None:
             return self._request_generation_selection("image", arguments)
@@ -391,7 +353,9 @@ class WorkflowTools:
         # Gemini worker 单次只生成一张，不能把数量大于一的任务提交后谎报成功。
         if selected["provider"] == "gemini" and args.n != 1:
             raise ValueError("当前 Gemini 生成接口每次支持一张图片，请改为一张")
-        parameters = args.model_dump(exclude={"regenerate"})
+        parameters = args.model_dump(exclude={"regenerate", "input_asset_ids"})
+        if input_asset_ids:
+            parameters["input_asset_ids"] = input_asset_ids
         # =====【创建/恢复任务所属会话】=====
         session_id = self.ensure_session()
         for execution in WorkflowRepository.get_session_executions(session_id):
@@ -401,7 +365,8 @@ class WorkflowTools:
                 raise ValueError("相同请求已存在提交记录，请先检查生成历史；不会自动重复提交")
 
         # 先创建工作流执行记录，之后无论成功还是失败都能追踪这次提交。
-        execution_id = WorkflowRepository.create_execution(session_id, parameters)
+        conversation_id = self.ensure_conversation() if self.ensure_conversation else None
+        execution_id = WorkflowRepository.create_execution(session_id, parameters, conversation_id)
         try:
             # =====【真正调用文生图接口】=====
             # 这里才进入 background/api/generation.py 的 txt2img 函数。
@@ -434,6 +399,7 @@ class WorkflowTools:
         return {key: options[key] for key in required}
 
     def _request_generation_selection(self, media_type: str, arguments: dict) -> dict:
+        input_asset_ids = arguments.get("input_asset_ids", [])
         providers = ("openai", "gemini") if media_type == "image" else ("ark", "openai")
         models = [
             {key: model.get(key) for key in ("id", "name", "description", "provider")}
@@ -441,4 +407,31 @@ class WorkflowTools:
             if model.get("type") == media_type and model.get("provider") in providers
         ]
         self.pending_generation = {"media_type": media_type, "prompt": arguments.get("prompt", ""), "models": models}
+        if input_asset_ids:
+            self.pending_generation.update({
+                "tool_name": "img2img" if media_type == "image" else "img2video",
+                "input_asset_ids": input_asset_ids,
+            })
         return {"selection_required": self.pending_generation}
+
+    def _input_assets(self, arguments: dict, media_type: str) -> list[int]:
+        asset_ids = arguments.get("input_asset_ids", self.asset_ids)
+        if not isinstance(asset_ids, list) or any(type(asset_id) is not int for asset_id in asset_ids):
+            raise ValueError("参考资产编号必须是整数列表")
+        # 即使模型没先调用检索工具，也只接受当前会话用户消息实际引用过的编号。
+        session_messages = WorkflowRepository.get_session_asset_messages(
+            self.ensure_session(), self.user["user_id"],
+        ) if asset_ids else []
+        session_asset_ids = {
+            asset_id for message in session_messages for asset_id in message["asset_ids"]
+        }
+        self.allowed_asset_ids.update(session_asset_ids)
+        unavailable_ids = sorted(set(asset_ids) - self.allowed_asset_ids)
+        if unavailable_ids:
+            raise ValueError(
+                f"资产 {unavailable_ids} 未关联到当前会话消息，请先在本会话引入这些图片"
+            )
+        assets = load_chat_assets(asset_ids, self.user["user_id"]) if asset_ids else []
+        if media_type == "image" and any(asset["asset_type"] != "picture" for asset in assets):
+            raise ValueError("生成图片仅支持参考图片，请移除视频资产")
+        return [asset["id"] for asset in assets]

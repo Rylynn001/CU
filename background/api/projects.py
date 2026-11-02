@@ -1,6 +1,7 @@
 """项目管理相关路由"""
 from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel
+import pymysql
 
 from api.auth import get_current_user
 from repositories import project_repo
@@ -218,9 +219,14 @@ async def add_asset_to_category(
         )
     else:
         # 全新提交
-        review_status = project_repo.add_asset_to_category(
-            category_id, req.asset_id, user_id
-        )
+        try:
+            review_status = project_repo.add_asset_to_category(
+                category_id, req.asset_id, user_id
+            )
+        except pymysql.err.IntegrityError as e:
+            if e.args and e.args[0] == 1062:
+                raise HTTPException(status_code=409, detail='该资产已添加到分类') from e
+            raise
 
     if review_status is None:
         raise HTTPException(status_code=403, detail='非项目成员或无权续接该提交记录')

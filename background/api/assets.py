@@ -14,6 +14,10 @@ from repositories import asset_repo
 router = APIRouter()
 
 
+class AssetFavoriteRequest(BaseModel):
+    tag: int
+
+
 # ── 文件服务 ──────────────────────────────────────────────────────────────
 
 @router.get('/output/{filename}')
@@ -140,11 +144,12 @@ async def get_user_assets(
 @router.post("/user/assets/{asset_id}/favorite")
 async def set_asset_favorite(
     asset_id: int,
-    tag: int,
+    req: AssetFavoriteRequest,
     current_user: dict = Depends(get_current_user)
 ):
     """设置资产标签"""
     user_id = current_user['user_id']
+    tag = req.tag
 
     if tag not in (0, 1, 2, 3, 4):
         raise HTTPException(status_code=400, detail='tag 必须是 0-4')

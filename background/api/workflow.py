@@ -16,8 +16,9 @@ from agents.conversation_agent import ConversationAgent
 from repositories.workflow_repo import WorkflowRepository
 from repositories.generation_repo import get_language_model_info
 from config import get_provider_config_by_rfid
-from graph.states import ConversationState
-from services.workflow_tools import WorkflowTools, session_tasks
+from agents.graph.states import ConversationState
+from agents.services.workflow_tools import WorkflowTools, session_tasks
+from agents.services.chat_assets import load_chat_assets, build_asset_content, asset_previews
 
 router = APIRouter(prefix="/workflow", tags=["workflow"])
 logger = logging.getLogger(__name__)
@@ -53,11 +54,14 @@ class ChatRequest(BaseModel):
     model_id: int
     session_id: Optional[int] = None
     generation_options: Optional[Dict[str, Any]] = None
+    asset_ids: List[int] = Field(default_factory=list, max_length=10)
 
 
 class ChatResponse(BaseModel):
     reply: str
     session_id: int
+    user_conversation_id: Optional[int] = None
+    agent_conversation_id: Optional[int] = None
     intent: Optional[str] = None
     parameters: Optional[Dict[str, Any]] = None
     workflow_ready: bool
@@ -107,7 +111,10 @@ async def _stream_chat_events(request: ChatRequest, current_user: dict):
         raise
     except Exception as error:
         logger.exception("工作流对话流式请求失败 session_id=%s", request.session_id or "new")
-        yield _encode_sse("error", {"message": str(error) or "对话请求失败"})
+        detail = getattr(error, "detail", None) or str(error) or "对话请求失败"
+        if "overloaded" in str(detail).lower():
+            detail = "上游对话模型服务当前过载，请稍后重试。"
+        yield _encode_sse("error", {"message": detail})
     finally:
         # 浏览器断开或停止读取时，回收本次聊天任务。
         if not chat_task.done():
@@ -156,7 +163,9 @@ async def _process_chat(request: ChatRequest, current_user: dict, on_progress=No
     )
 
     # 1. 读取历史，并确认会话属于当前用户。新会话返回 None。
-    existing_state = _load_chat_state(session_id, user_id)
+    existing_state = await asyncio.to_thread(_load_chat_state, session_id, user_id)
+    assets = await asyncio.to_thread(load_chat_assets, request.asset_ids, user_id) if request.asset_ids else []
+    user_content = await asyncio.to_thread(build_asset_content, request.message, assets)
 
     # 2. 新会话延迟到工具真正提交任务，或聊天成功后再创建。
     def ensure_session():
@@ -165,8 +174,22 @@ async def _process_chat(request: ChatRequest, current_user: dict, on_progress=No
             session_id = WorkflowRepository.create_session(user_id)
         return session_id
 
+    user_conversation_id = None
+
+    def ensure_conversation():
+        nonlocal user_conversation_id
+        if user_conversation_id is None:
+            user_conversation_id = WorkflowRepository.add_conversation(
+                ensure_session(), "user", request.message, asset_ids=request.asset_ids
+            )
+        return user_conversation_id
+
     generation_options = request.generation_options or {}
-    workflow_tools = WorkflowTools(current_user, ensure_session, generation_options)
+    workflow_tools = WorkflowTools(current_user, ensure_session, generation_options, ensure_conversation)
+    workflow_tools.asset_ids = [asset["id"] for asset in assets]
+    for previous_message in (existing_state or {}).get("messages", []):
+        workflow_tools.allowed_asset_ids.update(previous_message.get("asset_ids", []))
+    workflow_tools.allowed_asset_ids.update(workflow_tools.asset_ids)
     previous_tasks = session_tasks(session_id, user_id) if session_id else []
 
     # 3. 助手理解需求；发现工具时调用 discover，执行工具时调用 discover_and_execute。
@@ -174,14 +197,33 @@ async def _process_chat(request: ChatRequest, current_user: dict, on_progress=No
         pending = (existing_state or {}).get("parameters", {}).get("generation_request")
         if not pending or pending["media_type"] != generation_options.get("media_type"):
             raise HTTPException(status_code=400, detail="生成请求已变化，请重新发起生成并确认参数")
-        tool_name = "txt2img" if pending["media_type"] == "image" else "txt2video"
-        task = await workflow_tools.discover_and_execute(tool_name, {"prompt": pending["prompt"]})
-        if task.get("task_id"):
-            reply = "生成任务已提交，请查看下方进度。"
-            result = {"reply": reply, "state": {"intent": "batch_image" if tool_name == "txt2img" else "text_to_video", "parameters": task["parameters"]}, "tasks": [task], "workflow_ready": True}
+        if pending.get("input_asset_ids"):
+            workflow_tools.allowed_asset_ids.update(pending["input_asset_ids"])
+            tool_name = pending.get("tool_name") or ("txt2img" if pending["media_type"] == "image" else "txt2video")
+            task = await workflow_tools.discover_and_execute(tool_name, {
+                "prompt": pending["prompt"], "input_asset_ids": pending["input_asset_ids"]
+            })
+            if task.get("task_id"):
+                reply = "生成任务已提交，请查看下方进度。"
+                result = {"reply": reply, "state": {"intent": "batch_image" if tool_name in ("txt2img", "img2img") else "text_to_video", "parameters": task["parameters"]}, "tasks": [task], "workflow_ready": True}
+            else:
+                result = {"reply": "请在弹出的选择框中补全生成参数。", "state": existing_state, "tasks": [], "workflow_ready": False}
         else:
-            result = {"reply": "请在弹出的选择框中补全生成参数。", "state": existing_state, "tasks": [], "workflow_ready": False}
-        if on_delta:
+            agent = get_conversation_agent(request.model_id)
+            result = await agent.process(
+                message=request.message,
+                session_id=session_id,
+                user_id=user_id,
+                existing_state=existing_state,
+                on_progress=on_progress,
+                on_delta=on_delta,
+                tool_executor=workflow_tools.discover_and_execute,
+                tool_discoverer=workflow_tools.discover,
+                executions=previous_tasks,
+                request_id=request_id,
+                user_content=user_content,
+            )
+        if on_delta and result.get("tasks"):
             await on_delta(result["reply"])
     else:
         agent = get_conversation_agent(request.model_id)
@@ -196,6 +238,7 @@ async def _process_chat(request: ChatRequest, current_user: dict, on_progress=No
             tool_discoverer=workflow_tools.discover,
             executions=previous_tasks,
             request_id=request_id,
+            user_content=user_content,
         )
 
     # 4. 保存本轮对话和会话状态。
@@ -204,7 +247,11 @@ async def _process_chat(request: ChatRequest, current_user: dict, on_progress=No
     if pending_generation:
         result["state"]["intent"] = "batch_image" if pending_generation["media_type"] == "image" else "text_to_video"
         result["state"]["parameters"] = {"generation_request": pending_generation}
-    _save_chat_result(session_id, request.message, result, previous_tasks)
+    if request.asset_ids:
+        ensure_conversation()
+    user_conversation_id, agent_conversation_id = _save_chat_result(
+        session_id, request.message, result, previous_tasks, user_conversation_id
+    )
     if pending_generation and previous_tasks:
         WorkflowRepository.update_session(session_id, parameters=result["state"]["parameters"])
     logger.info(
@@ -215,6 +262,8 @@ async def _process_chat(request: ChatRequest, current_user: dict, on_progress=No
     return ChatResponse(
         reply=result["reply"],
         session_id=session_id,
+        user_conversation_id=user_conversation_id,
+        agent_conversation_id=agent_conversation_id,
         intent=result["state"].get("intent"),
         parameters=result["state"].get("parameters"),
         workflow_ready=result.get("workflow_ready", False),
@@ -238,7 +287,11 @@ def _load_chat_state(session_id: Optional[int], user_id: int) -> Optional[Conver
     return {
         "session_id": session_id,
         "user_id": user_id,
-        "messages": [{"role": item["role"], "content": item["message"]} for item in conversations],
+        "messages": [
+            {"role": item["role"], "content": build_asset_content(item["message"], load_chat_assets(item["asset_ids"], user_id))
+             if item.get("asset_ids") else item["message"], "asset_ids": item.get("asset_ids", [])}
+            for item in conversations
+        ],
         "intent": session.get("intent"),
         "parameters": session.get("parameters", {}),
         "missing_params": [],
@@ -247,10 +300,14 @@ def _load_chat_state(session_id: Optional[int], user_id: int) -> Optional[Conver
     }
 
 
-def _save_chat_result(session_id: int, message: str, result: dict, previous_tasks: list):
+def _save_chat_result(
+    session_id: int, message: str, result: dict, previous_tasks: list,
+    user_conversation_id: Optional[int] = None,
+):
     """保存用户和助手消息；根据本轮提交情况更新会话状态。"""
-    WorkflowRepository.add_conversation(session_id, "user", message)
-    WorkflowRepository.add_conversation(session_id, "agent", result["reply"])
+    if user_conversation_id is None:
+        user_conversation_id = WorkflowRepository.add_conversation(session_id, "user", message)
+    agent_conversation_id = WorkflowRepository.add_conversation(session_id, "agent", result["reply"])
 
     state = result["state"]
     if result.get("tasks"):
@@ -267,6 +324,8 @@ def _save_chat_result(session_id: int, message: str, result: dict, previous_task
             parameters=state["parameters"],
             status="collecting",
         )
+
+    return user_conversation_id, agent_conversation_id
 
 
 class SessionResponse(BaseModel):
@@ -325,9 +384,11 @@ async def get_session_detail(session_id: int, current_user: dict = Depends(get_c
         tasks=session_tasks(session_id, user_id),
         conversations=[
             {
+                "id": conv["id"],
                 "role": conv["role"],
                 "message": conv["message"],
-                "created_at": conv["created_at"].isoformat()
+                "created_at": conv["created_at"].isoformat(),
+                "assets": asset_previews(load_chat_assets(conv["asset_ids"], user_id)) if conv.get("asset_ids") else [],
             }
             for conv in conversations
         ]

@@ -23,6 +23,15 @@ const highlightRef = ref<HTMLElement | null>(null)
 const textarea = computed(() => inputRef.value?.textarea)
 const lastScrollTop = ref(0)
 const lastScrollLeft = ref(0)
+const isComposing = ref(false)
+
+function startComposition() {
+  isComposing.value = true
+}
+
+function endComposition() {
+  isComposing.value = false
+}
 
 function escapeHtml(value: string) {
   const div = document.createElement('div')
@@ -72,7 +81,7 @@ defineExpose({ textarea })
 </script>
 
 <template>
-  <div class="mention-textarea">
+  <div class="mention-textarea" :class="{ composing: isComposing }">
     <pre
       v-if="modelValue"
       ref="highlightRef"
@@ -90,6 +99,8 @@ defineExpose({ textarea })
       @update:model-value="emit('update:modelValue', $event)"
       @keyup="emit('keyup', $event)"
       @keydown="emit('keydown', $event)"
+      @compositionstart="startComposition"
+      @compositionend="endComposition"
       @blur="emit('blur', $event)"
     />
   </div>
@@ -165,5 +176,11 @@ defineExpose({ textarea })
 .mention-textarea-input :deep(.el-textarea__inner::placeholder) {
   color: var(--color-faint);
   -webkit-text-fill-color: var(--color-faint);
+}
+
+/* 输入法组合拼音需要显示在真实输入框中，避免被高亮层的透明文字样式遮住。 */
+.mention-textarea.composing .mention-textarea-input :deep(.el-textarea__inner) {
+  color: var(--color-text);
+  -webkit-text-fill-color: var(--color-text);
 }
 </style>

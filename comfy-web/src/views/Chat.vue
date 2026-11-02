@@ -52,41 +52,62 @@
           :default-model-id="availableModels[0]?.id"
           :enable-voice="true"
           :enable-web-search="true"
-          :enable-attachments="true"
-        />
+          :enable-attachments="false"
+        >
+          <template #tools>
+            <el-button class="asset-trigger" text :disabled="isProcessing || selectedAssets.length >= 10" @click="assetPickerOpen = true">引入资产</el-button>
+          </template>
+          <template #attachments>
+            <div v-if="selectedAssets.length" class="chat-assets">
+              <div v-for="asset in selectedAssets" :key="asset.id" class="chat-asset">
+                <video v-if="asset.asset_type === 'video'" :src="asset.url" muted preload="metadata" />
+                <img v-else :src="asset.url" :alt="`参考图片 ${asset.id}`" />
+                <el-button text :disabled="isProcessing" :aria-label="`移除参考资产 ${asset.id}`" @click="removeAsset(asset.id)">移除</el-button>
+              </div>
+            </div>
+          </template>
+        </AiMascotInput>
       </div>
 
       <div v-else class="chat-container">
         <div class="messages-container" ref="messagesContainer">
-          <div v-for="(msg, idx) in messages" :key="idx" :class="['message', msg.role]">
-            <div class="message-avatar">{{ msg.role === 'user' ? '👤' : '🤖' }}</div>
-            <div class="message-bubble">
-              <div v-if="isProcessing && idx === messages.length - 1 && currentStatus" class="message-status">
-                <span class="status-dot"></span>{{ currentStatus }}
+          <template v-for="item in conversationItems" :key="item.key">
+            <div v-if="item.type === 'message'" :class="['message', item.message.role]">
+              <div class="message-avatar">{{ item.message.role === 'user' ? '👤' : '🤖' }}</div>
+              <div class="message-bubble">
+                <div v-if="isProcessing && item.index === messages.length - 1 && currentStatus" class="message-status">
+                  <span class="status-dot"></span>{{ currentStatus }}
+                </div>
+                <div class="message-content">{{ item.message.message }}</div>
+                <div v-if="item.message.assets?.length" class="task-images">
+                  <template v-for="asset in item.message.assets" :key="asset.id">
+                    <video v-if="asset.asset_type === 'video'" :src="asset.url" controls preload="metadata" />
+                    <img v-else :src="asset.url" :alt="`参考图片 ${asset.id}`" loading="lazy" />
+                  </template>
+                </div>
+                <div class="message-time">{{ formatTime(item.message.created_at) }}</div>
               </div>
-              <div class="message-content">{{ msg.message }}</div>
-              <div class="message-time">{{ formatTime(msg.created_at) }}</div>
             </div>
-          </div>
-          <section v-for="task in activeTasks" :key="task.execution_id" class="task-result">
+            <section v-else class="task-result">
             <div class="task-heading">
-              <strong>{{ task.model_name || (task.media_type === 'video' ? '视频生成' : '图片生成') }}</strong>
-              <span class="task-status" :class="task.status">{{ getTaskStatusText(task) }}</span>
+              <strong>{{ item.task.model_name || (item.task.media_type === 'video' ? '视频生成' : '图片生成') }}</strong>
+              <span class="task-status" :class="item.task.status">{{ getTaskStatusText(item.task) }}</span>
             </div>
-            <div class="task-prompt">{{ task.parameters?.prompt }}</div>
-            <div v-if="task.status === 'running'" class="task-meta">
-              任务编号：{{ task.task_id }}<span v-if="task.stage"> · {{ task.stage }}</span>
+            <div class="task-prompt">{{ item.task.parameters?.prompt }}</div>
+            <div v-if="item.task.status === 'running'" class="task-meta">
+              任务编号：{{ item.task.task_id }}<span v-if="item.task.stage"> · {{ item.task.stage }}</span>
             </div>
-            <div v-if="task.status === 'failed'" class="task-error">{{ task.error || '生成失败' }}</div>
-            <div v-if="task.images?.length" class="task-images">
-              <a v-for="image in task.images" :key="image.asset_id" :href="image.url" target="_blank" rel="noreferrer">
-                <img :src="image.url" :alt="task.parameters?.prompt || '生成图片'" loading="lazy" />
+            <div v-if="item.task.status === 'failed'" class="task-error">{{ item.task.error || '生成失败' }}</div>
+            <div v-if="item.task.images?.length" class="task-images">
+              <a v-for="image in item.task.images" :key="image.asset_id" :href="image.url" target="_blank" rel="noreferrer">
+                <img :src="image.url" :alt="item.task.parameters?.prompt || '生成图片'" loading="lazy" />
               </a>
             </div>
-            <div v-if="task.videos?.length" class="task-images">
-              <video v-for="video in task.videos" :key="video.asset_id" :src="video.url" controls />
+            <div v-if="item.task.videos?.length" class="task-images">
+              <video v-for="video in item.task.videos" :key="video.asset_id" :src="video.url" controls />
             </div>
-          </section>
+            </section>
+          </template>
         </div>
 
         <div class="input-container">
@@ -98,8 +119,21 @@
             :default-model-id="availableModels[0]?.id"
             :enable-voice="true"
             :enable-web-search="false"
-            :enable-attachments="true"
-          />
+            :enable-attachments="false"
+          >
+            <template #tools>
+              <el-button class="asset-trigger" text :disabled="isProcessing || selectedAssets.length >= 10" @click="assetPickerOpen = true">引入资产</el-button>
+            </template>
+            <template #attachments>
+              <div v-if="selectedAssets.length" class="chat-assets">
+                <div v-for="asset in selectedAssets" :key="asset.id" class="chat-asset">
+                  <video v-if="asset.asset_type === 'video'" :src="asset.url" muted preload="metadata" />
+                  <img v-else :src="asset.url" :alt="`参考图片 ${asset.id}`" />
+                  <el-button text :disabled="isProcessing" :aria-label="`移除参考资产 ${asset.id}`" @click="removeAsset(asset.id)">移除</el-button>
+                </div>
+              </div>
+            </template>
+          </AiMascotInput>
         </div>
       </div>
 
@@ -134,14 +168,16 @@
           <el-button type="primary" @click="confirmGeneration">确认并生成</el-button>
         </template>
       </el-dialog>
+      <AssetPicker v-model:visible="assetPickerOpen" :max-select="10 - selectedAssets.length" :allow-video="true" @select="selectAssets" />
       </template>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import AiMascotInput from '@/components/AiMascotInput.vue'
+import AssetPicker from '@/components/AssetPicker.vue'
 import type { ChatSubmitData, AIModel } from '@/types/ai-models'
 import {
   sendWorkflowMessageStream,
@@ -154,6 +190,7 @@ import {
   type WorkflowSession,
   type WorkflowTask,
   type ConversationMessage,
+  type ChatAsset,
 } from '@/api/workflow'
 
 const isProcessing = ref(false)
@@ -165,6 +202,41 @@ const currentSessionId = ref<string | undefined>(undefined)
 const sessions = ref<WorkflowSession[]>([])
 const messagesContainer = ref<HTMLElement | null>(null)
 const activeTasks = ref<WorkflowTask[]>([])
+const assetPickerOpen = ref(false)
+const selectedAssets = ref<ChatAsset[]>([])
+
+function selectAssets(assets: Array<{ id: number; location: string; asset_type?: string }>) {
+  for (const asset of assets) {
+    if (selectedAssets.value.some((selected) => selected.id === asset.id)) continue
+    if (selectedAssets.value.length >= 10) break
+    selectedAssets.value.push({
+      id: asset.id,
+      asset_type: asset.asset_type === 'video' ? 'video' : 'picture',
+      url: `/api/api-proxy/output/${asset.location.split(/[/\\]/).pop()}`,
+    })
+  }
+}
+
+function removeAsset(id: number) {
+  selectedAssets.value = selectedAssets.value.filter((asset) => asset.id !== id)
+}
+const conversationItems = computed(() => {
+  const items: Array<{ key: string; type: 'message'; index: number; message: ConversationMessage } | { key: string; type: 'task'; task: WorkflowTask }> = []
+  for (const [index, message] of messages.value.entries()) {
+    items.push({ key: `message-${message.id ?? index}`, type: 'message', index, message })
+    if (message.id != null) {
+      for (const task of activeTasks.value.filter((entry) => entry.conversation_id === message.id)) {
+        items.push({ key: task.execution_id, type: 'task', task })
+      }
+    }
+  }
+  for (const task of activeTasks.value) {
+    if (task.conversation_id == null || !messages.value.some((message) => message.id === task.conversation_id)) {
+      items.push({ key: task.execution_id, type: 'task', task })
+    }
+  }
+  return items
+})
 const generationType = ref<'none' | 'image' | 'video'>('none')
 const generationModels = ref<Array<{ id: number; name: string; provider: string; description?: string }>>([])
 const generationModelId = ref<number | null>(null)
@@ -333,6 +405,7 @@ async function loadSessionDetail(sessionId: string) {
 async function switchSession(sessionId: string) {
   if (sessionId === currentSessionId.value || isProcessing.value) return
   currentSessionId.value = sessionId
+  selectedAssets.value = []
   generationDialogOpen.value = false
   await loadSessionDetail(sessionId)
 }
@@ -341,6 +414,7 @@ async function switchSession(sessionId: string) {
 function createNewSession() {
   if (isProcessing.value) return
   currentSessionId.value = undefined
+  selectedAssets.value = []
   messages.value = []
   activeTasks.value = []
   generationDialogOpen.value = false
@@ -378,27 +452,30 @@ async function confirmGeneration() {
   const model = lastSubmitData?.model || availableModels.value[0]
   if (!model) { generationDialogError.value = '请先加载对话模型后重试。'; return }
   generationDialogOpen.value = false
-  await handleSubmit({ prompt: pendingGenerationPrompt.value, model, effort: model.defaultLevel, useWebSearch: false, attachedFile: null }, options)
+  await handleSubmit({ prompt: pendingGenerationPrompt.value, model, useWebSearch: false, attachedFile: null }, options)
 }
 
 // 处理消息提交
 const handleSubmit = async (data: ChatSubmitData, confirmedOptions?: WorkflowMessageRequest['generation_options']) => {
   if (isProcessing.value) return
   lastSubmitData = data
+  const submittedAssets = confirmedOptions ? [] : [...selectedAssets.value]
   console.log('用户提交:', data)
 
   // 乐观更新：立即添加用户消息到界面
-  const userMessage: ConversationMessage = {
+  messages.value.push({
     role: 'user',
     message: data.prompt,
+    assets: submittedAssets,
     created_at: new Date().toISOString(),
-  }
-  messages.value.push(userMessage as any)
+  })
+  const userMessage = messages.value[messages.value.length - 1]!
   messages.value.push({
     role: 'agent',
     message: '',
     created_at: new Date().toISOString(),
   })
+  const agentMessage = messages.value[messages.value.length - 1]!
   scrollToBottom()
 
   isProcessing.value = true
@@ -406,7 +483,7 @@ const handleSubmit = async (data: ChatSubmitData, confirmedOptions?: WorkflowMes
   try {
     // 调用后端 API
     const response = await sendWorkflowMessageStream(
-      { message: data.prompt, model_id: Number(data.model.id), session_id: currentSessionId.value, generation_options: confirmedOptions },
+      { message: data.prompt, model_id: Number(data.model.id), session_id: currentSessionId.value, generation_options: confirmedOptions, asset_ids: submittedAssets.map((asset) => asset.id) },
       (status) => {
         currentStatus.value = status
         console.info('[工作流对话]', status)
@@ -418,6 +495,9 @@ const handleSubmit = async (data: ChatSubmitData, confirmedOptions?: WorkflowMes
       },
     )
     activeTasks.value = response.tasks || []
+    if (!confirmedOptions) selectedAssets.value = []
+    userMessage.id = response.user_conversation_id ?? undefined
+    agentMessage.id = response.agent_conversation_id ?? undefined
     if (response.generation_request) {
       openGenerationDialog(response.generation_request)
     }
@@ -431,7 +511,6 @@ const handleSubmit = async (data: ChatSubmitData, confirmedOptions?: WorkflowMes
     }
 
     // 添加 AI 回复
-    const agentMessage = messages.value[messages.value.length - 1]
     if (agentMessage?.role === 'agent' && !agentMessage.message) {
       agentMessage.message = response.reply
     }
@@ -639,6 +718,12 @@ onUnmounted(() => {
   flex-direction: column;
   overflow: hidden;
 }
+
+.chat-assets { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.asset-trigger, .chat-asset :deep(.el-button) { --el-button-text-color: var(--color-text); --el-button-hover-text-color: var(--color-text); }
+.asset-trigger.el-button:not(.is-disabled):hover, .chat-asset :deep(.el-button:not(.is-disabled):hover) { background: rgba(var(--color-white-rgb), 0.1); }
+.chat-asset { display: flex; align-items: center; border: 1px solid rgba(var(--color-white-rgb), 0.15); border-radius: 8px; overflow: hidden; }
+.chat-asset img, .chat-asset video { width: 64px; height: 64px; object-fit: cover; }
 
 .generation-dialog-prompt { margin: 0 0 1rem; white-space: pre-wrap; }
 .generation-dialog-fields { display: grid; gap: 1rem; }
