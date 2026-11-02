@@ -1,0 +1,39 @@
+@theme inline {
+  --color-background: var(--ai-background);
+  --color-foreground: var(--color-text);
+  --color-card: var(--ai-background);
+  --color-card-foreground: var(--color-text);
+  --color-popover: var(--ai-background);
+  --color-popover-foreground: var(--color-text);
+  --color-primary-foreground: var(--color-bg);
+  --color-secondary: var(--color-surface-soft);
+  --color-secondary-foreground: var(--color-text);
+  --color-muted-foreground: var(--color-muted);
+  --color-accent-foreground: var(--color-text);
+  --color-destructive: var(--color-danger);
+  --color-input: var(--color-border);
+  --color-ring: var(--color-border-strong);
+}
+.ai-elements {
+  --ai-background: var(--color-surface-base);
+  --color-accent: var(--color-surface-soft);
+  color: var(--color-text);
+  font-size: 14px;
+}
+.ai-elements [data-slot="input-group"] { border: 1px solid var(--color-border); }
+.ai-elements [data-slot="input-group"]:focus-within { border-color: var(--color-border-strong); }
+.ai-elements button { cursor: pointer; }
+.ai-elements button:disabled { cursor: not-allowed; }
+.ai-elements [data-slot="select-content"],
+.ai-elements [data-slot="hover-card-content"],
+.ai-elements [data-slot="dialog-content"] { background: var(--color-surface-base); color: var(--color-text); border-color: var(--color-border); }
+.ai-elements [data-stream-markdown] { overflow-wrap: anywhere; }
+.ai-elements pre { max-width: 100%; overflow-x: auto; }
+/* 项目全局重置位于层外，这里恢复官方组件的间距工具类。 */
+.ai-elements, .ai-elements :where(*) { padding: revert-layer; margin: revert-layer; border-color: var(--color-border); }
+.ai-elements [data-slot="button"][data-variant="default"],
+.ai-elements [data-slot="button"]:not([data-variant]) { background: var(--color-primary); color: var(--color-bg); }
+.ai-elements [data-slot="button"][data-variant="default"]:hover { background: var(--color-text); }
+.ai-elements [data-slot="select-item"]:focus,
+.ai-elements [data-slot="button"][data-variant="ghost"]:hover,
+.ai-elements [data-slot="button"][data-variant="outline"]:hover { background: var(--color-surface-soft); color: var(--color-text); }

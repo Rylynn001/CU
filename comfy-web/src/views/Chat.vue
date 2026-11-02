@@ -1,182 +1,110 @@
 <template>
-  <div class="chat-page">
-    <!-- 左侧会话列表 -->
-    <div class="sessions-sidebar">
-      <div class="sidebar-header">
-        <h2>会话列表</h2>
-        <button class="new-session-btn" @click="createNewSession" :disabled="isProcessing">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-            <path d="M12 5v14M5 12h14" stroke-width="2" stroke-linecap="round"/>
-          </svg>
-          新会话
+  <div class="chat-page ai-elements">
+    <aside class="sessions-sidebar">
+      <div class="sidebar-header"><span class="section-label">创作对话</span><Button variant="outline" size="sm" :disabled="isProcessing" @click="createNewSession"><PlusIcon class="size-4" />新会话</Button></div>
+      <nav class="sessions-list" aria-label="历史会话">
+        <button v-for="session in sessions" :key="session.id" :class="['session-item', { active: session.id === currentSessionId }]" :disabled="isProcessing" :aria-current="session.id === currentSessionId ? 'page' : undefined" @click="switchSession(session.id)">
+          <MessageSquareIcon class="size-4 shrink-0" /><span class="session-info"><span class="session-title">{{ session.intent || '新会话' }}</span><span class="session-meta">{{ getStatusText(session.status) }} · {{ formatTime(session.updated_at) }}</span></span>
         </button>
-      </div>
-
-      <div class="sessions-list">
-        <div
-          v-for="session in sessions"
-          :key="session.id"
-          :class="['session-item', { active: session.id === currentSessionId }]"
-          @click="switchSession(session.id)"
-        >
-          <div class="session-info">
-            <div class="session-title">{{ session.intent || '新会话' }}</div>
-            <div class="session-meta">
-              <span class="session-status" :class="session.status">{{ getStatusText(session.status) }}</span>
-              <span class="session-time">{{ formatTime(session.updated_at) }}</span>
-            </div>
-          </div>
-        </div>
-
-        <div v-if="sessions.length === 0" class="empty-sessions">
-          暂无会话
-        </div>
-      </div>
-    </div>
-
-    <!-- 右侧对话区域 -->
-    <div class="chat-content">
-      <div v-if="isLoadingModels" class="loading-container">
-        <p>正在加载模型...</p>
-      </div>
-
+        <p v-if="!sessions.length" class="empty-sessions">还没有历史会话</p>
+      </nav>
+    </aside>
+    <main class="chat-content">
+      <header class="chat-header">
+        <div class="flex items-center gap-2"><SparklesIcon class="size-4" /><strong>AI 创作助手</strong></div>
+        <Context v-model:open="contextOpen" :used-tokens="0" :max-tokens="0">
+          <ContextTrigger><Button variant="ghost" size="sm" @click="contextOpen = !contextOpen"><LayersIcon class="size-4" />上下文<span class="text-muted-foreground">{{ messages.length }}</span></Button></ContextTrigger>
+          <ContextContent class="ai-elements context-panel" align="end"><div class="p-4 space-y-3"><strong>当前上下文</strong><p>{{ messages.length }} 条消息 · {{ contextAssetCount }} 个参考资产</p><p class="text-xs text-muted-foreground">消息记录与参考资产会随当前会话使用。暂未提供令牌用量。</p><div v-if="messages.some(message => message.role === 'agent' && message.id)" class="space-y-1"><p class="text-xs text-muted-foreground">已保存的检查点</p><Button v-for="message in messages.filter(entry => entry.role === 'agent' && entry.id)" :key="message.id" class="w-full justify-start" size="sm" variant="ghost" @click="locateCheckpoint(message.id!); contextOpen = false">定位回复 #{{ message.id }}</Button></div></div></ContextContent>
+        </Context>
+      </header>
+      <div v-if="isLoadingModels" class="welcome-container"><p>正在加载模型…</p></div>
       <template v-else>
-      <div v-if="!currentSessionId && messages.length === 0" class="welcome-container">
-        <AiMascotInput
-          title="我能为您做什么？"
-          subtitle="输入提示词或语音输入开始对话"
-          :show-welcome="true"
-          :on-submit="handleSubmit"
-          :is-processing="isProcessing"
-          :models="availableModels"
-          :default-model-id="availableModels[0]?.id"
-          :enable-voice="true"
-          :enable-web-search="true"
-          :enable-attachments="false"
-        >
-          <template #tools>
-            <el-button class="asset-trigger" text :disabled="isProcessing || selectedAssets.length >= 10" @click="assetPickerOpen = true">引入资产</el-button>
-          </template>
-          <template #attachments>
-            <div v-if="selectedAssets.length" class="chat-assets">
-              <div v-for="asset in selectedAssets" :key="asset.id" class="chat-asset">
-                <video v-if="asset.asset_type === 'video'" :src="asset.url" muted preload="metadata" />
-                <img v-else :src="asset.url" :alt="`参考图片 ${asset.id}`" />
-                <el-button text :disabled="isProcessing" :aria-label="`移除参考资产 ${asset.id}`" @click="removeAsset(asset.id)">移除</el-button>
-              </div>
-            </div>
-          </template>
-        </AiMascotInput>
-      </div>
-
-      <div v-else class="chat-container">
-        <div class="messages-container" ref="messagesContainer">
-          <template v-for="item in conversationItems" :key="item.key">
-            <div v-if="item.type === 'message'" :class="['message', item.message.role]">
-              <div class="message-avatar">{{ item.message.role === 'user' ? '👤' : '🤖' }}</div>
-              <div class="message-bubble">
-                <div v-if="isProcessing && item.index === messages.length - 1 && currentStatus" class="message-status">
-                  <span class="status-dot"></span>{{ currentStatus }}
-                </div>
-                <div class="message-content">{{ item.message.message }}</div>
-                <div v-if="item.message.assets?.length" class="task-images">
-                  <template v-for="asset in item.message.assets" :key="asset.id">
-                    <video v-if="asset.asset_type === 'video'" :src="asset.url" controls preload="metadata" />
-                    <img v-else :src="asset.url" :alt="`参考图片 ${asset.id}`" loading="lazy" />
-                  </template>
-                </div>
-                <div class="message-time">{{ formatTime(item.message.created_at) }}</div>
-              </div>
-            </div>
-            <section v-else class="task-result">
-            <div class="task-heading">
-              <strong>{{ item.task.model_name || (item.task.media_type === 'video' ? '视频生成' : '图片生成') }}</strong>
-              <span class="task-status" :class="item.task.status">{{ getTaskStatusText(item.task) }}</span>
-            </div>
-            <div class="task-prompt">{{ item.task.parameters?.prompt }}</div>
-            <div v-if="item.task.status === 'running'" class="task-meta">
-              任务编号：{{ item.task.task_id }}<span v-if="item.task.stage"> · {{ item.task.stage }}</span>
-            </div>
-            <div v-if="item.task.status === 'failed'" class="task-error">{{ item.task.error || '生成失败' }}</div>
-            <div v-if="item.task.images?.length" class="task-images">
-              <a v-for="image in item.task.images" :key="image.asset_id" :href="image.url" target="_blank" rel="noreferrer">
-                <img :src="image.url" :alt="item.task.parameters?.prompt || '生成图片'" loading="lazy" />
-              </a>
-            </div>
-            <div v-if="item.task.videos?.length" class="task-images">
-              <video v-for="video in item.task.videos" :key="video.asset_id" :src="video.url" controls />
-            </div>
-            </section>
-          </template>
+        <div v-if="!messages.length" class="welcome-container">
+          <SparklesIcon class="welcome-icon" /><h1>从一个想法开始</h1><p>一起打磨提示词，让图片与视频逐步成形。</p>
+          <div class="welcome-suggestions"><Suggestion v-for="text in suggestions" :key="text" :suggestion="text" @click="composer?.setPrompt" /></div>
         </div>
-
+        <Conversation v-else :key="currentSessionId || 'new'" class="chat-conversation" aria-label="创作对话消息">
+          <ConversationContent class="conversation-inner">
+            <template v-for="item in conversationItems" :key="item.key">
+              <div v-if="item.type === 'message'" :id="item.message.id ? `conversation-${item.message.id}` : undefined" :class="['message-row', { 'checkpoint-selected': selectedCheckpoint === item.message.id && item.message.id != null }]">
+                <Message :from="item.message.role === 'user' ? 'user' : 'assistant'" class="chat-message flex-col items-start">
+                  <div class="message-author">{{ item.message.role === 'user' ? '你' : '创作助手' }}<span>{{ formatTime(item.message.created_at) }}</span></div>
+                  <ChainOfThought v-if="item.message.steps?.length" :default-open="isProcessing && item.index === messages.length - 1" class="execution-trace">
+                    <ChainOfThoughtHeader>执行过程 · {{ item.message.steps.length }} 个步骤</ChainOfThoughtHeader>
+                    <ChainOfThoughtContent><ChainOfThoughtStep v-for="(step, index) in item.message.steps" :key="index" :label="step" :status="isProcessing && item.index === messages.length - 1 && index === item.message.steps.length - 1 ? 'active' : 'complete'"><template #icon><CheckIcon class="size-3" /></template></ChainOfThoughtStep></ChainOfThoughtContent>
+                  </ChainOfThought>
+                  <MessageContent :class="{ 'task-error': item.message.failed }">
+                    <MessageResponse v-if="item.message.role === 'agent' && item.message.message" :content="item.message.message" />
+                    <p v-else-if="item.message.message" class="user-text">{{ item.message.message }}</p>
+                    <p v-else-if="isProcessing" class="text-muted-foreground animate-pulse">正在处理…</p>
+                    <div v-if="item.message.assets?.length" class="task-images"><template v-for="asset in item.message.assets" :key="asset.id"><video v-if="asset.asset_type === 'video'" :src="asset.url" controls preload="metadata" /><img v-else :src="asset.url" :alt="`参考图片 ${asset.id}`" loading="lazy" /></template></div>
+                  </MessageContent>
+                  <MessageActions v-if="item.message.role === 'agent' && item.message.message"><MessageAction label="复制回复" title="复制回复" @click="copyMessage(item.message.message)"><CopyIcon class="size-3.5" /></MessageAction></MessageActions>
+                </Message>
+                <Checkpoint v-if="item.message.role === 'agent' && item.message.id" class="saved-checkpoint"><CheckpointIcon /><CheckpointTrigger @click="locateCheckpoint(item.message.id!)">检查点 · 回复 #{{ item.message.id }} 已保存</CheckpointTrigger></Checkpoint>
+              </div>
+              <Tool v-else :default-open="true" class="generation-tool">
+                <ToolHeader type="dynamic-tool" :tool-name="item.task.media_type === 'video' ? '视频生成' : '图片生成'" :title="item.task.model_name || (item.task.media_type === 'video' ? '视频生成' : '图片生成')" :state="taskState(item.task)" />
+                <ToolContent><div class="tool-details"><p>{{ item.task.parameters?.prompt }}</p><dl class="task-parameters"><template v-for="(value, key) in item.task.parameters" :key="key"><template v-if="key !== 'prompt' && value != null"><dt>{{ parameterLabels[key] || key }}</dt><dd>{{ key === 'quality' ? (qualityLabels[String(value)] || value) : value }}</dd></template></template></dl><p class="task-meta">任务 {{ item.task.task_id }}<span v-if="item.task.stage"> · {{ item.task.stage }}</span></p><p v-if="item.task.status === 'failed'" class="task-error">{{ item.task.error || '生成失败，请调整后重试。' }}</p><div v-if="item.task.images?.length" class="task-images"><a v-for="image in item.task.images" :key="image.asset_id" :href="image.url" target="_blank" rel="noreferrer"><img :src="image.url" :alt="item.task.parameters?.prompt || '生成图片'" loading="lazy" /></a></div><div v-if="item.task.videos?.length" class="task-images"><video v-for="video in item.task.videos" :key="video.asset_id" :src="video.url" controls /></div></div></ToolContent>
+              </Tool>
+            </template>
+          </ConversationContent>
+          <ConversationScrollButton aria-label="回到最新消息" />
+        </Conversation>
         <div class="input-container">
-          <AiMascotInput
-            :show-welcome="false"
-            :on-submit="handleSubmit"
-            :is-processing="isProcessing"
-            :models="availableModels"
-            :default-model-id="availableModels[0]?.id"
-            :enable-voice="true"
-            :enable-web-search="false"
-            :enable-attachments="false"
-          >
-            <template #tools>
-              <el-button class="asset-trigger" text :disabled="isProcessing || selectedAssets.length >= 10" @click="assetPickerOpen = true">引入资产</el-button>
-            </template>
-            <template #attachments>
-              <div v-if="selectedAssets.length" class="chat-assets">
-                <div v-for="asset in selectedAssets" :key="asset.id" class="chat-asset">
-                  <video v-if="asset.asset_type === 'video'" :src="asset.url" muted preload="metadata" />
-                  <img v-else :src="asset.url" :alt="`参考图片 ${asset.id}`" />
-                  <el-button text :disabled="isProcessing" :aria-label="`移除参考资产 ${asset.id}`" @click="removeAsset(asset.id)">移除</el-button>
-                </div>
-              </div>
-            </template>
-          </AiMascotInput>
+          <div v-if="generationType !== 'none' && pendingGenerationPrompt" class="pending-generation"><span>生成参数待确认</span><Button size="sm" variant="outline" :disabled="isProcessing" @click="generationDialogOpen = true">检查参数</Button></div>
+          <AiChatComposer ref="composer" :models="availableModels" :on-submit="handleSubmit" :is-processing="isProcessing" :asset-count="selectedAssets.length" @assets="assetPickerOpen = true">
+            <template #attachments><div v-if="selectedAssets.length" class="chat-assets"><div v-for="asset in selectedAssets" :key="asset.id" class="chat-asset"><video v-if="asset.asset_type === 'video'" :src="asset.url" muted preload="metadata" /><img v-else :src="asset.url" :alt="`参考图片 ${asset.id}`" /><Button variant="ghost" size="sm" :disabled="isProcessing" :aria-label="`移除参考资产 ${asset.id}`" @click="removeAsset(asset.id)">移除</Button></div></div></template>
+          </AiChatComposer>
         </div>
-      </div>
-
-      <el-dialog v-model="generationDialogOpen" :title="generationType === 'video' ? '确认视频生成参数' : '确认图片生成参数'" width="min(520px, 92vw)" :close-on-click-modal="false">
-        <p class="generation-dialog-prompt">{{ pendingGenerationPrompt }}</p>
-        <div class="generation-dialog-fields">
-          <el-select v-model="generationModelId" placeholder="选择生成模型" clearable>
-            <el-option v-for="model in generationModels" :key="model.id" :label="`${model.name} · ${model.provider}`" :value="model.id" />
-          </el-select>
-          <template v-if="generationType === 'image'">
-            <el-select v-model="imageAspectRatio" placeholder="选择比例" clearable>
-              <el-option label="1:1" value="1:1" /><el-option label="16:9" value="16:9" /><el-option label="9:16" value="9:16" /><el-option label="4:3" value="4:3" /><el-option label="3:4" value="3:4" />
-            </el-select>
-            <el-select v-model="imageQuality" placeholder="选择质量" clearable>
-              <el-option label="低" value="low" /><el-option label="中" value="medium" /><el-option label="高" value="high" />
-            </el-select>
-            <el-input-number v-model="imageCount" :min="1" :max="10" placeholder="张数" />
-          </template>
-          <template v-else>
-            <el-select v-model="videoRatio" placeholder="选择比例" clearable>
-              <el-option label="16:9" value="16:9" /><el-option label="9:16" value="9:16" /><el-option label="1:1" value="1:1" />
-            </el-select>
-            <el-select v-model="videoResolution" placeholder="选择分辨率" clearable>
-              <el-option label="720p" value="720p" /><el-option label="1080p" value="1080p" />
-            </el-select>
-            <el-input-number v-model="videoDuration" :min="1" :max="60" placeholder="秒数" />
-          </template>
-        </div>
-        <p v-if="generationDialogError" class="task-error">{{ generationDialogError }}</p>
-        <template #footer>
-          <el-button @click="generationDialogOpen = false">取消</el-button>
-          <el-button type="primary" @click="confirmGeneration">确认并生成</el-button>
-        </template>
-      </el-dialog>
-      <AssetPicker v-model:visible="assetPickerOpen" :max-select="10 - selectedAssets.length" :allow-video="true" @select="selectAssets" />
       </template>
-    </div>
+    </main>
+    <Dialog v-model:open="generationDialogOpen">
+      <DialogContent class="ai-elements generation-dialog" @interact-outside.prevent>
+        <DialogHeader><DialogTitle>{{ generationType === 'video' ? '确认视频生成' : '确认图片生成' }}</DialogTitle><DialogDescription>检查提示词和参数，确认后开始生成。</DialogDescription></DialogHeader>
+        <Confirmation :approval="{ id: currentSessionId || 'generation' }" state="approval-requested" class="border-0 p-0">
+          <ConfirmationRequest>
+            <p class="generation-dialog-prompt">{{ pendingGenerationPrompt }}</p>
+            <div class="generation-dialog-fields">
+              <div class="generation-choice"><span>生成模型</span><Select :model-value="generationModelId == null ? undefined : String(generationModelId)" @update:model-value="generationModelId = $event ? Number($event) : null"><SelectTrigger class="w-full" aria-label="生成模型"><SelectValue placeholder="选择生成模型" /></SelectTrigger><SelectContent class="ai-elements"><SelectItem v-for="model in generationModels" :key="model.id" :value="String(model.id)">{{ model.name }} · {{ model.provider }}</SelectItem></SelectContent></Select></div>
+              <template v-if="generationType === 'image'">
+                <div class="generation-choice"><span>画面比例</span><SegmentedControl :model-value="imageAspectRatio || ''" :options="imageRatios" label="图片比例" @update:model-value="imageAspectRatio = $event" /></div>
+                <div class="generation-choice"><span>图片质量</span><SegmentedControl :model-value="imageQuality || ''" :options="[{value:'low',label:'低'},{value:'medium',label:'中'},{value:'high',label:'高'}]" label="图片质量" @update:model-value="imageQuality = $event" /></div>
+                <label>生成张数<el-input-number v-model="imageCount" :min="1" :max="10" placeholder="张数" aria-label="生成张数" /></label>
+              </template>
+              <template v-else>
+                <div class="generation-choice"><span>画面比例</span><SegmentedControl :model-value="videoRatio || ''" :options="videoRatios" label="视频比例" @update:model-value="videoRatio = $event" /></div>
+                <div class="generation-choice"><span>分辨率</span><SegmentedControl :model-value="videoResolution || ''" :options="[{value:'720p',label:'720p'},{value:'1080p',label:'1080p'}]" label="视频分辨率" @update:model-value="videoResolution = $event" /></div>
+                <label>视频时长（秒）<el-input-number v-model="videoDuration" :min="1" :max="60" placeholder="秒数" aria-label="视频时长" /></label>
+              </template>
+            </div>
+            <p v-if="generationDialogError" role="alert" class="task-error">{{ generationDialogError }}</p>
+          </ConfirmationRequest>
+          <ConfirmationActions><ConfirmationAction variant="outline" @click="generationDialogOpen = false">稍后确认</ConfirmationAction><ConfirmationAction :disabled="isProcessing" @click="confirmGeneration">确认并生成</ConfirmationAction></ConfirmationActions>
+        </Confirmation>
+      </DialogContent>
+    </Dialog>
+    <AssetPicker v-model:visible="assetPickerOpen" :max-select="10 - selectedAssets.length" :allow-video="true" @select="selectAssets" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
-import AiMascotInput from '@/components/AiMascotInput.vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import AiChatComposer from '@/components/AiChatComposer.vue'
+import SegmentedControl from '@/components/SegmentedControl.vue'
+import { SparklesIcon, PlusIcon, CopyIcon, CheckIcon, LayersIcon, MessageSquareIcon } from '@lucide/vue'
+import { ElMessage } from 'element-plus'
+import { Button } from '@/components/ui/button'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Conversation, ConversationContent, ConversationScrollButton } from '@/components/ai-elements/conversation'
+import { Message, MessageContent, MessageResponse, MessageActions, MessageAction } from '@/components/ai-elements/message'
+import { ChainOfThought, ChainOfThoughtHeader, ChainOfThoughtContent, ChainOfThoughtStep } from '@/components/ai-elements/chain-of-thought'
+import { Checkpoint, CheckpointIcon, CheckpointTrigger } from '@/components/ai-elements/checkpoint'
+import { Context, ContextTrigger, ContextContent } from '@/components/ai-elements/context'
+import { Tool, ToolHeader, ToolContent } from '@/components/ai-elements/tool'
+import { Confirmation, ConfirmationRequest, ConfirmationActions, ConfirmationAction } from '@/components/ai-elements/confirmation'
+import { Suggestion } from '@/components/ai-elements/suggestion'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import AssetPicker from '@/components/AssetPicker.vue'
 import type { ChatSubmitData, AIModel } from '@/types/ai-models'
 import {
@@ -194,13 +122,30 @@ import {
 } from '@/api/workflow'
 
 const isProcessing = ref(false)
-const currentStatus = ref('')
-const messages = ref<Array<ConversationMessage & { role: 'user' | 'agent' }>>([])
+type ChatMessage = ConversationMessage & { steps?: string[]; failed?: boolean }
+const composer = ref<InstanceType<typeof AiChatComposer>>()
+const selectedCheckpoint = ref<number>()
+const contextOpen = ref(false)
+const contextAssetCount = computed(() => new Set([...messages.value.flatMap(message => message.assets?.map(asset => asset.id) || []), ...selectedAssets.value.map(asset => asset.id)]).size)
+const suggestions = ['帮我完善图片提示词', '根据参考图片创作新画面', '帮我构思一段视频']
+async function copyMessage(text: string) {
+  try { await navigator.clipboard.writeText(text); ElMessage.success('已复制回复') }
+  catch { ElMessage.error('复制失败，请手动选择文字复制') }
+}
+function locateCheckpoint(id: number) {
+  selectedCheckpoint.value = id
+  document.getElementById(`conversation-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+}
+function taskState(task: WorkflowTask) {
+  if (task.status === 'completed') return 'output-available' as const
+  if (task.status === 'failed') return 'output-error' as const
+  return 'input-available' as const
+}
+const messages = ref<ChatMessage[]>([])
 const availableModels = ref<AIModel[]>([])
 const isLoadingModels = ref(true)
 const currentSessionId = ref<string | undefined>(undefined)
 const sessions = ref<WorkflowSession[]>([])
-const messagesContainer = ref<HTMLElement | null>(null)
 const activeTasks = ref<WorkflowTask[]>([])
 const assetPickerOpen = ref(false)
 const selectedAssets = ref<ChatAsset[]>([])
@@ -221,7 +166,7 @@ function removeAsset(id: number) {
   selectedAssets.value = selectedAssets.value.filter((asset) => asset.id !== id)
 }
 const conversationItems = computed(() => {
-  const items: Array<{ key: string; type: 'message'; index: number; message: ConversationMessage } | { key: string; type: 'task'; task: WorkflowTask }> = []
+  const items: Array<{ key: string; type: 'message'; index: number; message: ChatMessage } | { key: string; type: 'task'; task: WorkflowTask }> = []
   for (const [index, message] of messages.value.entries()) {
     items.push({ key: `message-${message.id ?? index}`, type: 'message', index, message })
     if (message.id != null) {
@@ -237,6 +182,10 @@ const conversationItems = computed(() => {
   }
   return items
 })
+const qualityLabels: Record<string, string> = { low: '低', medium: '中', high: '高' }
+const parameterLabels: Record<string, string> = { n: '张数', aspect_ratio: '比例', quality: '质量', ratio: '比例', resolution: '分辨率', duration: '时长（秒）' }
+const imageRatios = ['1:1', '16:9', '9:16', '4:3', '3:4'].map(value => ({ value, label: value }))
+const videoRatios = ['16:9', '9:16', '1:1'].map(value => ({ value, label: value }))
 const generationType = ref<'none' | 'image' | 'video'>('none')
 const generationModels = ref<Array<{ id: number; name: string; provider: string; description?: string }>>([])
 const generationModelId = ref<number | null>(null)
@@ -267,13 +216,6 @@ function getStatusText(status: string): string {
   return statusMap[status] || status
 }
 
-function getTaskStatusText(task: WorkflowTask): string {
-  if (task.status === 'running') return '生成中'
-  if (task.status === 'completed') return '已完成'
-  if (task.status === 'failed') return '失败'
-  return task.status
-}
-
 // 时间格式化
 function formatTime(dateStr: string): string {
   if (!dateStr) return ''
@@ -289,15 +231,6 @@ function formatTime(dateStr: string): string {
   if (hours < 24) return `${hours}小时前`
   if (days < 7) return `${days}天前`
   return date.toLocaleDateString('zh-CN')
-}
-
-// 滚动到底部
-function scrollToBottom() {
-  nextTick(() => {
-    if (messagesContainer.value) {
-      messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
-    }
-  })
 }
 
 // 从后端数据构建前端 AIModel 格式
@@ -354,23 +287,8 @@ async function loadLanguageModels() {
     console.log('已加载语言模型:', availableModels.value)
   } catch (error) {
     console.error('加载语言模型失败:', error)
-    availableModels.value = [
-      {
-        id: 'fallback',
-        name: 'GPT-4',
-        provider: 'OpenAI',
-        iconName: 'openai',
-        badgeColor: 'text-emerald-500',
-        accentColor: '#10a37f',
-        reasoningTitle: '推理强度',
-        defaultLevel: 'medium',
-        levels: [
-          { id: 'low', label: '低', desc: '快速响应', multiplier: 1.8 },
-          { id: 'medium', label: '中', desc: '平衡推理', multiplier: 2.6 },
-          { id: 'high', label: '高', desc: '深度推理', multiplier: 3.6 },
-        ],
-      },
-    ]
+    availableModels.value = []
+    ElMessage.error('模型加载失败，请刷新后重试。')
   } finally {
     isLoadingModels.value = false
   }
@@ -390,10 +308,10 @@ async function loadSessions() {
 async function loadSessionDetail(sessionId: string) {
   try {
     const detail = await getSessionHistory(sessionId)
-    messages.value = detail.conversations as any
+    if (currentSessionId.value !== sessionId) return
+    messages.value = detail.conversations as ChatMessage[]
     activeTasks.value = detail.tasks || []
     if (detail.parameters?.generation_request) openGenerationDialog(detail.parameters.generation_request)
-    scrollToBottom()
   } catch (error) {
     console.error('加载会话详情失败:', error)
     messages.value = []
@@ -406,6 +324,7 @@ async function switchSession(sessionId: string) {
   if (sessionId === currentSessionId.value || isProcessing.value) return
   currentSessionId.value = sessionId
   selectedAssets.value = []
+  generationType.value = 'none'
   generationDialogOpen.value = false
   await loadSessionDetail(sessionId)
 }
@@ -417,6 +336,7 @@ function createNewSession() {
   selectedAssets.value = []
   messages.value = []
   activeTasks.value = []
+  generationType.value = 'none'
   generationDialogOpen.value = false
 }
 
@@ -452,6 +372,7 @@ async function confirmGeneration() {
   const model = lastSubmitData?.model || availableModels.value[0]
   if (!model) { generationDialogError.value = '请先加载对话模型后重试。'; return }
   generationDialogOpen.value = false
+  generationType.value = 'none'
   await handleSubmit({ prompt: pendingGenerationPrompt.value, model, useWebSearch: false, attachedFile: null }, options)
 }
 
@@ -476,7 +397,6 @@ const handleSubmit = async (data: ChatSubmitData, confirmedOptions?: WorkflowMes
     created_at: new Date().toISOString(),
   })
   const agentMessage = messages.value[messages.value.length - 1]!
-  scrollToBottom()
 
   isProcessing.value = true
 
@@ -485,13 +405,13 @@ const handleSubmit = async (data: ChatSubmitData, confirmedOptions?: WorkflowMes
     const response = await sendWorkflowMessageStream(
       { message: data.prompt, model_id: Number(data.model.id), session_id: currentSessionId.value, generation_options: confirmedOptions, asset_ids: submittedAssets.map((asset) => asset.id) },
       (status) => {
-        currentStatus.value = status
+        agentMessage.steps ??= []
+        if (agentMessage.steps.at(-1) !== status) agentMessage.steps.push(status)
         console.info('[工作流对话]', status)
       },
       (text) => {
         const lastMessage = messages.value[messages.value.length - 1]
         if (lastMessage?.role === 'agent') lastMessage.message += text
-        scrollToBottom()
       },
     )
     activeTasks.value = response.tasks || []
@@ -514,7 +434,6 @@ const handleSubmit = async (data: ChatSubmitData, confirmedOptions?: WorkflowMes
     if (agentMessage?.role === 'agent' && !agentMessage.message) {
       agentMessage.message = response.reply
     }
-    scrollToBottom()
 
     // 如果工作流准备就绪，刷新会话列表（状态可能已变化）
     if (response.workflow_ready && !sessionChanged) {
@@ -524,12 +443,11 @@ const handleSubmit = async (data: ChatSubmitData, confirmedOptions?: WorkflowMes
     console.error('发送消息失败:', error)
     const errorMessage = messages.value[messages.value.length - 1]
     if (errorMessage?.role === 'agent') {
+      errorMessage.failed = true
       errorMessage.message = error instanceof Error ? error.message : '抱歉，处理您的请求时出现错误。'
     }
-    scrollToBottom()
   } finally {
     isProcessing.value = false
-    currentStatus.value = ''
   }
 }
 
@@ -576,312 +494,75 @@ onUnmounted(() => {
 })
 </script>
 
+
 <style scoped>
-.chat-page {
-  display: flex;
-  width: 100%;
-  height: 100vh;
-  background: var(--color-black);
-  color: var(--color-white);
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+.chat-page { display: flex; height: 100dvh; width: 100%; min-width: 0; background: transparent; color: var(--color-text); }
+.sessions-sidebar { width: 244px; flex-shrink: 0; display: flex; flex-direction: column; border-right: 1px solid var(--color-border); background: var(--color-surface-soft); }
+.sidebar-header { padding: 22px 16px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.section-label { font-size: 12px; color: var(--color-muted); }
+.sessions-list { overflow-y: auto; padding: 0 10px; }
+.session-item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 14px 10px; margin-bottom: 5px; border: 1px solid transparent; border-radius: 8px; background: transparent; text-align: left; color: var(--color-muted); }
+.session-item:hover, .session-item.active { background: var(--color-surface-soft); color: var(--color-text); }
+.session-item.active { border-color: var(--color-border); }
+.session-info { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.session-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.session-meta, .empty-sessions { color: var(--color-muted); font-size: 11px; }
+.empty-sessions { padding: 20px 8px; }
+.chat-content { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.chat-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 28px; border-bottom: 1px solid var(--color-border); }
+.chat-header strong { font-size: 14px; font-weight: 500; }
+.welcome-container { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding: 32px 24px; text-align: center; }
+.welcome-icon { width: 32px; height: 32px; margin-bottom: 8px; }
+.welcome-container h1 { font-size: clamp(24px, 3vw, 32px); letter-spacing: -.04em; font-weight: 500; }
+.welcome-container p { color: var(--color-muted); font-size: 14px; }
+.welcome-suggestions { display: flex; justify-content: center; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.chat-conversation { min-height: 0; }
+.conversation-inner { width: 100%; max-width: 840px; margin: 0 auto; padding: 36px 28px; gap: 28px; }
+.chat-message { max-width: 100%; font-size: 14px; line-height: 1.8; }
+.chat-message.is-user { align-items: flex-end; }
+.message-author { display: flex; align-items: center; gap: 12px; font-size: 12px; color: var(--color-muted); }
+.message-author span { font-size: 10px; opacity: .7; }
+.message-row { border-radius: 10px; scroll-margin: 24px; }
+.checkpoint-selected { outline: 1px solid var(--color-border-strong); outline-offset: 10px; }
+.user-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.execution-trace { margin: 8px 0; max-width: 620px; }
+.saved-checkpoint { margin-top: 14px; font-size: 11px; }
+.saved-checkpoint :deep(button) { font-size: 11px; color: var(--color-muted); }
+.generation-tool { width: 100%; }
+.tool-details { padding: 0 16px 16px; display: flex; flex-direction: column; gap: 12px; }
+.task-parameters { display: flex; flex-wrap: wrap; gap: 8px; color: var(--color-muted); font-size: 12px; }
+.task-parameters dd { color: var(--color-text); margin-right: 14px; }
+.task-meta { font-size: 11px; color: var(--color-muted); overflow-wrap: anywhere; }
+.task-error { color: var(--color-danger); }
+.task-images { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; max-width: 600px; margin-top: 10px; }
+.task-images img, .task-images video { display: block; width: 100%; max-height: 420px; border-radius: 8px; object-fit: contain; }
+.input-container { width: 100%; max-width: 840px; margin: 0 auto; padding: 12px 28px 22px; }
+.chat-assets { display: flex; flex-wrap: wrap; gap: 10px; padding: 12px 12px 0; }
+.chat-asset { display: flex; align-items: center; gap: 4px; border: 1px solid var(--color-border); border-radius: 8px; padding: 4px; }
+.chat-asset img, .chat-asset video { width: 48px; height: 48px; object-fit: cover; border-radius: 4px; }
+.pending-generation { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-size: 12px; color: var(--color-muted); }
+.generation-dialog-prompt { max-height: 140px; overflow: auto; font-size: 13px; line-height: 1.8; color: var(--color-muted); white-space: pre-wrap; }
+.generation-dialog-fields { display: flex; flex-direction: column; gap: 16px; margin: 18px 0; }
+.generation-dialog-fields label, .generation-choice { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; font-size: 12px; }
+:global(.generation-dialog) { max-height: calc(100dvh - 48px); overflow-y: auto; }
+:global(.context-panel) { width: 300px; max-height: 440px; overflow-y: auto; }
+@media (max-width: 760px) {
+  .sessions-sidebar { width: 174px; }
+  .sidebar-header { flex-direction: column; align-items: stretch; padding: 16px 10px; }
+  .chat-header { padding: 12px 16px; }
+  .conversation-inner { padding: 24px 16px; }
+  .input-container { padding: 12px 16px 16px; }
 }
-
-/* ===== 左侧会话列表 ===== */
-.sessions-sidebar {
-  width: 280px;
-  background: var(--color-bg);
-  border-right: 1px solid rgba(var(--color-white-rgb), 0.1);
-  display: flex;
-  flex-direction: column;
-}
-
-.sidebar-header {
-  padding: 1.5rem 1rem;
-  border-bottom: 1px solid rgba(var(--color-white-rgb), 0.1);
-}
-
-.sidebar-header h2 {
-  font-size: 1.125rem;
-  font-weight: 600;
-  margin: 0 0 1rem 0;
-  color: var(--color-text);
-}
-
-.new-session-btn {
-  width: 100%;
-  padding: 0.625rem 1rem;
-  background: rgba(var(--color-info-rgb), 0.1);
-  border: 1px solid rgba(var(--color-info-rgb), 0.3);
-  border-radius: 0.5rem;
-  color: var(--color-info);
-  font-size: 0.875rem;
-  font-weight: 500;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  transition: all 0.2s;
-}
-
-.new-session-btn:hover:not(:disabled) {
-  background: rgba(var(--color-info-rgb), 0.2);
-  border-color: rgba(var(--color-info-rgb), 0.5);
-}
-
-.new-session-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.sessions-list {
-  flex: 1;
-  overflow-y: auto;
-  padding: 0.5rem;
-}
-
-.session-item {
-  padding: 0.875rem;
-  margin-bottom: 0.5rem;
-  background: rgba(var(--color-white-rgb), 0.02);
-  border: 1px solid rgba(var(--color-white-rgb), 0.05);
-  border-radius: 0.5rem;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.session-item:hover {
-  background: rgba(var(--color-white-rgb), 0.05);
-  border-color: rgba(var(--color-white-rgb), 0.1);
-}
-
-.session-item.active {
-  background: rgba(var(--color-info-rgb), 0.1);
-  border-color: rgba(var(--color-info-rgb), 0.3);
-}
-
-.session-title {
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: var(--color-text);
-  margin-bottom: 0.5rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.session-meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 0.75rem;
-  color: rgba(var(--color-text-soft-rgb), 0.5);
-}
-
-.session-status {
-  padding: 0.125rem 0.5rem;
-  border-radius: 0.25rem;
-  font-size: 0.6875rem;
-}
-
-.session-status.collecting {
-  background: rgba(var(--color-danger-rgb), 0.1);
-  color: var(--color-danger);
-}
-
-.session-status.ready {
-  background: rgba(var(--color-success-rgb), 0.1);
-  color: rgb(var(--color-success-rgb));
-}
-
-.session-status.completed {
-  background: rgba(var(--color-info-rgb), 0.1);
-  color: var(--color-info);
-}
-
-.session-status.failed {
-  background: rgba(var(--color-danger-rgb), 0.1);
-  color: var(--color-danger);
-}
-
-.empty-sessions {
-  padding: 2rem 1rem;
-  text-align: center;
-  color: rgba(var(--color-text-soft-rgb), 0.3);
-  font-size: 0.875rem;
-}
-
-/* ===== 右侧对话区域 ===== */
-.chat-content {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.chat-assets { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
-.asset-trigger, .chat-asset :deep(.el-button) { --el-button-text-color: var(--color-text); --el-button-hover-text-color: var(--color-text); }
-.asset-trigger.el-button:not(.is-disabled):hover, .chat-asset :deep(.el-button:not(.is-disabled):hover) { background: rgba(var(--color-white-rgb), 0.1); }
-.chat-asset { display: flex; align-items: center; border: 1px solid rgba(var(--color-white-rgb), 0.15); border-radius: 8px; overflow: hidden; }
-.chat-asset img, .chat-asset video { width: 64px; height: 64px; object-fit: cover; }
-
-.generation-dialog-prompt { margin: 0 0 1rem; white-space: pre-wrap; }
-.generation-dialog-fields { display: grid; gap: 1rem; }
-.generation-dialog-fields :deep(.el-select), .generation-dialog-fields :deep(.el-input-number) { width: 100%; }
-
-.loading-container {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: rgba(var(--color-white-rgb), 0.6);
-}
-
-.welcome-container {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 2rem;
-}
-
-.chat-container {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.messages-container {
-  flex: 1;
-  overflow-y: auto;
-  padding: 2rem;
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
-}
-
-.message {
-  display: flex;
-  gap: 1rem;
-  animation: fadeIn 0.3s ease;
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.message-avatar {
-  width: 2.5rem;
-  height: 2.5rem;
-  border-radius: 0.5rem;
-  background: rgba(var(--color-white-rgb), 0.05);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.25rem;
-  flex-shrink: 0;
-}
-
-.message.user .message-avatar {
-  background: rgba(var(--color-info-rgb), 0.1);
-}
-
-.message.agent .message-avatar {
-  background: rgba(var(--color-danger-rgb), 0.1);
-}
-
-.message-bubble {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.message-status {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 0.5rem;
-  color: var(--color-text-soft);
-  font-size: 0.875rem;
-}
-
-.status-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--color-info);
-  animation: statusPulse 1s ease-in-out infinite alternate;
-}
-
-@keyframes statusPulse {
-  to { opacity: 0.35; }
-}
-
-.message-content {
-  padding: 1rem;
-  background: rgba(var(--color-white-rgb), 0.05);
-  border-radius: 0.75rem;
-  line-height: 1.6;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.message.user .message-content {
-  background: rgba(var(--color-info-rgb), 0.1);
-}
-
-.message-time {
-  font-size: 0.75rem;
-  color: rgba(var(--color-text-soft-rgb), 0.4);
-  padding: 0 0.5rem;
-}
-
-.task-result {
-  margin-left: 3.5rem;
-  padding: 1rem;
-  border: 1px solid rgba(var(--color-white-rgb), 0.12);
-  border-radius: 0.5rem;
-  background: rgba(var(--color-white-rgb), 0.04);
-}
-
-.task-heading { display: flex; justify-content: space-between; gap: 1rem; }
-.task-status { color: var(--color-info); }
-.task-status.completed { color: rgb(var(--color-success-rgb)); }
-.task-status.failed, .task-error { color: var(--color-danger); }
-.task-prompt, .task-meta { margin-top: 0.5rem; color: rgba(var(--color-white-rgb), 0.65); }
-.task-images { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 0.75rem; }
-.task-images img { display: block; width: min(100%, 320px); max-height: 320px; object-fit: contain; border-radius: 4px; }
-.task-images video { display: block; width: min(100%, 480px); max-height: 320px; border-radius: 4px; }
-
-.input-container {
-  padding: 1.5rem;
-  border-top: 1px solid rgba(var(--color-white-rgb), 0.1);
-  background: var(--color-bg);
-}
-
-/* 滚动条样式 */
-.sessions-list::-webkit-scrollbar,
-.messages-container::-webkit-scrollbar {
-  width: 6px;
-}
-
-.sessions-list::-webkit-scrollbar-track,
-.messages-container::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.sessions-list::-webkit-scrollbar-thumb,
-.messages-container::-webkit-scrollbar-thumb {
-  background: rgba(var(--color-white-rgb), 0.1);
-  border-radius: 3px;
-}
-
-.sessions-list::-webkit-scrollbar-thumb:hover,
-.messages-container::-webkit-scrollbar-thumb:hover {
-  background: rgba(var(--color-white-rgb), 0.2);
+@media (max-width: 540px) {
+  .chat-page { flex-direction: column; }
+  .sessions-sidebar { width: 100%; max-height: 104px; border-right: 0; border-bottom: 1px solid var(--color-border); }
+  .sidebar-header { flex-direction: row; align-items: center; padding: 8px 12px; }
+  .sessions-list { display: flex; gap: 8px; padding-bottom: 6px; }
+  .session-item { width: 150px; flex-shrink: 0; padding: 5px 8px; margin: 0; }
+  .session-meta { display: none; }
+  .empty-sessions { padding: 4px; }
+  .chat-content { min-height: 0; }
+  .welcome-container { padding: 16px; gap: 12px; }
+  .welcome-suggestions { flex-direction: column; margin-top: 4px; }
 }
 </style>

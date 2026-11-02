@@ -21,6 +21,7 @@ import MediaViewer from '../components/MediaViewer.vue'
 import RecordContextMenu from '../components/RecordContextMenu.vue'
 import MentionTextarea from '../components/MentionTextarea.vue'
 import SegmentedControl from '../components/SegmentedControl.vue'
+import PromptComposerButton from '../components/PromptComposerButton.vue'
 // 本地 ComfyUI 接口：获取模型列表、采样器信息、提交任务、上传图片
 // import { getModels, getKSamplerInfo, submitPrompt, uploadImage, type PromptParams } from '../api/comfyui'
 // WebSocket 连接：实时接收本地 ComfyUI 的生成进度和结果图片
@@ -1093,6 +1094,9 @@ onUnmounted(() => {
             <span class="btn-glow" />
             <span class="btn-label">{{ justSubmitted ? '已提交 ✓' : generating ? '生成中...' : '开始生成' }}</span>
           </button>
+          <div class="composer-button-row">
+            <PromptComposerButton />
+          </div>
         </div>
       </aside>
 
@@ -1491,6 +1495,13 @@ onUnmounted(() => {
 .icon-btn:hover { background: rgba(var(--color-white-rgb), 0.2); color: var(--color-white); }
 
 .full-width { width: 100%; }
+
+.composer-button-row {
+  display: flex;
+  justify-content: center;
+  height: 40px;
+  margin-top: -4px;
+}
 
 /* 多图预览 */
 .multi-preview-wrap { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
