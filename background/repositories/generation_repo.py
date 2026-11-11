@@ -33,7 +33,7 @@ def get_model_info(model_id: int):
 def get_language_model_info(model_id: int):
     """根据模型编号获取语言模型信息"""
     model_info = execute_query(
-        "SELECT id, name, provider, rfid FROM api_models WHERE id = %s AND type = %s",
+        "SELECT id, name, provider, rfid, context_window FROM api_models WHERE id = %s AND type = %s",
         (model_id, 'language'),
         fetch_one=True
     )

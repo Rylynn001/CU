@@ -43,7 +43,8 @@ def get_conversation_agent(model_id: int) -> ConversationAgent:
     return ConversationAgent(
         api_key=provider_config['api_key'],
         base_url=provider_config['base_url'],
-        model=model_info['name']
+        model=model_info['name'],
+        context_window=model_info.get('context_window'),
     )
 
 
@@ -63,10 +64,10 @@ class ChatResponse(BaseModel):
     user_conversation_id: Optional[int] = None
     agent_conversation_id: Optional[int] = None
     intent: Optional[str] = None
-    parameters: Optional[Dict[str, Any]] = None
     workflow_ready: bool
     tasks: List[Dict[str, Any]] = Field(default_factory=list)
     generation_request: Optional[Dict[str, Any]] = None
+    context_usage: Optional[Dict[str, Any]] = None
 
 
 @router.post("/chat/stream")
@@ -89,9 +90,12 @@ async def _stream_chat_events(request: ChatRequest, current_user: dict):
     async def report_delta(text: str):
         await event_queue.put(("delta", {"text": text}))
 
+    async def report_event(event: str, data: dict):
+        await event_queue.put((event, data))
+
     # 创建任务只是安排执行；当前协程让出执行权后，聊天业务才有机会运行。
     chat_task = asyncio.create_task(
-        _process_chat(request, current_user, report_progress, report_delta)
+        _process_chat(request, current_user, report_progress, report_delta, report_event)
     )
     try:
         yield _encode_sse("progress", {"message": "正在准备对话上下文"})
@@ -151,7 +155,7 @@ def _encode_sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
-async def _process_chat(request: ChatRequest, current_user: dict, on_progress=None, on_delta=None) -> ChatResponse:
+async def _process_chat(request: ChatRequest, current_user: dict, on_progress=None, on_delta=None, on_event=None) -> ChatResponse:
     """聊天主流程：读取会话 → 调用助手和工具 → 保存对话 → 返回结果。"""
     request_id = str(uuid.uuid4())[:8]
     user_id = current_user["id"]
@@ -191,10 +195,17 @@ async def _process_chat(request: ChatRequest, current_user: dict, on_progress=No
         workflow_tools.allowed_asset_ids.update(previous_message.get("asset_ids", []))
     workflow_tools.allowed_asset_ids.update(workflow_tools.asset_ids)
     previous_tasks = session_tasks(session_id, user_id) if session_id else []
+    events = []
+
+    async def record_event(event: str, data: dict):
+        if event == "trace":
+            events.append(data)
+        if on_event:
+            await on_event(event, data)
 
     # 3. 助手理解需求；发现工具时调用 discover，执行工具时调用 discover_and_execute。
     if generation_options:
-        pending = (existing_state or {}).get("parameters", {}).get("generation_request")
+        pending = (existing_state or {}).get("generation_request")
         if not pending or pending["media_type"] != generation_options.get("media_type"):
             raise HTTPException(status_code=400, detail="生成请求已变化，请重新发起生成并确认参数")
         if pending.get("input_asset_ids"):
@@ -205,7 +216,7 @@ async def _process_chat(request: ChatRequest, current_user: dict, on_progress=No
             })
             if task.get("task_id"):
                 reply = "生成任务已提交，请查看下方进度。"
-                result = {"reply": reply, "state": {"intent": "batch_image" if tool_name in ("txt2img", "img2img") else "text_to_video", "parameters": task["parameters"]}, "tasks": [task], "workflow_ready": True}
+                result = {"reply": reply, "state": {"intent": "batch_image" if tool_name in ("txt2img", "img2img") else "text_to_video"}, "tasks": [task], "workflow_ready": True}
             else:
                 result = {"reply": "请在弹出的选择框中补全生成参数。", "state": existing_state, "tasks": [], "workflow_ready": False}
         else:
@@ -222,6 +233,7 @@ async def _process_chat(request: ChatRequest, current_user: dict, on_progress=No
                 executions=previous_tasks,
                 request_id=request_id,
                 user_content=user_content,
+                on_event=record_event,
             )
         if on_delta and result.get("tasks"):
             await on_delta(result["reply"])
@@ -239,6 +251,7 @@ async def _process_chat(request: ChatRequest, current_user: dict, on_progress=No
             executions=previous_tasks,
             request_id=request_id,
             user_content=user_content,
+            on_event=record_event,
         )
 
     # 4. 保存本轮对话和会话状态。
@@ -246,14 +259,17 @@ async def _process_chat(request: ChatRequest, current_user: dict, on_progress=No
     pending_generation = workflow_tools.pending_generation if isinstance(workflow_tools.pending_generation, dict) else None
     if pending_generation:
         result["state"]["intent"] = "batch_image" if pending_generation["media_type"] == "image" else "text_to_video"
-        result["state"]["parameters"] = {"generation_request": pending_generation}
+    result["metadata"] = {"events": events, "context_usage": result.get("context_usage")}
     if request.asset_ids:
         ensure_conversation()
     user_conversation_id, agent_conversation_id = _save_chat_result(
         session_id, request.message, result, previous_tasks, user_conversation_id
     )
-    if pending_generation and previous_tasks:
-        WorkflowRepository.update_session(session_id, parameters=result["state"]["parameters"])
+    # 会话字段只保存尚未执行的选择请求；执行参数的唯一来源是执行记录。
+    if pending_generation:
+        WorkflowRepository.update_session(session_id, parameters={"generation_request": pending_generation})
+    elif result.get("tasks"):
+        WorkflowRepository.update_session(session_id, parameters={})
     logger.info(
         "工作流对话完成 request_id=%s session_id=%s intent=%s workflow_ready=%s elapsed_ms=%d",
         request_id, session_id, result["state"].get("intent"),
@@ -265,10 +281,10 @@ async def _process_chat(request: ChatRequest, current_user: dict, on_progress=No
         user_conversation_id=user_conversation_id,
         agent_conversation_id=agent_conversation_id,
         intent=result["state"].get("intent"),
-        parameters=result["state"].get("parameters"),
         workflow_ready=result.get("workflow_ready", False),
         tasks=session_tasks(session_id, user_id),
         generation_request=pending_generation,
+        context_usage=result.get("context_usage"),
     )
 
 
@@ -293,7 +309,7 @@ def _load_chat_state(session_id: Optional[int], user_id: int) -> Optional[Conver
             for item in conversations
         ],
         "intent": session.get("intent"),
-        "parameters": session.get("parameters", {}),
+        "generation_request": session.get("parameters", {}).get("generation_request"),
         "missing_params": [],
         "workflow_ready": session["status"] == "ready",
         "current_step": "parameter_extraction" if session.get("intent") else "intent_recognition",
@@ -307,21 +323,21 @@ def _save_chat_result(
     """保存用户和助手消息；根据本轮提交情况更新会话状态。"""
     if user_conversation_id is None:
         user_conversation_id = WorkflowRepository.add_conversation(session_id, "user", message)
-    agent_conversation_id = WorkflowRepository.add_conversation(session_id, "agent", result["reply"])
+    agent_conversation_id = WorkflowRepository.add_conversation(
+        session_id, "agent", result["reply"], metadata=result.get("metadata")
+    )
 
     state = result["state"]
     if result.get("tasks"):
         WorkflowRepository.update_session(
             session_id,
             intent=state.get("intent"),
-            parameters=state.get("parameters", {}),
             status="executing",
         )
     elif state.get("intent") and not previous_tasks:
         WorkflowRepository.update_session(
             session_id,
             intent=state["intent"],
-            parameters=state["parameters"],
             status="collecting",
         )
 
@@ -354,10 +370,22 @@ async def get_sessions(current_user: dict = Depends(get_current_user)):
     ]
 
 
+@router.delete("/sessions/{session_id}", status_code=204)
+async def delete_session(session_id: int, current_user: dict = Depends(get_current_user)):
+    """软删除当前用户的会话。"""
+    user_id = current_user["id"]
+    session = WorkflowRepository.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="会话不存在")
+    if session["user_id"] != user_id:
+        raise HTTPException(status_code=403, detail="无权访问此会话")
+    WorkflowRepository.soft_delete_session(session_id, user_id)
+
+
 class SessionDetailResponse(BaseModel):
     id: int
     intent: Optional[str]
-    parameters: Optional[Dict[str, Any]]
+    generation_request: Optional[Dict[str, Any]] = None
     status: str
     conversations: List[Dict[str, Any]]
     tasks: List[Dict[str, Any]] = Field(default_factory=list)
@@ -379,7 +407,7 @@ async def get_session_detail(session_id: int, current_user: dict = Depends(get_c
     return SessionDetailResponse(
         id=session["id"],
         intent=session.get("intent"),
-        parameters=session.get("parameters"),
+        generation_request=session.get("parameters", {}).get("generation_request"),
         status=session["status"],
         tasks=session_tasks(session_id, user_id),
         conversations=[
@@ -389,6 +417,8 @@ async def get_session_detail(session_id: int, current_user: dict = Depends(get_c
                 "message": conv["message"],
                 "created_at": conv["created_at"].isoformat(),
                 "assets": asset_previews(load_chat_assets(conv["asset_ids"], user_id)) if conv.get("asset_ids") else [],
+                "events": conv.get("metadata", {}).get("events", []),
+                "context_usage": conv.get("metadata", {}).get("context_usage"),
             }
             for conv in conversations
         ]

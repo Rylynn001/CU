@@ -27,7 +27,7 @@ const formattedInput = computed(() => {
     <h4
       class="font-medium text-muted-foreground text-xs uppercase tracking-wide"
     >
-      Parameters
+      调用参数
     </h4>
     <div class="rounded-md bg-muted/50">
       <CodeBlock :code="formattedInput" language="json" />

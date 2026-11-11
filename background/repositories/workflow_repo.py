@@ -12,24 +12,23 @@ class WorkflowRepository:
     """工作流数据访问"""
 
     @staticmethod
-    def create_session(user_id: int, intent: Optional[str] = None,
-                      parameters: Optional[Dict[str, Any]] = None) -> int:
+    def create_session(user_id: int, intent: Optional[str] = None) -> int:
         """创建工作流会话并返回数据库自动生成的整数编号。"""
         return execute_query(
             """
-            INSERT INTO workflow_sessions (user_id, intent, parameters, status)
-            VALUES (%s, %s, %s, 'collecting')
+            INSERT INTO workflow_sessions (user_id, intent, status)
+            VALUES (%s, %s, 'collecting')
             """,
-            (user_id, intent, json.dumps(parameters) if parameters else None)
+            (user_id, intent)
         )
 
     @staticmethod
     def get_session(session_id: int) -> Optional[Dict[str, Any]]:
-        """从 workflow_sessions 读取会话主记录（用户、意图、参数和状态）。"""
+        """读取会话；parameters 仅保留待确认请求，执行参数从执行表读取。"""
         with get_db() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT * FROM workflow_sessions WHERE id = %s",
+                "SELECT * FROM workflow_sessions WHERE id = %s AND deleted_at IS NULL",
                 (session_id,)
             )
             result = cursor.fetchone()
@@ -69,8 +68,14 @@ class WorkflowRepository:
         )
 
     @staticmethod
-    def add_conversation(session_id: int, role: str, message: str, asset_ids: Optional[List[int]] = None) -> int:
+    def add_conversation(session_id: int, role: str, message: str, asset_ids: Optional[List[int]] = None,
+                         metadata: Optional[Dict[str, Any]] = None) -> int:
         """写入一条用户或 Agent 消息并返回消息编号。"""
+        if metadata:
+            return execute_query(
+                "INSERT INTO workflow_conversations (session_id, role, message, metadata) VALUES (%s, %s, %s, %s)",
+                (session_id, role, message, json.dumps(metadata, ensure_ascii=False)),
+            )
         if asset_ids:
             return execute_query(
                 "INSERT INTO workflow_conversations (session_id, role, message, asset_ids) VALUES (%s, %s, %s, %s)",
@@ -91,7 +96,7 @@ class WorkflowRepository:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                SELECT id, role, message, created_at, asset_ids
+                SELECT id, role, message, created_at, asset_ids, metadata
                 FROM workflow_conversations
                 WHERE session_id = %s
                 ORDER BY created_at ASC, id ASC
@@ -101,6 +106,7 @@ class WorkflowRepository:
             rows = cursor.fetchall()
             for row in rows:
                 row["asset_ids"] = json.loads(row["asset_ids"]) if row["asset_ids"] else []
+                row["metadata"] = json.loads(row["metadata"]) if row["metadata"] else {}
             return rows
 
     @staticmethod
@@ -130,13 +136,21 @@ class WorkflowRepository:
                 SELECT DISTINCT s.id, s.intent, s.status, s.created_at, s.updated_at
                 FROM workflow_sessions s
                 INNER JOIN workflow_conversations c ON s.id = c.session_id
-                WHERE s.user_id = %s
+                WHERE s.user_id = %s AND s.deleted_at IS NULL
                 ORDER BY s.updated_at DESC
                 LIMIT %s
                 """,
                 (user_id, limit)
             )
             return cursor.fetchall()
+
+    @staticmethod
+    def soft_delete_session(session_id: int, user_id: int) -> None:
+        """将当前用户的会话标记为已删除。"""
+        execute_query(
+            "UPDATE workflow_sessions SET deleted_at = NOW() WHERE id = %s AND user_id = %s AND deleted_at IS NULL",
+            (session_id, user_id),
+        )
 
     @staticmethod
     def get_session_executions(session_id: int) -> List[Dict[str, Any]]:

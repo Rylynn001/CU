@@ -39,7 +39,7 @@ const formattedOutput = computed(() => {
     <h4
       class="font-medium text-muted-foreground text-xs uppercase tracking-wide"
     >
-      {{ props.errorText ? "Error" : "Result" }}
+      {{ props.errorText ? "错误" : "返回结果" }}
     </h4>
     <div
       :class="

@@ -23,11 +23,26 @@ export interface WorkflowMessageResponse {
   agent_conversation_id?: number | null
   reply: string
   intent?: string | null
-  parameters?: Record<string, unknown> | null
   workflow_ready: boolean
   tasks: WorkflowTask[]
   generation_request?: { media_type: 'image' | 'video'; prompt: string; models: GenerationModel[]; input_asset_ids?: number[]; tool_name?: string } | null
+  context_usage?: ContextUsage | null
 }
+
+export interface ContextUsage {
+  model: string
+  max_tokens: number | null
+  used_tokens: number | null
+  input_tokens: number | null
+  output_tokens: number | null
+  reasoning_tokens?: number | null
+  cached_tokens?: number | null
+}
+
+export type WorkflowTrace =
+  | { type: 'model_request'; round: number; model: string; message_count: number; tools: string[] }
+  | { type: 'tool_call'; round: number; call_id: string; name: string; input: unknown }
+  | { type: 'tool_result'; round: number; call_id: string; name: string; output: Record<string, unknown> }
 
 export interface LanguageModel {
   id: number
@@ -57,6 +72,8 @@ export interface ConversationMessage {
   message: string
   created_at: string
   assets?: ChatAsset[]
+  events?: WorkflowTrace[]
+  context_usage?: ContextUsage | null
 }
 
 export interface ChatAsset {
@@ -68,7 +85,7 @@ export interface ChatAsset {
 export interface SessionDetail {
   id: string
   intent: string | null
-  parameters: any
+  generation_request?: WorkflowMessageResponse['generation_request']
   status: string
   conversations: ConversationMessage[]
   tasks: WorkflowTask[]
@@ -112,6 +129,8 @@ export async function sendWorkflowMessageStream(
   data: WorkflowMessageRequest,
   onProgress: (message: string) => void,
   onDelta: (text: string) => void,
+  onTrace?: (event: WorkflowTrace) => void,
+  onUsage?: (usage: ContextUsage) => void,
 ): Promise<WorkflowMessageResponse> {
   const res = await authFetch('/api/api-proxy/workflow/chat/stream', {
     method: 'POST',
@@ -140,6 +159,8 @@ export async function sendWorkflowMessageStream(
     const payload = JSON.parse(data.join('\n'))
     if (event === 'progress') onProgress(payload.message)
     else if (event === 'delta') onDelta(payload.text)
+    else if (event === 'trace') onTrace?.(payload as WorkflowTrace)
+    else if (event === 'usage') onUsage?.(payload as ContextUsage)
     else if (event === 'done') result = payload as WorkflowMessageResponse
     else if (event === 'error') throw new Error(payload.message || '对话请求失败')
   }
@@ -180,4 +201,11 @@ export async function getUserSessions(): Promise<WorkflowSession[]> {
     method: 'GET',
   })
   return res.json()
+}
+
+export async function deleteSession(sessionId: string): Promise<void> {
+  const res = await authFetch(`/api/api-proxy/workflow/sessions/${sessionId}`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) throw new Error(`删除会话失败：${res.status}`)
 }

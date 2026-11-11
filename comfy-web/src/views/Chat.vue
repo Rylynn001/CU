@@ -3,24 +3,39 @@
     <aside class="sessions-sidebar">
       <div class="sidebar-header"><span class="section-label">创作对话</span><Button variant="outline" size="sm" :disabled="isProcessing" @click="createNewSession"><PlusIcon class="size-4" />新会话</Button></div>
       <nav class="sessions-list" aria-label="历史会话">
-        <button v-for="session in sessions" :key="session.id" :class="['session-item', { active: session.id === currentSessionId }]" :disabled="isProcessing" :aria-current="session.id === currentSessionId ? 'page' : undefined" @click="switchSession(session.id)">
+        <div v-for="session in sessions" :key="session.id" :class="['session-item', { active: session.id === currentSessionId }]">
+          <button class="session-select" :disabled="isProcessing" :aria-current="session.id === currentSessionId ? 'page' : undefined" @click="switchSession(session.id)">
           <MessageSquareIcon class="size-4 shrink-0" /><span class="session-info"><span class="session-title">{{ session.intent || '新会话' }}</span><span class="session-meta">{{ getStatusText(session.status) }} · {{ formatTime(session.updated_at) }}</span></span>
-        </button>
+          </button>
+          <button class="session-delete" type="button" :disabled="isProcessing" :aria-label="`删除会话 ${session.intent || '新会话'}`" title="删除会话" @click="deleteSessionFromList(session.id)"><Trash2Icon class="size-4" /></button>
+        </div>
         <p v-if="!sessions.length" class="empty-sessions">还没有历史会话</p>
       </nav>
     </aside>
     <main class="chat-content">
       <header class="chat-header">
-        <div class="flex items-center gap-2"><SparklesIcon class="size-4" /><strong>AI 创作助手</strong></div>
-        <Context v-model:open="contextOpen" :used-tokens="0" :max-tokens="0">
-          <ContextTrigger><Button variant="ghost" size="sm" @click="contextOpen = !contextOpen"><LayersIcon class="size-4" />上下文<span class="text-muted-foreground">{{ messages.length }}</span></Button></ContextTrigger>
-          <ContextContent class="ai-elements context-panel" align="end"><div class="p-4 space-y-3"><strong>当前上下文</strong><p>{{ messages.length }} 条消息 · {{ contextAssetCount }} 个参考资产</p><p class="text-xs text-muted-foreground">消息记录与参考资产会随当前会话使用。暂未提供令牌用量。</p><div v-if="messages.some(message => message.role === 'agent' && message.id)" class="space-y-1"><p class="text-xs text-muted-foreground">已保存的检查点</p><Button v-for="message in messages.filter(entry => entry.role === 'agent' && entry.id)" :key="message.id" class="w-full justify-start" size="sm" variant="ghost" @click="locateCheckpoint(message.id!); contextOpen = false">定位回复 #{{ message.id }}</Button></div></div></ContextContent>
+        <div class="flex items-center gap-2"><AiBlobWarpAvatar /><strong>AI 创作助手</strong></div>
+        <Context v-model:open="contextOpen" :used-tokens="contextUsage?.used_tokens ?? 0" :max-tokens="contextUsage?.max_tokens ?? 0">
+          <ContextTrigger><Button variant="ghost" size="sm" @click="contextOpen = true"><ContextIcon />上下文<span class="text-muted-foreground">{{ contextPercent }}</span></Button></ContextTrigger>
+          <ContextContent class="ai-elements context-panel" align="end">
+            <ContextContentHeader v-if="contextUsage?.used_tokens != null && contextUsage.max_tokens" />
+            <ContextContentBody class="space-y-3">
+              <strong>当前上下文</strong><p>{{ messages.length }} 条消息 · {{ contextAssetCount }} 个参考资产</p>
+              <template v-if="contextUsage">
+                <p class="text-xs text-muted-foreground">{{ contextUsage.model }} · 最近一轮模型请求</p>
+                <dl class="context-usage"><dt>窗口占用</dt><dd>{{ formatTokens(contextUsage.used_tokens) }} / {{ formatTokens(contextUsage.max_tokens, '上限未知') }}</dd><dt>输入令牌</dt><dd>{{ formatTokens(contextUsage.input_tokens) }}</dd><dt>输出令牌</dt><dd>{{ formatTokens(contextUsage.output_tokens) }}</dd><template v-if="contextUsage.reasoning_tokens != null"><dt>其中推理令牌</dt><dd>{{ formatTokens(contextUsage.reasoning_tokens) }}</dd></template><template v-if="contextUsage.cached_tokens != null"><dt>其中缓存输入</dt><dd>{{ formatTokens(contextUsage.cached_tokens) }}</dd></template></dl>
+                <p class="text-xs text-muted-foreground">用量以模型接口返回为准，包含系统规则、历史消息、参考资产与工具信息；各轮请求不累加。{{ contextUsage.used_tokens == null ? '当前接口未返回令牌用量。' : '' }}</p>
+              </template>
+              <p v-else class="text-xs text-muted-foreground">发送消息后显示模型接口返回的令牌用量。</p>
+              <div v-if="messages.some(message => message.role === 'agent' && message.id)" class="space-y-1"><p class="text-xs text-muted-foreground">已保存的检查点</p><Button v-for="message in messages.filter(entry => entry.role === 'agent' && entry.id)" :key="message.id" class="w-full justify-start" size="sm" variant="ghost" @click="locateCheckpoint(message.id!); contextOpen = false">定位回复 #{{ message.id }}</Button></div>
+            </ContextContentBody>
+          </ContextContent>
         </Context>
       </header>
       <div v-if="isLoadingModels" class="welcome-container"><p>正在加载模型…</p></div>
       <template v-else>
         <div v-if="!messages.length" class="welcome-container">
-          <SparklesIcon class="welcome-icon" /><h1>从一个想法开始</h1><p>一起打磨提示词，让图片与视频逐步成形。</p>
+          <AiBlobWarpAvatar class="welcome-icon" /><h1>从一个想法开始</h1><p>一起打磨提示词，让图片与视频逐步成形。</p>
           <div class="welcome-suggestions"><Suggestion v-for="text in suggestions" :key="text" :suggestion="text" @click="composer?.setPrompt" /></div>
         </div>
         <Conversation v-else :key="currentSessionId || 'new'" class="chat-conversation" aria-label="创作对话消息">
@@ -29,9 +44,21 @@
               <div v-if="item.type === 'message'" :id="item.message.id ? `conversation-${item.message.id}` : undefined" :class="['message-row', { 'checkpoint-selected': selectedCheckpoint === item.message.id && item.message.id != null }]">
                 <Message :from="item.message.role === 'user' ? 'user' : 'assistant'" class="chat-message flex-col items-start">
                   <div class="message-author">{{ item.message.role === 'user' ? '你' : '创作助手' }}<span>{{ formatTime(item.message.created_at) }}</span></div>
-                  <ChainOfThought v-if="item.message.steps?.length" :default-open="isProcessing && item.index === messages.length - 1" class="execution-trace">
-                    <ChainOfThoughtHeader>执行过程 · {{ item.message.steps.length }} 个步骤</ChainOfThoughtHeader>
-                    <ChainOfThoughtContent><ChainOfThoughtStep v-for="(step, index) in item.message.steps" :key="index" :label="step" :status="isProcessing && item.index === messages.length - 1 && index === item.message.steps.length - 1 ? 'active' : 'complete'"><template #icon><CheckIcon class="size-3" /></template></ChainOfThoughtStep></ChainOfThoughtContent>
+                  <ChainOfThought v-if="item.message.events?.length || item.message.steps?.length" :default-open="isProcessing && item.index === messages.length - 1" class="execution-trace">
+                    <ChainOfThoughtHeader>执行过程{{ isProcessing && item.index === messages.length - 1 ? ' · 处理中' : item.message.failed ? ' · 已中断' : ' · 已结束' }}</ChainOfThoughtHeader>
+                    <ChainOfThoughtContent>
+                      <template v-if="item.message.events?.length">
+                        <template v-for="(event, index) in item.message.events" :key="index">
+                          <ChainOfThoughtStep v-if="event.type === 'model_request'" :label="`第 ${event.round + 1} 轮 · ${event.model}`" :description="`使用 ${event.message_count} 条上下文消息，可用工具：${event.tools.join('、')}`"><template #icon><CheckIcon class="size-3" /></template></ChainOfThoughtStep>
+                          <Tool v-else-if="event.type === 'tool_call'" :default-open="event.name === 'discover_tools'" class="trace-tool">
+                            <ToolHeader type="dynamic-tool" :tool-name="event.name" :state="traceToolState(item.message, event.call_id)" />
+                            <ToolContent><ToolInput :input="event.input" /><ToolOutput v-if="traceResult(item.message, event.call_id)" :output="traceResult(item.message, event.call_id)" :error-text="traceError(item.message, event.call_id)" /></ToolContent>
+                          </Tool>
+                        </template>
+                      </template>
+                      <template v-else><ChainOfThoughtStep v-for="(step, index) in item.message.steps" :key="index" :label="step" :status="isProcessing && item.index === messages.length - 1 && index === item.message.steps!.length - 1 ? 'active' : 'complete'"><template #icon><CheckIcon class="size-3" /></template></ChainOfThoughtStep></template>
+                      <p v-if="isProcessing && item.index === messages.length - 1 && item.message.steps?.length" class="text-xs text-muted-foreground" role="status">{{ item.message.steps.at(-1) }}</p>
+                    </ChainOfThoughtContent>
                   </ChainOfThought>
                   <MessageContent :class="{ 'task-error': item.message.failed }">
                     <MessageResponse v-if="item.message.role === 'agent' && item.message.message" :content="item.message.message" />
@@ -91,8 +118,9 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import AiChatComposer from '@/components/AiChatComposer.vue'
+import AiBlobWarpAvatar from '@/components/AiBlobWarpAvatar.vue'
 import SegmentedControl from '@/components/SegmentedControl.vue'
-import { SparklesIcon, PlusIcon, CopyIcon, CheckIcon, LayersIcon, MessageSquareIcon } from '@lucide/vue'
+import { PlusIcon, CopyIcon, CheckIcon, MessageSquareIcon, Trash2Icon } from '@lucide/vue'
 import { ElMessage } from 'element-plus'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -100,8 +128,8 @@ import { Conversation, ConversationContent, ConversationScrollButton } from '@/c
 import { Message, MessageContent, MessageResponse, MessageActions, MessageAction } from '@/components/ai-elements/message'
 import { ChainOfThought, ChainOfThoughtHeader, ChainOfThoughtContent, ChainOfThoughtStep } from '@/components/ai-elements/chain-of-thought'
 import { Checkpoint, CheckpointIcon, CheckpointTrigger } from '@/components/ai-elements/checkpoint'
-import { Context, ContextTrigger, ContextContent } from '@/components/ai-elements/context'
-import { Tool, ToolHeader, ToolContent } from '@/components/ai-elements/tool'
+import { Context, ContextTrigger, ContextContent, ContextIcon, ContextContentHeader, ContextContentBody } from '@/components/ai-elements/context'
+import { Tool, ToolHeader, ToolContent, ToolInput, ToolOutput } from '@/components/ai-elements/tool'
 import { Confirmation, ConfirmationRequest, ConfirmationActions, ConfirmationAction } from '@/components/ai-elements/confirmation'
 import { Suggestion } from '@/components/ai-elements/suggestion'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
@@ -111,6 +139,7 @@ import {
   sendWorkflowMessageStream,
   getLanguageModels,
   getUserSessions,
+  deleteSession,
   getSessionHistory,
   getTaskStatus,
   type WorkflowMessageRequest,
@@ -126,6 +155,29 @@ type ChatMessage = ConversationMessage & { steps?: string[]; failed?: boolean }
 const composer = ref<InstanceType<typeof AiChatComposer>>()
 const selectedCheckpoint = ref<number>()
 const contextOpen = ref(false)
+const contextUsage = computed(() => messages.value.findLast(message => message.context_usage != null)?.context_usage)
+const contextPercent = computed(() => {
+  const usage = contextUsage.value
+  if (usage?.used_tokens == null) return '待统计'
+  if (!usage.max_tokens) return '上限未知'
+  return `${(usage.used_tokens / usage.max_tokens * 100).toLocaleString('zh-CN', { maximumFractionDigits: 1 })}%`
+})
+function formatTokens(value: number | null | undefined, fallback = '未提供') {
+  return value == null ? fallback : value.toLocaleString('zh-CN')
+}
+function traceResult(message: ChatMessage, callId: string) {
+  const event = message.events?.find(event => event.type === 'tool_result' && event.call_id === callId)
+  return event?.type === 'tool_result' ? event.output : undefined
+}
+function traceError(message: ChatMessage, callId: string) {
+  const error = traceResult(message, callId)?.error
+  return error ? String(error) : undefined
+}
+function traceToolState(message: ChatMessage, callId: string) {
+  if (traceError(message, callId)) return 'output-error' as const
+  if (traceResult(message, callId)) return 'output-available' as const
+  return message.failed ? 'output-error' as const : 'input-available' as const
+}
 const contextAssetCount = computed(() => new Set([...messages.value.flatMap(message => message.assets?.map(asset => asset.id) || []), ...selectedAssets.value.map(asset => asset.id)]).size)
 const suggestions = ['帮我完善图片提示词', '根据参考图片创作新画面', '帮我构思一段视频']
 async function copyMessage(text: string) {
@@ -304,6 +356,18 @@ async function loadSessions() {
   }
 }
 
+async function deleteSessionFromList(sessionId: string) {
+  if (isProcessing.value || !window.confirm('确定删除这个会话吗？')) return
+  try {
+    await deleteSession(sessionId)
+    sessions.value = sessions.value.filter((session) => session.id !== sessionId)
+    if (currentSessionId.value === sessionId) createNewSession()
+  } catch (error) {
+    console.error('删除会话失败:', error)
+    ElMessage.error('删除会话失败，请稍后重试。')
+  }
+}
+
 // 加载会话详情
 async function loadSessionDetail(sessionId: string) {
   try {
@@ -311,7 +375,7 @@ async function loadSessionDetail(sessionId: string) {
     if (currentSessionId.value !== sessionId) return
     messages.value = detail.conversations as ChatMessage[]
     activeTasks.value = detail.tasks || []
-    if (detail.parameters?.generation_request) openGenerationDialog(detail.parameters.generation_request)
+    if (detail.generation_request) openGenerationDialog(detail.generation_request)
   } catch (error) {
     console.error('加载会话详情失败:', error)
     messages.value = []
@@ -413,7 +477,13 @@ const handleSubmit = async (data: ChatSubmitData, confirmedOptions?: WorkflowMes
         const lastMessage = messages.value[messages.value.length - 1]
         if (lastMessage?.role === 'agent') lastMessage.message += text
       },
+      (event) => {
+        agentMessage.events ??= []
+        agentMessage.events.push(event)
+      },
+      (usage) => { agentMessage.context_usage = usage },
     )
+    agentMessage.context_usage = response.context_usage
     activeTasks.value = response.tasks || []
     if (!confirmedOptions) selectedAssets.value = []
     userMessage.id = response.user_conversation_id ?? undefined
@@ -501,9 +571,13 @@ onUnmounted(() => {
 .sidebar-header { padding: 22px 16px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .section-label { font-size: 12px; color: var(--color-muted); }
 .sessions-list { overflow-y: auto; padding: 0 10px; }
-.session-item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 14px 10px; margin-bottom: 5px; border: 1px solid transparent; border-radius: 8px; background: transparent; text-align: left; color: var(--color-muted); }
+.session-item { display: flex; align-items: center; gap: 4px; width: 100%; padding: 4px; margin-bottom: 5px; border: 1px solid transparent; border-radius: 8px; color: var(--color-muted); }
 .session-item:hover, .session-item.active { background: var(--color-surface-soft); color: var(--color-text); }
 .session-item.active { border-color: var(--color-border); }
+.session-select { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; padding: 10px 6px; border: 0; background: transparent; text-align: left; color: inherit; }
+.session-delete { display: grid; place-items: center; width: 30px; height: 30px; flex: 0 0 30px; border: 0; border-radius: 6px; background: transparent; color: var(--color-muted); opacity: 0; }
+.session-item:hover .session-delete, .session-delete:focus-visible { opacity: 1; }
+.session-delete:hover { color: var(--color-danger); }
 .session-info { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .session-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
 .session-meta, .empty-sessions { color: var(--color-muted); font-size: 11px; }
@@ -525,7 +599,12 @@ onUnmounted(() => {
 .message-row { border-radius: 10px; scroll-margin: 24px; }
 .checkpoint-selected { outline: 1px solid var(--color-border-strong); outline-offset: 10px; }
 .user-text { white-space: pre-wrap; overflow-wrap: anywhere; }
-.execution-trace { margin: 8px 0; max-width: 620px; }
+.execution-trace { margin: 8px 0; width: 100%; min-width: 0; max-width: 620px; }
+.trace-tool { min-width: 0; }
+.trace-tool :deep(pre) { max-height: 360px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+.trace-tool :deep(pre), .trace-tool :deep(pre span) { color: var(--color-text) !important; background: transparent !important; }
+.context-usage { display: grid; grid-template-columns: 1fr auto; gap: 8px 12px; font-size: 12px; }
+.context-usage dt { color: var(--color-muted); }
 .saved-checkpoint { margin-top: 14px; font-size: 11px; }
 .saved-checkpoint :deep(button) { font-size: 11px; color: var(--color-muted); }
 .generation-tool { width: 100%; }
@@ -558,7 +637,8 @@ onUnmounted(() => {
   .sessions-sidebar { width: 100%; max-height: 104px; border-right: 0; border-bottom: 1px solid var(--color-border); }
   .sidebar-header { flex-direction: row; align-items: center; padding: 8px 12px; }
   .sessions-list { display: flex; gap: 8px; padding-bottom: 6px; }
-  .session-item { width: 150px; flex-shrink: 0; padding: 5px 8px; margin: 0; }
+  .session-item { width: 150px; flex-shrink: 0; padding: 2px; margin: 0; }
+  .session-delete { opacity: 1; }
   .session-meta { display: none; }
   .empty-sessions { padding: 4px; }
   .chat-content { min-height: 0; }

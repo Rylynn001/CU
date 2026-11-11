@@ -81,7 +81,7 @@ def get_provider_config_by_rfid(rfid: int) -> dict | None:
 
         logger.info(f"正在查询 provider, rfid={rfid}")
         provider = get_provider_by_id(rfid)
-        logger.info(f"查询结果: {provider}")
+        logger.info(f"查询结果: {provider['url']}")
         if provider:
             decrypted_key = decrypt_api_key(provider['key'])
             logger.info(f"解密成功，key 长度={len(decrypted_key)}")

@@ -10,7 +10,7 @@ class ConversationState(TypedDict):
     user_id: int
     messages: List[Dict[str, str]]  # [{"role": "user/agent", "content": "..."}]
     intent: Optional[str]  # short_drama, batch_image, single_video, etc.
-    parameters: Dict[str, Any]  # 已提取的参数
+    generation_request: Optional[Dict[str, Any]]  # 等待用户确认的生成请求
     missing_params: List[str]  # 还需要询问的参数
     workflow_ready: bool  # 参数是否完整
     current_step: str  # intent_recognition, parameter_extraction, asking, validation, ready

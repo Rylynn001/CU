@@ -42,7 +42,7 @@ def get_all_providers():
 def get_provider_models(provider_id: int):
     """获取指定提供商的模型"""
     models = execute_query(
-        'SELECT id, rfid, name, description, type, provider FROM api_models WHERE rfid = %s ORDER BY id',
+        'SELECT id, rfid, name, description, type, provider, context_window FROM api_models WHERE rfid = %s ORDER BY id',
         (provider_id,),
         fetch_all=True
     )
@@ -52,10 +52,10 @@ def get_provider_models(provider_id: int):
 def get_all_models(provider_id: int = None):
     """获取模型列表"""
     if provider_id:
-        query = 'SELECT id, rfid, name, description, type, provider FROM api_models WHERE rfid = %s'
+        query = 'SELECT id, rfid, name, description, type, provider, context_window FROM api_models WHERE rfid = %s'
         params = (provider_id,)
     else:
-        query = 'SELECT id, rfid, name, description, type, provider FROM api_models'
+        query = 'SELECT id, rfid, name, description, type, provider, context_window FROM api_models'
         params = None
 
     models = execute_query(query, params, fetch_all=True) or []

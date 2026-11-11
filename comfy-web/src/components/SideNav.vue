@@ -2,7 +2,8 @@
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
-import { Brush, ChatDotRound, Film, FolderOpened, House, MagicStick, Moon, Picture, SwitchButton, VideoCamera } from '@element-plus/icons-vue'
+import { Brush, Film, FolderOpened, House, MagicStick, Moon, Picture, SwitchButton, VideoCamera } from '@element-plus/icons-vue'
+import AiBlobWarpAvatar from './AiBlobWarpAvatar.vue'
 import { getCurrentUserName } from '../utils/user'
 
 const props = defineProps<{
@@ -26,7 +27,7 @@ const themeMeta = computed(() => ({
 
 const navItems = [
   { path: '/', icon: House, label: '首页' },
-  { path: '/chat', icon: ChatDotRound, label: 'AI 聊天' },
+  { path: '/chat', icon: AiBlobWarpAvatar, label: 'AI 聊天' },
   { path: '/image', icon: Picture, label: '图片生成' },
   { path: '/video', icon: VideoCamera, label: '视频生成' },
   { path: '/drama', icon: Film, label: '导演台' },
@@ -82,7 +83,8 @@ async function handleLogout() {
           :aria-current="isActive(item.path) ? 'page' : undefined"
         >
           <span class="active-bar" aria-hidden="true" />
-          <el-icon class="nav-icon" aria-hidden="true"><component :is="item.icon" /></el-icon>
+          <AiBlobWarpAvatar v-if="item.path === '/chat'" class="nav-avatar" />
+          <el-icon v-else class="nav-icon" aria-hidden="true"><component :is="item.icon" /></el-icon>
           <span class="nav-label">{{ item.label }}</span>
         </RouterLink>
       </li>
@@ -408,6 +410,12 @@ async function handleLogout() {
   justify-content: center;
   flex-shrink: 0;
   font-size: 18px;
+}
+
+.nav-avatar {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
 }
 
 .nav-label {

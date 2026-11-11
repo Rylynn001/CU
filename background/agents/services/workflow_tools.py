@@ -191,7 +191,7 @@ class WorkflowTools:
             "model_name": selected["name"], "parameters": args.model_dump(),
         }
         WorkflowRepository.update_execution(execution_id, current_node="txt2video", result=task)
-        WorkflowRepository.update_session(session_id, intent="text_to_video", parameters=args.model_dump(), status="executing")
+        WorkflowRepository.update_session(session_id, intent="text_to_video", parameters={}, status="executing")
         self.submitted.append(task)
         return task
 
@@ -384,7 +384,7 @@ class WorkflowTools:
             "model_name": selected["name"], "parameters": parameters, "images": [],
         }
         WorkflowRepository.update_execution(execution_id, current_node="txt2img", result=task)
-        WorkflowRepository.update_session(session_id, intent="batch_image", parameters=parameters, status="executing")
+        WorkflowRepository.update_session(session_id, intent="batch_image", parameters={}, status="executing")
         self.submitted.append(task)
         logger.info("对话工具已提交文生图 session_id=%s execution_id=%s task_id=%s model_id=%s", session_id, execution_id, response.task_id, args.model)
         return task

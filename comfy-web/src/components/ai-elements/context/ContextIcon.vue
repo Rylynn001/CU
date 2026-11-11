@@ -29,7 +29,7 @@ const svgStyle = {
 
 <template>
   <svg
-    aria-label="Model context usage"
+    aria-label="模型上下文用量"
     height="20"
     role="img"
     style="color: currentcolor"

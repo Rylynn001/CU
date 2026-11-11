@@ -41,18 +41,19 @@ class ConversationPrompt(str, Enum):
 如果用户只是确认上一轮提示词，但该提示词要求参考图片，也先搜索本会话之前消息中已引入的图片，再提交参考资产生成任务。
 只能使用当前会话中用户引入或 search_session_reference_assets 返回的资产编号；没有参考资产时使用 txt2img 或 txt2video。视频画面不包含音频，不得推测声音内容。
 不要在文字回复中罗列编号要求用户复制选项，不得猜测模型、比例、质量、数量或时长。参数以用户在页面选择的值为准。
-历史收集的参数（仅供理解，不能据此假定工具已经执行）：
-{parameters}
+等待用户确认的生成请求：
+{generation_request}
 该会话已经提交的真实任务：
 {executions}"""
 
 class ConversationAgent:
-    def __init__(self, api_key: str, base_url: Optional[str] = None, model: str = "gpt-4"):
+    def __init__(self, api_key: str, base_url: Optional[str] = None, model: str = "gpt-4", context_window: Optional[int] = None):
         self.client = AsyncOpenAI(
             api_key=api_key, base_url=base_url,
             timeout=httpx.Timeout(30.0, connect=30.0),
         )
         self.model = model
+        self.context_window = context_window
 
     async def process(
         self, message: str, session_id: Optional[int], user_id: int,
@@ -64,11 +65,12 @@ class ConversationAgent:
         executions: Optional[list] = None,
         request_id: Optional[str] = None,
         user_content: Optional[list | str] = None,
+        on_event: Optional[Callable[[str, dict], Awaitable[None]]] = None,
     ) -> Dict[str, Any]:
         """主流程：准备上下文 → 请求模型 → 执行工具 → 将工具结果交回模型。"""
         state = existing_state or {
             "session_id": session_id, "user_id": user_id, "messages": [],
-            "intent": None, "parameters": {}, "missing_params": [],
+            "intent": None, "generation_request": None, "missing_params": [],
             "workflow_ready": False, "current_step": "conversation",
         }
         state["messages"].append({"role": "user", "content": user_content if user_content is not None else message})
@@ -76,6 +78,7 @@ class ConversationAgent:
         reply_parts = []
         submitted = []
         available_tools = {}
+        context_usage = None
 
         # 一条用户消息最多请求模型 8 轮。工具执行后，需要再请模型读取结果并继续回答。
         for turn in range(8):
@@ -90,12 +93,29 @@ class ConversationAgent:
                 request_id, self.model, session_id, turn, len(messages),
                 [tool["function"]["name"] for tool in request_tools],
             )
+            if on_event:
+                await on_event("trace", {
+                    "type": "model_request", "round": turn, "model": self.model,
+                    "message_count": len(messages),
+                    "tools": [tool["function"]["name"] for tool in request_tools],
+                })
 
             # 1. 请求语言模型。普通文字立即发送；工具调用等参数拼完整后再执行。
             try:
-                content, tool_calls = await self._request_model(
+                content, tool_calls, usage = await self._request_model(
                     messages, request_tools, tool_choice, reply_parts, on_delta
                 )
+                # 采用最近一轮请求的用量，不能把各轮重复携带的历史累加成窗口占用。
+                context_usage = {
+                    "model": self.model, "max_tokens": self.context_window,
+                    "input_tokens": usage.prompt_tokens if usage else None,
+                    "output_tokens": usage.completion_tokens if usage else None,
+                    "used_tokens": usage.total_tokens if usage else None,
+                    "reasoning_tokens": getattr(getattr(usage, "completion_tokens_details", None), "reasoning_tokens", None),
+                    "cached_tokens": getattr(getattr(usage, "prompt_tokens_details", None), "cached_tokens", None),
+                }
+                if on_event:
+                    await on_event("usage", context_usage)
             except Exception:
                 logger.exception("对话模型失败 request_id=%s session_id=%s round=%s", request_id, session_id, turn)
                 if not submitted:
@@ -123,13 +143,26 @@ class ConversationAgent:
                 if on_progress:
                     stage = "正在查找适用工具" if name == "discover_tools" else f"正在执行工具：{name}"
                     await on_progress(stage)
+                if on_event:
+                    try:
+                        arguments = json.loads(call["function"]["arguments"])
+                    except (ValueError, TypeError):
+                        arguments = {"raw": call["function"]["arguments"]}
+                    await on_event("trace", {
+                        "type": "tool_call", "call_id": call["id"], "name": name,
+                        "round": turn, "input": arguments,
+                    })
                 result = await self._execute_tool_call(
                     call, available_tools, tool_executor, tool_discoverer, request_id, session_id, turn
                 )
+                if on_event:
+                    await on_event("trace", {
+                        "type": "tool_result", "call_id": call["id"], "name": name,
+                        "round": turn, "output": result,
+                    })
                 if name in ("txt2img", "txt2video", "img2img", "img2video") and result.get("task_id"):
                     submitted.append(result)
                     state["intent"] = "batch_image" if name in ("txt2img", "img2img") else "text_to_video"
-                    state["parameters"] = result["parameters"]
                 messages.append({
                     "role": "tool", "tool_call_id": call["id"],
                     "content": json.dumps(result, ensure_ascii=False, default=str),
@@ -157,13 +190,13 @@ class ConversationAgent:
                 await on_delta(reply)
         state["messages"].append({"role": "agent", "content": reply})
         state["workflow_ready"] = bool(submitted)
-        return {"reply": reply, "state": state, "workflow_ready": bool(submitted), "tasks": submitted}
+        return {"reply": reply, "state": state, "workflow_ready": bool(submitted), "tasks": submitted, "context_usage": context_usage}
 
     def _build_model_messages(self, state: ConversationState, executions: Optional[list]) -> list:
         """把系统规则、历史消息和本次用户消息组合成模型上下文。"""
         system_prompt = ConversationPrompt.SYSTEM.value.format(
             model=self.model,
-            parameters=json.dumps(state.get("parameters", {}), ensure_ascii=False, indent=2, default=str),
+            generation_request=json.dumps(state.get("generation_request"), ensure_ascii=False, indent=2, default=str),
             executions=json.dumps(executions or [], ensure_ascii=False, indent=2, default=str),
         )
         messages = [{"role": "system", "content": system_prompt}] + [
@@ -194,11 +227,15 @@ class ConversationAgent:
         stream = await self.client.chat.completions.create(
             model=self.model, messages=messages, tools=tools,
             tool_choice=tool_choice, parallel_tool_calls=False, stream=True,
+            stream_options={"include_usage": True},
         )
         content = ""
         calls = {}
+        usage = None
         try:
             async for chunk in stream:
+                if chunk.usage:
+                    usage = chunk.usage
                 if not chunk.choices:
                     continue
                 delta = chunk.choices[0].delta
@@ -220,7 +257,7 @@ class ConversationAgent:
                         call["function"]["arguments"] += fragment.function.arguments or ""
         finally:
             await stream.close()
-        return content, list(calls.values())
+        return content, list(calls.values()), usage
 
     async def _execute_tool_call(
         self, call, available_tools, tool_executor, tool_discoverer, request_id, session_id, turn
