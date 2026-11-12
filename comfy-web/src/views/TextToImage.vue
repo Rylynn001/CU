@@ -22,6 +22,7 @@ import RecordContextMenu from '../components/RecordContextMenu.vue'
 import MentionTextarea from '../components/MentionTextarea.vue'
 import SegmentedControl from '../components/SegmentedControl.vue'
 import PromptComposerButton from '../components/PromptComposerButton.vue'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../components/ui/collapsible'
 // 本地 ComfyUI 接口：获取模型列表、采样器信息、提交任务、上传图片
 // import { getModels, getKSamplerInfo, submitPrompt, uploadImage, type PromptParams } from '../api/comfyui'
 // WebSocket 连接：实时接收本地 ComfyUI 的生成进度和结果图片
@@ -167,9 +168,37 @@ function pollImage(record: GenerationRecord, userId?: number) {
 const apiModels = ref<ApiModel[]>([])
 // 当前选中的 API 模型 ID
 const apiModel = ref('')
-// API 模式下的生成质量：low / medium / high
-const apiQuality = ref('medium')
-const qualityOptions = ['low', 'medium', 'high'].map((value) => ({ value, label: value }))
+// API 模型参数由 api_models.parameters 定义，页面只负责按定义渲染。
+const apiParameters = ref<Record<string, string | number | boolean>>({})
+const selectedApiModel = computed(() => apiModels.value.find(model => model.id === apiModel.value))
+const apiParameterFields = computed(() => {
+  const fields = [...(selectedApiModel.value?.parameters?.fields || [])]
+  const modelName = selectedApiModel.value?.name.toLowerCase() || ''
+  if (modelName.startsWith('gpt-image') && !fields.some(field => field.key === 'aspect_ratio')) {
+    const sizeField = fields.find(field => field.key === 'size')
+    const defaultSize = String(sizeField?.default || 'auto')
+    const defaultRatio = { '1024x1024': '1:1', '1536x1024': '16:9', '1024x1536': '9:16' }[defaultSize] || 'auto'
+    return [
+      { key: 'aspect_ratio', label: '比例', type: 'select' as const, default: defaultRatio, options: ['1:1', '16:9', '9:16', 'auto'] },
+      ...fields.filter(field => field.key !== 'size'),
+    ]
+  }
+  return fields
+})
+const maxReferenceImages = computed(() => selectedApiModel.value?.parameters?.references?.images?.max ?? 12)
+const showAdvancedApi = ref(false)
+function fieldOptions(field: (typeof apiParameterFields.value)[number]) {
+  return (field.options || []).map(option => ({ value: String(option), label: String(option) }))
+}
+function resetApiParameters() {
+  showAdvancedApi.value = false
+  const next: Record<string, string | number | boolean> = {}
+  for (const field of apiParameterFields.value) {
+    if (field.default !== undefined) next[field.key] = field.default
+  }
+  apiParameters.value = next
+}
+watch([apiModel, apiModels], resetApiParameters, { deep: true })
 // 本地 ComfyUI 的 checkpoint 模型列表（文件名字符串）
 const models = ref<string[]>([])
 // 本地 ComfyUI 支持的采样器列表
@@ -230,10 +259,8 @@ const { ratios, resolutions, activeRatio, activeResolution, ratioOpen, sizeCusto
 // ── 输入图片 ──────────────────────────────────────────────
 // 图生图模式下的参考图列表，每项包含：file（本地文件）、preview（预览 URL）、assetLocation（资产路径）
 const inputImages = ref<InputImage[]>([])
-const maxReferenceImages = computed(() => modelSource.value === 'api' ? 12 : 1)
-
 function addLocalImage(file: File) {
-  if (inputImages.value.length >= maxReferenceImages.value) return
+  if (inputImages.value.length >= maxReferenceImages.value) { ElMessage.warning(`该模型最多支持 ${maxReferenceImages.value} 张参考图`); return }
   // 校验文件类型：只允许图片
   if (!file.type.startsWith('image/')) {
     ElMessage.error('图生图只能上传图片文件，不支持视频')
@@ -250,6 +277,9 @@ function handleAssetSelect(assets: Array<{ id: number; location: string; asset_t
   if (videoAssets.length > 0) {
     ElMessage.warning('图片生成不支持视频素材')
     return
+  }
+  if (assets.length + inputImages.value.length > maxReferenceImages.value) {
+    ElMessage.warning(`该模型最多支持 ${maxReferenceImages.value} 张参考图`)
   }
 
   if (activeTab.value === 'img2img') {
@@ -438,12 +468,14 @@ async function runApiGeneration(recordId: string, img2img: boolean, snapshotImag
   try {
     const userId = getCurrentUserId()
     // submitImageGeneration 会上传参考图、调用 API、返回 taskId 或直接返回图片
+    const parameters = { ...apiParameters.value }
+    if (parameters.output_format === 'png' || parameters.output_format === 'svg') {
+      delete parameters.output_compression
+    }
     const result = await submitImageGeneration({
       modelId: rec.modelId,
       prompt: rec.prompt,
-      aspect_ratio: activeRatio.value.label,  // 当前选中的宽高比（如 "1:1"、"16:9"）
-      quality: apiQuality.value,
-      batchSize: form.value.batch_size,
+      parameters,
       img2img,
       inputImages: snapshotImages,
       userId: userId ?? undefined,
@@ -787,12 +819,17 @@ function handleReuseParams(record: any, fromStorage = false) {
       }
     }
     // 清晰度
-    if (p.quality) {
-      apiQuality.value = p.quality
-    }
-    // 生成数量
-    if (p.n || p.batchSize) {
-      form.value.batch_size = p.n || p.batchSize
+    if (p.parameters && typeof p.parameters === 'object') {
+      apiParameters.value = { ...apiParameters.value, ...p.parameters }
+      if (apiParameterFields.value.some(field => field.key === 'aspect_ratio') && !apiParameters.value.aspect_ratio && apiParameters.value.size) {
+        const sizeToRatio: Record<string, string> = { '1024x1024': '1:1', '1536x1024': '16:9', '1024x1536': '9:16' }
+        apiParameters.value.aspect_ratio = sizeToRatio[String(apiParameters.value.size)] || 'auto'
+        delete apiParameters.value.size
+      }
+    } else {
+      if (p.aspect_ratio) apiParameters.value.aspect_ratio = p.aspect_ratio
+      if (p.quality) apiParameters.value.quality = p.quality
+      if (p.n || p.batchSize) apiParameters.value.n = p.n || p.batchSize
     }
     // 本地模型参数
     if (modelSource.value === 'local') {
@@ -965,21 +1002,74 @@ onUnmounted(() => {
           
           <div class="divider" />
 
-          <!-- resolution：本地模式显示像素档位，API 模式显示清晰度档位 -->
-          <div class="row-item">
-            <span class="row-label">清晰度</span>
-            <div v-if="modelSource === 'local'" class="source-toggle">
+          <!-- 参数：本地模式使用固定的 ComfyUI 控件，API 模式由模型 JSON 定义 -->
+          <div v-if="modelSource === 'local'" class="row-item">
+            <span class="row-label">参数</span>
+            <div class="source-toggle">
               <button
                 v-for="r in resolutions" :key="r.label"
                 :class="{ active: !sizeCustomized && activeResolution.label === r.label }"
                 @click="setResolution(r)"
               >{{ r.label }}</button>
             </div>
-            <SegmentedControl v-else v-model="apiQuality" :options="qualityOptions" label="清晰度" />
+          </div>
+          <div v-else class="api-parameter-panel">
+            <div class="parameter-panel-heading">
+              <div>
+                <span class="parameter-panel-kicker">MODEL CONTROLS</span>
+                <strong>生成参数</strong>
+              </div>
+              <small>{{ selectedApiModel?.name || '选择模型' }}</small>
+            </div>
+            <div class="api-parameter-list">
+              <div v-for="field in apiParameterFields.slice(0, 3)" :key="field.key" class="api-parameter">
+                <span class="parameter-label">{{ field.label }}</span>
+                <SegmentedControl
+                  v-if="field.type === 'select' && (field.options?.length || 0) <= 5"
+                  :model-value="String(apiParameters[field.key] ?? '')"
+                  :options="fieldOptions(field)"
+                  :label="field.label"
+                  class="parameter-control"
+                  @update:model-value="apiParameters[field.key] = $event"
+                />
+                <ElSelect v-else-if="field.type === 'select'" v-model="apiParameters[field.key]" class="row-select parameter-control">
+                  <ElOption v-for="option in field.options || []" :key="String(option)" :label="String(option)" :value="option" />
+                </ElSelect>
+                <input v-else-if="field.type === 'number'" v-model.number="apiParameters[field.key]" class="parameter-number parameter-control" type="number"
+                  :min="field.min" :max="field.max" :step="field.step || 1" />
+                <label v-else-if="field.type === 'boolean'" class="parameter-switch parameter-control"><input v-model="apiParameters[field.key]" type="checkbox" /><span>启用</span></label>
+                <input v-else v-model="apiParameters[field.key]" class="parameter-text parameter-control" type="text" />
+              </div>
+            </div>
+            <Collapsible v-if="apiParameterFields.length > 3" v-model:open="showAdvancedApi" class="advanced-api-controls">
+              <CollapsibleTrigger class="advanced-api-trigger">
+                <span>{{ showAdvancedApi ? '收起更多参数' : `更多参数 · ${apiParameterFields.length - 3}` }}</span>
+                <span class="advanced-api-chevron" :class="{ open: showAdvancedApi }">›</span>
+              </CollapsibleTrigger>
+              <CollapsibleContent class="advanced-api-content">
+                <div v-for="field in apiParameterFields.slice(3)" :key="field.key" class="api-parameter">
+                  <span class="parameter-label">{{ field.label }}</span>
+                  <SegmentedControl
+                    v-if="field.type === 'select' && (field.options?.length || 0) <= 5"
+                    :model-value="String(apiParameters[field.key] ?? '')"
+                    :options="fieldOptions(field)"
+                    :label="field.label"
+                    class="parameter-control"
+                    @update:model-value="apiParameters[field.key] = $event"
+                  />
+                  <ElSelect v-else-if="field.type === 'select'" v-model="apiParameters[field.key]" class="row-select parameter-control">
+                    <ElOption v-for="option in field.options || []" :key="String(option)" :label="String(option)" :value="option" />
+                  </ElSelect>
+                  <input v-else-if="field.type === 'number'" v-model.number="apiParameters[field.key]" class="parameter-number parameter-control" type="number" :min="field.min" :max="field.max" :step="field.step || 1" />
+                  <label v-else-if="field.type === 'boolean'" class="parameter-switch parameter-control"><input v-model="apiParameters[field.key]" type="checkbox" /><span>启用</span></label>
+                  <input v-else v-model="apiParameters[field.key]" class="parameter-text parameter-control" type="text" />
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
           </div>
 
           <!-- ratio -->
-          <div class="row-item">
+          <div v-if="modelSource === 'local'" class="row-item">
             <span class="row-label">比例</span>
             <div class="ratio-select">
               <div class="ratio-current" :class="{ dimmed: sizeCustomized }" @click="ratioOpen = !ratioOpen">
@@ -1005,7 +1095,7 @@ onUnmounted(() => {
           <div v-if="modelSource === 'local'" class="size-preview">{{ form.width }} × {{ form.height }}</div>
 
           <!-- batch size -->
-          <div class="row-item">
+          <div v-if="modelSource === 'local'" class="row-item">
             <span class="row-label">数量</span>
             <div class="source-toggle">
               <button

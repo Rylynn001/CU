@@ -318,9 +318,11 @@ async def retry_history(
             'model': model_name,
             'model_id': model_id,
             'prompt': prompt,
-            'aspect_ratio': payload.get('aspect_ratio', '1:1'),
-            'quality': payload.get('quality', 'medium'),
-            'n': payload.get('n', 1),
+            'parameters': payload.get('parameters') or {
+                'aspect_ratio': payload.get('aspect_ratio', '1:1'),
+                'quality': payload.get('quality', 'medium'),
+                'n': payload.get('n', 1),
+            },
             'user_id': payload_user_id,
             'api_key': api_key,
             'base_url': base_url,
@@ -328,6 +330,7 @@ async def retry_history(
             'input_asset_ids': input_asset_ids,
             'history_id': new_history_id,
         }
+        redis_client.setex(f'task:{new_task_id}:status', 3600, 'pending')
         redis_client.lpush(queue_name, json.dumps(task_payload, ensure_ascii=False))
 
     elif type_ == 'txt2video' or type_ == 'img2video':
@@ -355,21 +358,23 @@ async def retry_history(
             'model': model_name,
             'model_id': model_id,
             'prompt': prompt,
-            'ratio': payload.get('ratio', '16:9'),
-            'resolution': payload.get('resolution', '720p'),
-            'duration': int(payload.get('duration', 8)),
+            'parameters': payload.get('parameters') or {
+                'ratio': payload.get('ratio', '16:9'),
+                'resolution': payload.get('resolution', '720p'),
+                'duration': int(payload.get('duration', 8)),
+            },
             'user_id': payload_user_id,
             'api_key': api_key,
             'base_url': base_url,
             'input_asset_ids': input_asset_ids,
             'history_id': new_history_id,
         }
+        redis_client.setex(f'task:{new_task_id}:status', 3600, 'pending')
         redis_client.lpush(queue_name, json.dumps(task_payload, ensure_ascii=False))
 
     else:
         raise HTTPException(status_code=400, detail=f'不支持的任务类型: {type_}')
 
-    redis_client.setex(f'task:{new_task_id}:status', 3600, 'pending')
     history_repo.soft_delete_history(history_id)
 
     import logging

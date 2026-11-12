@@ -118,11 +118,7 @@ async def process_txt2video(task: dict) -> None:
                 client.content_generation.tasks.create,
                 model=task['model'],
                 content=content,
-                duration=task.get('duration', 8),
-                ratio=task.get('ratio', '16:9'),
-                resolution=task.get('resolution', '1080p'),
-                watermark=False,
-                generate_audio=True,
+                **task.get('parameters', {}),
             )
 
             remote_task_id = resp.id
@@ -148,9 +144,7 @@ async def process_txt2video(task: dict) -> None:
                     json={
                         "model": task['model'],
                         "content": [{"type": "text", "text": task.get('prompt', '')}],
-                        "ratio": task.get('ratio', '16:9'),
-                        "resolution": task.get('resolution', '720p'),
-                        "duration": task.get('duration', 8),
+                        **task.get('parameters', {}),
                     }
                 )
                 resp_raw.raise_for_status()

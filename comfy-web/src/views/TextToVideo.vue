@@ -18,6 +18,8 @@ import FavoriteHeart from '../components/FavoriteHeart.vue'
 import ProjectManager from '../components/ProjectManager.vue'
 import RecordContextMenu from '../components/RecordContextMenu.vue'
 import MentionTextarea from '../components/MentionTextarea.vue'
+import SegmentedControl from '../components/SegmentedControl.vue'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../components/ui/collapsible'
 // 后端 API 接口
 import { getApiModels, retryHistory, favoriteAsset, type ApiModel } from '../api/apiService'
 // 历史记录管理
@@ -98,6 +100,22 @@ function pollVideo(record: VideoRecord, userId?: number) {
 // ── 模型 ──
 const apiModels = ref<ApiModel[]>([])
 const apiModel = ref('')
+const apiParameters = ref<Record<string, string | number | boolean>>({})
+const selectedApiModel = computed(() => apiModels.value.find(model => model.id === apiModel.value))
+const apiParameterFields = computed(() => selectedApiModel.value?.parameters?.fields || [])
+const showAdvancedApi = ref(false)
+function fieldOptions(field: (typeof apiParameterFields.value)[number]) {
+  return (field.options || []).map(option => ({ value: String(option), label: String(option) }))
+}
+function resetApiParameters() {
+  showAdvancedApi.value = false
+  const next: Record<string, string | number | boolean> = {}
+  for (const field of apiParameterFields.value) {
+    if (field.default !== undefined) next[field.key] = field.default
+  }
+  apiParameters.value = next
+}
+watch([apiModel, apiModels], resetApiParameters, { deep: true })
 // 视频页默认使用 API 模式（本地视频生成暂未实现）
 const modelSource = ref<'local' | 'api'>('api')
 // 当前标签页：文生视频或图生视频
@@ -174,7 +192,14 @@ const {
   inputFiles, inputPreviews, selectedAssetIds, selectedAssetPreviews, allMediaItems,
   handleFilesChange, removeFile, removeAsset, clearAllInputs, handleAssetSelect,
   replaceFile, replaceAssetWithFile,
-} = useInputMedia((msg) => { errorMsg.value = msg }, 9, 3, 12)
+} = useInputMedia((msg) => { errorMsg.value = msg },
+  computed(() => selectedApiModel.value?.parameters?.references?.images?.max ?? 9),
+  computed(() => selectedApiModel.value?.parameters?.references?.videos?.max ?? 3),
+  computed(() => {
+    const refs = selectedApiModel.value?.parameters?.references
+    return (refs?.images?.max ?? 9) + (refs?.videos?.max ?? 3)
+  }),
+)
 
 const inputPreviewItems = computed(() => [
   ...inputPreviews.value.map((preview, index) => ({
@@ -372,7 +397,9 @@ async function generateFromEdit() {
     id: generateUUID(), createdAt: Date.now(),
     prompt: recordEditorPrompt.value, modelName: model.name,
     modelId: Number(apiModel.value) || undefined,
-    ratio: ratio.value, resolution: resolution.value, duration: duration.value,
+    ratio: String(apiParameters.value.ratio ?? ratio.value),
+    resolution: String(apiParameters.value.resolution ?? resolution.value),
+    duration: Number(apiParameters.value.duration ?? duration.value),
     status: 'generating', mode: 'img2video',
   }
   records.value.unshift(newRecord)
@@ -392,7 +419,7 @@ async function generateFromEdit() {
     newRecord.inputAssetIds = inputAssetIds
     const result = await submitVideoGeneration({
       modelId: model.id, prompt: newRecord.prompt,
-      ratio: newRecord.ratio, resolution: newRecord.resolution, duration: newRecord.duration,
+      parameters: { ...apiParameters.value },
       userId: userId ?? undefined, inputFiles: [], inputAssetIds,
     })
 
@@ -451,7 +478,9 @@ async function handleGenerate() {
     const record: VideoRecord = {
       id: generateUUID(), createdAt: Date.now(),
       prompt: prompt.value, modelId: Number(apiModel.value) || undefined, modelName,
-      ratio: ratio.value, resolution: resolution.value, duration: duration.value,
+      ratio: String(apiParameters.value.ratio ?? ratio.value),
+      resolution: String(apiParameters.value.resolution ?? resolution.value),
+      duration: Number(apiParameters.value.duration ?? duration.value),
       status: 'generating', mode: activeTab.value,
       // 图生视频时记录参考素材信息
       inputAssetIds: activeTab.value === 'img2video' ? selectedAssetPreviews.value.filter(p => !p.file).map(p => p.id) : undefined,
@@ -469,7 +498,7 @@ async function handleGenerate() {
         // 图生视频：传入本地文件和资产预览，由服务处理上传
         const result = await submitVideoGeneration({
           modelId: apiModel.value, prompt: prompt.value,
-          ratio: ratio.value, resolution: resolution.value, duration: duration.value,
+          parameters: { ...apiParameters.value },
           userId: userId ?? undefined,
           inputFiles: inputFiles.value,
           inputAssetPreviews: selectedAssetPreviews.value,
@@ -482,7 +511,7 @@ async function handleGenerate() {
         // 文生视频
         const result = await submitVideoGeneration({
           modelId: apiModel.value, prompt: prompt.value,
-          ratio: ratio.value, resolution: resolution.value, duration: duration.value,
+          parameters: { ...apiParameters.value },
           userId: userId ?? undefined,
         })
         if (result.taskId) {
@@ -701,12 +730,13 @@ function handleReuseParams(record: any, fromStorage = false) {
   // 5. 从 payload 恢复完整参数
   if (record.payload) {
     const p = record.payload
-    // 视频比例
-    if (p.ratio) ratio.value = p.ratio
-    // 分辨率
-    if (p.resolution) resolution.value = p.resolution
-    // 时长
-    if (p.duration) duration.value = p.duration
+    if (p.parameters && typeof p.parameters === 'object') {
+      apiParameters.value = { ...apiParameters.value, ...p.parameters }
+    } else {
+      if (p.ratio) ratio.value = p.ratio
+      if (p.resolution) resolution.value = p.resolution
+      if (p.duration) duration.value = p.duration
+    }
   }
 
   // 6. 加载输入资产作为参考素材
@@ -781,8 +811,62 @@ onUnmounted(() => {
 
           <div class="divider" />
 
-          <!-- 视频参数 -->
-          <div class="row-item">
+          <!-- 视频参数：API 模型从数据库参数定义渲染 -->
+          <div v-if="modelSource === 'api'" class="api-parameter-panel">
+            <div class="parameter-panel-heading">
+              <div>
+                <span class="parameter-panel-kicker">MODEL CONTROLS</span>
+                <strong>生成参数</strong>
+              </div>
+              <small>{{ selectedApiModel?.name || '选择模型' }}</small>
+            </div>
+            <div class="api-parameter-list">
+              <div v-for="field in apiParameterFields.slice(0, 3)" :key="field.key" class="api-parameter">
+                <span class="parameter-label">{{ field.label }}</span>
+                <SegmentedControl
+                  v-if="field.type === 'select' && (field.options?.length || 0) <= 5"
+                  :model-value="String(apiParameters[field.key] ?? '')"
+                  :options="fieldOptions(field)"
+                  :label="field.label"
+                  class="parameter-control"
+                  @update:model-value="apiParameters[field.key] = $event"
+                />
+                <ElSelect v-else-if="field.type === 'select'" v-model="apiParameters[field.key]" class="row-select parameter-control">
+                <ElOption v-for="option in field.options || []" :key="String(option)" :label="String(option)" :value="option" />
+              </ElSelect>
+                <input v-else-if="field.type === 'number'" v-model.number="apiParameters[field.key]" class="stepper-input parameter-control" type="number"
+                :min="field.min" :max="field.max" :step="field.step || 1" />
+                <label v-else-if="field.type === 'boolean'" class="parameter-switch parameter-control"><input v-model="apiParameters[field.key]" type="checkbox" /><span>启用</span></label>
+                <input v-else v-model="apiParameters[field.key]" class="parameter-text parameter-control" type="text" />
+              </div>
+            </div>
+            <Collapsible v-if="apiParameterFields.length > 3" v-model:open="showAdvancedApi" class="advanced-api-controls">
+              <CollapsibleTrigger class="advanced-api-trigger">
+                <span>{{ showAdvancedApi ? '收起更多参数' : `更多参数 · ${apiParameterFields.length - 3}` }}</span>
+                <span class="advanced-api-chevron" :class="{ open: showAdvancedApi }">›</span>
+              </CollapsibleTrigger>
+              <CollapsibleContent class="advanced-api-content">
+                <div v-for="field in apiParameterFields.slice(3)" :key="field.key" class="api-parameter">
+                  <span class="parameter-label">{{ field.label }}</span>
+                  <SegmentedControl
+                    v-if="field.type === 'select' && (field.options?.length || 0) <= 5"
+                    :model-value="String(apiParameters[field.key] ?? '')"
+                    :options="fieldOptions(field)"
+                    :label="field.label"
+                    class="parameter-control"
+                    @update:model-value="apiParameters[field.key] = $event"
+                  />
+                  <ElSelect v-else-if="field.type === 'select'" v-model="apiParameters[field.key]" class="row-select parameter-control">
+                    <ElOption v-for="option in field.options || []" :key="String(option)" :label="String(option)" :value="option" />
+                  </ElSelect>
+                  <input v-else-if="field.type === 'number'" v-model.number="apiParameters[field.key]" class="stepper-input parameter-control" type="number" :min="field.min" :max="field.max" :step="field.step || 1" />
+                  <label v-else-if="field.type === 'boolean'" class="parameter-switch parameter-control"><input v-model="apiParameters[field.key]" type="checkbox" /><span>启用</span></label>
+                  <input v-else v-model="apiParameters[field.key]" class="parameter-text parameter-control" type="text" />
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
+          </div>
+          <div v-if="modelSource === 'local'" class="row-item">
             <span class="row-label">比例</span>
             <div class="filter-group">
               <button
@@ -797,7 +881,7 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <div class="row-item">
+          <div v-if="modelSource === 'local'" class="row-item">
             <span class="row-label">分辨率</span>
             <div class="filter-group">
               <button
@@ -812,7 +896,7 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <div class="row-item">
+          <div v-if="modelSource === 'local'" class="row-item">
             <span class="row-label">时长(秒)</span>
             <div class="stepper">
               <button class="stepper-btn" @click="duration = Math.max(1, duration - 1)">-</button>

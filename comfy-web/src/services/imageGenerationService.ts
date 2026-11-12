@@ -10,9 +10,7 @@ export interface InputImage {
 export interface ImageGenerateParams {
   modelId: number
   prompt: string
-  aspect_ratio: string       // 比例，如 "1:1"、"16:9"
-  quality: string            // 清晰度，如 "low"/"medium"/"high"
-  batchSize: number
+  parameters: Record<string, string | number | boolean>
   img2img: boolean           // true 表示图生图模式
   inputImages: InputImage[]  // 图生图时的参考图列表
   userId?: number
@@ -64,9 +62,7 @@ export async function submitImageGeneration(params: ImageGenerateParams): Promis
   const result = await apiGenerate({
     model: params.modelId,
     prompt: params.prompt,
-    aspect_ratio: params.aspect_ratio,
-    quality: params.quality,
-    n: params.batchSize,
+    parameters: params.parameters,
     input_asset_ids: inputAssetIds,
   })
 

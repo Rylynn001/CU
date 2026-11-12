@@ -27,20 +27,26 @@ const emit = defineEmits<{
 
 <style scoped>
 .segmented-control {
-  display: inline-flex;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(42px, 1fr));
+  width: 100%;
+  min-width: 0;
+  gap: 3px;
   background: rgba(var(--color-white-rgb), 0.055);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
-  overflow: hidden;
   padding: 2px;
 }
 
 .segmented-control button {
-  padding: 5px 14px;
+  min-width: 0;
+  padding: 5px 4px;
   background: none;
   border: none;
   color: var(--color-faint);
-  font-size: 12px;
+  font-size: 11px;
+  line-height: 1.2;
+  white-space: nowrap;
   cursor: pointer;
   transition: background 0.2s, color 0.2s;
 }

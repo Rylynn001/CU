@@ -60,14 +60,10 @@ async def process(task: dict) -> None:
 
         image_b64_list = task.get('image_b64_list', [])
         prompt = task['prompt']
-        aspect_ratio = task.get('aspect_ratio', '1:1')
-
-        quality_to_resolution = {
-            'low': '1K',
-            'medium': '2K',
-            'high': '4K',
-        }
-        resolution = quality_to_resolution.get(task.get('quality', 'medium'), '2K')
+        parameters = dict(task.get('parameters') or {})
+        parameters.pop('n', None)
+        aspect_ratio = parameters.pop('aspect_ratio', '1:1')
+        resolution = parameters.pop('image_size', '2K')
 
         if image_b64_list:
             contents = []
@@ -91,6 +87,7 @@ async def process(task: dict) -> None:
                 image_config=genai_types.ImageConfig(
                     aspect_ratio=aspect_ratio,
                     image_size=resolution,
+                    **parameters,
                 ),
             ),
         )

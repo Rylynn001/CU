@@ -1,5 +1,6 @@
 """模型提供商相关的数据库操作"""
 import logging
+import json
 from database import execute_query
 
 logger = logging.getLogger(__name__)
@@ -42,23 +43,29 @@ def get_all_providers():
 def get_provider_models(provider_id: int):
     """获取指定提供商的模型"""
     models = execute_query(
-        'SELECT id, rfid, name, description, type, provider, context_window FROM api_models WHERE rfid = %s ORDER BY id',
+        'SELECT id, rfid, name, description, type, provider, context_window, parameters FROM api_models WHERE rfid = %s ORDER BY id',
         (provider_id,),
         fetch_all=True
     )
+    for model in models or []:
+        if isinstance(model.get('parameters'), str):
+            model['parameters'] = json.loads(model['parameters'])
     return models or []
 
 
 def get_all_models(provider_id: int = None):
     """获取模型列表"""
     if provider_id:
-        query = 'SELECT id, rfid, name, description, type, provider, context_window FROM api_models WHERE rfid = %s'
+        query = 'SELECT id, rfid, name, description, type, provider, context_window, parameters FROM api_models WHERE rfid = %s'
         params = (provider_id,)
     else:
-        query = 'SELECT id, rfid, name, description, type, provider, context_window FROM api_models'
+        query = 'SELECT id, rfid, name, description, type, provider, context_window, parameters FROM api_models'
         params = None
 
     models = execute_query(query, params, fetch_all=True) or []
+    for model in models:
+        if isinstance(model.get('parameters'), str):
+            model['parameters'] = json.loads(model['parameters'])
     return models
 
 
@@ -71,12 +78,12 @@ def get_default_provider_id():
     return provider
 
 
-def create_model(provider_id: int, name: str, description: str, model_type: str, provider: str):
+def create_model(provider_id: int, name: str, description: str, model_type: str, provider: str, parameters: dict | None = None):
     """新增模型"""
     model_id = execute_query(
-        '''INSERT INTO api_models (rfid, name, description, type, provider, created_at)
-           VALUES (%s, %s, %s, %s, %s, NOW())''',
-        (provider_id, name, description, model_type, provider)
+        '''INSERT INTO api_models (rfid, name, description, type, provider, parameters, created_at)
+           VALUES (%s, %s, %s, %s, %s, %s, NOW())''',
+        (provider_id, name, description, model_type, provider, json.dumps(parameters, ensure_ascii=False) if parameters else None)
     )
     return model_id
 

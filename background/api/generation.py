@@ -7,7 +7,7 @@ import redis
 from pathlib import Path
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Depends, Header
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from repositories import generation_repo
 from config import settings
@@ -34,19 +34,22 @@ def get_redis():
 def enqueue_task(queue_name: str, task_data: dict) -> None:
     """任务入队"""
     client = get_redis()
-    client.lpush(queue_name, json.dumps(task_data, ensure_ascii=False))
     # 设置任务状态
     task_id = task_data['task_id']
     client.setex(f'task:{task_id}:status', 3600, 'pending')
+    # 先写状态再入队，避免 worker 或前端在状态键写入前读到 404。
+    client.lpush(queue_name, json.dumps(task_data, ensure_ascii=False))
 
 
 class Txt2ImgRequest(BaseModel):
     """文生图请求"""
     model: int
     prompt: str
-    aspect_ratio: str = "1:1"
-    quality: str = "medium"
-    n: int = 1
+    parameters: dict = Field(default_factory=dict)
+    # 兼容旧客户端，新的前端使用 parameters。
+    aspect_ratio: Optional[str] = None
+    quality: Optional[str] = None
+    n: Optional[int] = None
     input_asset_ids: Optional[List[int]] = None
 
 
@@ -54,9 +57,10 @@ class Txt2VideoRequest(BaseModel):
     """文生视频请求(支持图生视频)"""
     model: int
     prompt: str
-    ratio: str = "16:9"
-    resolution: str = "720p"
-    duration: int = 8
+    parameters: dict = Field(default_factory=dict)
+    ratio: Optional[str] = None
+    resolution: Optional[str] = None
+    duration: Optional[int] = None
     input_asset_ids: Optional[List[int]] = None
 
 
@@ -95,6 +99,39 @@ def _load_input_assets_as_b64(input_asset_ids: List[int]) -> List[str]:
         result.append(base64.b64encode(file_path.read_bytes()).decode())
 
     return result
+
+
+def _validate_model_references(model_info: dict, input_asset_ids: List[int], allow_video: bool) -> None:
+    """按模型 JSON 中的 references 能力校验参考素材数量和类型。"""
+    if not input_asset_ids:
+        return
+
+    config = model_info.get('parameters') or {}
+    references = config.get('references') or {}
+    image_config = references.get('images') or {}
+    video_config = references.get('videos') or {}
+    image_max = image_config.get('max', 12 if not references else 0)
+    video_max = video_config.get('max', 0)
+    assets = generation_repo.load_input_assets(input_asset_ids)
+    image_count = 0
+    video_count = 0
+    for asset_id in input_asset_ids:
+        asset = assets.get(asset_id)
+        if not asset:
+            raise HTTPException(status_code=404, detail=f'asset {asset_id} not found')
+        if asset.get('asset_type') == 'video':
+            video_count += 1
+        else:
+            image_count += 1
+
+    if image_count and image_config and not image_config.get('supported', False):
+        raise HTTPException(status_code=400, detail=f'模型 {model_info["name"]} 不支持图片参考素材')
+    if video_count and (not allow_video or not video_config.get('supported', False)):
+        raise HTTPException(status_code=400, detail=f'模型 {model_info["name"]} 不支持视频参考素材')
+    if image_count > image_max:
+        raise HTTPException(status_code=400, detail=f'模型 {model_info["name"]} 最多支持 {image_max} 张图片参考素材')
+    if video_count > video_max:
+        raise HTTPException(status_code=400, detail=f'模型 {model_info["name"]} 最多支持 {video_max} 个视频参考素材')
 
 
 def _save_history(
@@ -150,6 +187,7 @@ async def txt2img(req: Txt2ImgRequest, user: dict = Depends(get_current_user)):
     model_info = generation_repo.get_model_info(req.model)
     if not model_info:
         raise HTTPException(status_code=404, detail=f"model {req.model} not found")
+    _validate_model_references(model_info, input_asset_ids, allow_video=False)
 
     # 根据模型的 rfid 读取对应供应商配置；密钥不会返回给前端。
     from config import get_provider_config_by_rfid
@@ -165,12 +203,15 @@ async def txt2img(req: Txt2ImgRequest, user: dict = Depends(get_current_user)):
     # =====【保存生成历史】=====
     # 先写 history，状态为 pending。worker 完成后会把它改成 done/error。
     type_ = 'img2img' if input_asset_ids else 'txt2img'
-    payload = {
-        'model': req.model,
-        'prompt': req.prompt,
+    parameters = req.parameters or {k: v for k, v in {
         'aspect_ratio': req.aspect_ratio,
         'quality': req.quality,
         'n': req.n,
+    }.items() if v is not None}
+    payload = {
+        'model': req.model,
+        'prompt': req.prompt,
+        'parameters': parameters,
         'input_asset_ids': input_asset_ids,
         'user_id': user_id
     }
@@ -196,9 +237,7 @@ async def txt2img(req: Txt2ImgRequest, user: dict = Depends(get_current_user)):
         'model': model_info['name'],
         'model_id': model_info['id'],
         'prompt': req.prompt,
-        'aspect_ratio': req.aspect_ratio,
-        'quality': req.quality,
-        'n': req.n,
+        'parameters': parameters,
         'user_id': user_id,
         'api_key': provider_config['api_key'],
         'base_url': provider_config['base_url'],
@@ -231,6 +270,7 @@ async def txt2video(req: Txt2VideoRequest, user: dict = Depends(get_current_user
     model_info = generation_repo.get_model_info(req.model)
     if not model_info:
         raise HTTPException(status_code=404, detail=f"model {req.model} not found")
+    _validate_model_references(model_info, input_asset_ids, allow_video=True)
 
     # 获取 provider 配置
     from config import get_provider_config_by_rfid
@@ -246,12 +286,15 @@ async def txt2video(req: Txt2VideoRequest, user: dict = Depends(get_current_user
 
     # 保存历史记录 (统一使用 txt2video,支持可选的 input_asset_ids)
     type_ = 'txt2video'
-    payload = {
-        'model': req.model,
-        'prompt': req.prompt,
+    parameters = req.parameters or {k: v for k, v in {
         'ratio': req.ratio,
         'resolution': req.resolution,
         'duration': req.duration,
+    }.items() if v is not None}
+    payload = {
+        'model': req.model,
+        'prompt': req.prompt,
+        'parameters': parameters,
         'input_asset_ids': input_asset_ids,
         'user_id': user_id
     }
@@ -277,9 +320,7 @@ async def txt2video(req: Txt2VideoRequest, user: dict = Depends(get_current_user
         'model': model_info['name'],
         'model_id': model_info['id'],
         'prompt': req.prompt,
-        'ratio': req.ratio,
-        'resolution': req.resolution,
-        'duration': req.duration,
+        'parameters': parameters,
         'user_id': user_id,
         'api_key': provider_config['api_key'],
         'base_url': provider_config['base_url'],

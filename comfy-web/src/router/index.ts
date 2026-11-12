@@ -8,6 +8,7 @@ const router = createRouter({
     { path: '/image', name: 'TextToImage', component: () => import('../views/TextToImage.vue') },
     { path: '/video', name: 'TextToVideo', component: () => import('../views/TextToVideo.vue') },
     { path: '/node-panel', name: 'NodePanel', component: () => import('../views/NodePanel.vue') },
+    { path: '/canvas', name: 'Canvas', component: () => import('../views/Canvas.vue') },
     { path: '/models', name: 'ModelManager', component: () => import('../views/ModelManager.vue') },
     { path: '/assets', name: 'Assets', component: () => import('../views/Assets.vue') },
     { path: '/gecko', name: 'Gecko', component: () => import('../views/Gecko.vue') },

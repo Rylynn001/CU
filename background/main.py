@@ -9,6 +9,7 @@ from config import settings
 from core import setup_exception_handlers
 from api import auth, assets, providers, history, projects, tasks, node_boards, dramas, generation, common
 from api import agent, gecko, workflow  # 添加 workflow 路由
+from api import canvases
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +82,7 @@ app.include_router(history.router, prefix="/api-proxy", tags=["历史记录"])
 app.include_router(projects.router, prefix="/api-proxy", tags=["项目管理"])
 app.include_router(tasks.router, prefix="/api-proxy", tags=["任务管理"])
 app.include_router(node_boards.router, prefix="/api-proxy", tags=["工作区管理"])
+app.include_router(canvases.router, prefix="/api-proxy", tags=["画布管理"])
 app.include_router(dramas.router, prefix="/api-proxy", tags=["短剧管理"])
 app.include_router(generation.router, prefix="/api-proxy", tags=["图片视频生成"])
 app.include_router(agent.router, prefix="/api-proxy", tags=["AI Agent"])

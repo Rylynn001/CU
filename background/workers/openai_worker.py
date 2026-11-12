@@ -67,18 +67,17 @@ async def process(task: dict) -> None:
             base_url=task['base_url'],
         )
 
-        n = task.get('n', 1)
+        parameters = dict(task.get('parameters') or {})
+        n = parameters.pop('n', 1)
+        # gpt-image 的界面使用比例，OpenAI Images API 使用 size。
+        aspect_ratio = parameters.pop('aspect_ratio', None)
+        if aspect_ratio and 'size' not in parameters:
+            parameters['size'] = {
+                '1:1': '1024x1024',
+                '16:9': '1536x1024',
+                '9:16': '1024x1536',
+            }.get(aspect_ratio, 'auto')
         image_b64_list = task.get('image_b64_list', [])
-
-        aspect_ratio_to_size = {
-            '1:1':  '1024x1024',
-            '16:9': '1792x1024',
-            '9:16': '1024x1792',
-            '4:3':  '1024x768',
-            '3:4':  '768x1024',
-        }
-        size = aspect_ratio_to_size.get(task.get('aspect_ratio', '1:1'), '1024x1024')
-        quality = task.get('quality', 'medium')
 
         response = None
         for attempt in range(3):
@@ -99,18 +98,16 @@ async def process(task: dict) -> None:
                         model=task['model'],
                         prompt=full_prompt,
                         image=image_files,
-                        size=size,
-                        quality=quality,
                         n=n,
+                        **parameters,
                     )
                 else:
-                    logger.info(f'[{task_id}] 调用 OpenAI images.generate，model={task["model"]}, size={size}, quality={quality}, n={n}')
+                    logger.info(f'[{task_id}] 调用 OpenAI images.generate，model={task["model"]}, parameters={parameters}, n={n}')
                     response = await client.images.generate(
                         model=task['model'],
                         prompt=task['prompt'],
-                        size=size,
-                        quality=quality,
                         n=n,
+                        **parameters,
                     )
                 logger.info(f'[{task_id}] OpenAI API 调用成功')
                 break

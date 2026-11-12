@@ -22,6 +22,7 @@ class ModelCreate(BaseModel):
     name: str
     description: str
     type: str = 'image'  # 'image' 或 'video'
+    parameters: dict | None = None
 
 
 @router.get("/config", response_model=ConfigResponse)
@@ -82,7 +83,7 @@ async def add_model(model: ModelCreate):
     provider_id = provider['id']
 
     model_id = provider_repo.create_model(
-        provider_id, model.name, model.description, model.type, model.id
+        provider_id, model.name, model.description, model.type, model.id, model.parameters
     )
 
     return {'id': model_id, 'ok': True}

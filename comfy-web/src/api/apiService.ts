@@ -44,15 +44,79 @@ export interface ApiModel {
   name: string
   description: string
   type?: 'image' | 'video'
+  parameters?: ApiModelParameters
+}
+
+export interface ApiModelParameterField {
+  key: string
+  label: string
+  type: 'select' | 'number' | 'text' | 'boolean'
+  default?: string | number | boolean
+  options?: Array<string | number>
+  min?: number
+  max?: number
+  step?: number
+}
+
+export interface ApiModelParameters {
+  version?: number
+  fields?: ApiModelParameterField[]
+  references?: {
+    images?: { supported: boolean; max: number }
+    videos?: { supported: boolean; max: number }
+  }
+}
+
+export interface CanvasDocument {
+  version: 1
+  nodes: Array<Record<string, unknown>>
+  edges: Array<Record<string, unknown>>
+  viewport: { x: number; y: number; zoom: number }
+}
+
+export interface CanvasSummary {
+  id: number
+  name: string
+  updated_at: number
+}
+
+export async function listCanvases(): Promise<CanvasSummary[]> {
+  const res = await authFetch(`${BASE}/canvases`)
+  if (!res.ok) throw new Error(`画布列表加载失败: ${res.status}`)
+  const data = await res.json()
+  return data.canvases ?? []
+}
+
+export async function createCanvas(name = '新画布'): Promise<CanvasSummary> {
+  const res = await authFetch(`${BASE}/canvases`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  })
+  if (!res.ok) throw new Error((await res.text()) || `画布创建失败: ${res.status}`)
+  return res.json()
+}
+
+export async function getCanvas(canvasId: number): Promise<{ id: number; name: string; document: CanvasDocument }> {
+  const res = await authFetch(`${BASE}/canvases/${canvasId}`)
+  if (!res.ok) throw new Error(`画布加载失败: ${res.status}`)
+  return res.json()
+}
+
+export async function saveCanvas(canvasId: number, payload: { name: string; document: CanvasDocument }): Promise<void> {
+  const res = await authFetch(`${BASE}/canvases/${canvasId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  if (!res.ok) throw new Error((await res.text()) || `画布保存失败: ${res.status}`)
 }
 
 // 图片生成请求参数
 export interface ApiGenerateParams {
   model: number
   prompt: string
-  aspect_ratio: string     // 比例，如 "1:1"、"16:9"，后端按模型映射
-  quality: string          // 清晰度，如 "low"/"medium"/"high"，后端按模型映射
-  n?: number               // 生成数量，默认 1
+  parameters: Record<string, string | number | boolean>
   input_asset_ids?: number[] // 图生图时传入的参考图资产 id 列表
 }
 
@@ -174,6 +238,7 @@ export function resolveImageSrc(item: { b64?: string; url?: string }): string {
 export interface ApiVideoParams {
   model: string | number
   prompt: string
+  parameters?: Record<string, string | number | boolean>
   ratio?: string       // 画面比例，如 "16:9"
   resolution?: string  // 分辨率，如 "1080p"
   duration?: number    // 时长（秒）
@@ -345,8 +410,17 @@ async function pollTaskStatus(taskId: string, expectedType: 'image' | 'video'): 
       const res = await authFetch(url, { headers: getAuthHeader() })
       if (!res.ok) {
         const text = await res.text()
-        // 404 表示任务不存在或已过期，属于终态，不重试
-        if (res.status === 404) throw new TaskFailedError(text || 'Task not found or expired')
+        // 提交完成与状态键写入之间可能存在极短竞态，前几次查询允许重试。
+        // 超过窗口后仍为 404，才视为任务不存在或已过期。
+        if (res.status === 404) {
+          if (i < 3) {
+            const interval = getInterval(i)
+            console.warn(`[Poll ${i + 1}] Task ${taskId} 尚未可查询，${interval}ms 后重试`)
+            await new Promise(resolve => setTimeout(resolve, interval))
+            continue
+          }
+          throw new TaskFailedError(text || 'Task not found or expired')
+        }
         throw new Error(text || `task query failed: ${res.status}`)
       }
 

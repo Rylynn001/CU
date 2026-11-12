@@ -1,4 +1,4 @@
-import { ref, computed } from 'vue'
+import { ref, computed, type Ref } from 'vue'
 
 export interface MediaPreview {
   url: string
@@ -17,10 +17,13 @@ export interface AssetPreview extends MediaPreview {
  */
 export function useInputMedia(
   onError: (msg: string) => void,
-  maxImages = 9,
-  maxVideos = 3,
-  maxTotal = 12,
+  maxImages: number | Ref<number> = 9,
+  maxVideos: number | Ref<number> = 3,
+  maxTotal: number | Ref<number> = 12,
 ) {
+  const imageLimit = computed(() => typeof maxImages === 'number' ? maxImages : maxImages.value)
+  const videoLimit = computed(() => typeof maxVideos === 'number' ? maxVideos : maxVideos.value)
+  const totalLimit = computed(() => typeof maxTotal === 'number' ? maxTotal : maxTotal.value)
   const inputFiles = ref<File[]>([])                      // 本地上传的文件对象
   const inputPreviews = ref<MediaPreview[]>([])           // 本地上传文件的预览 URL
   const selectedAssetIds = ref<number[]>([])              // 从资产库选中的素材 id 列表
@@ -52,9 +55,9 @@ export function useInputMedia(
     const totalVideos = [...inputPreviews.value, ...selectedAssetPreviews.value, ...newPreviews].filter(p => p.type === 'video').length
     const total = inputFiles.value.length + newFiles.length + selectedAssetIds.value.length
 
-    if (totalImages > maxImages) { onError(`最多只能上传 ${maxImages} 张图片`); return }
-    if (totalVideos > maxVideos) { onError(`最多只能上传 ${maxVideos} 个视频`); return }
-    if (total > maxTotal) { onError(`最多只能上传 ${maxTotal} 个素材`); return }
+    if (totalImages > imageLimit.value) { onError(`最多只能上传 ${imageLimit.value} 张图片`); return }
+    if (totalVideos > videoLimit.value) { onError(`最多只能上传 ${videoLimit.value} 个视频`); return }
+    if (total > totalLimit.value) { onError(`最多只能上传 ${totalLimit.value} 个素材`); return }
 
     inputFiles.value.push(...newFiles)
     inputPreviews.value.push(...newPreviews)
@@ -98,9 +101,9 @@ export function useInputMedia(
     ].length
     const total = inputFiles.value.length + selectedAssetIds.value.length + newAssets.length
 
-    if (totalImages > maxImages) { onError(`最多只能选择 ${maxImages} 张图片`); return }
-    if (totalVideos > maxVideos) { onError(`最多只能选择 ${maxVideos} 个视频`); return }
-    if (total > maxTotal) { onError(`最多只能选择 ${maxTotal} 个素材`); return }
+    if (totalImages > imageLimit.value) { onError(`最多只能选择 ${imageLimit.value} 张图片`); return }
+    if (totalVideos > videoLimit.value) { onError(`最多只能选择 ${videoLimit.value} 个视频`); return }
+    if (total > totalLimit.value) { onError(`最多只能选择 ${totalLimit.value} 个素材`); return }
 
     for (const asset of newAssets) {
       selectedAssetIds.value.push(asset.id)

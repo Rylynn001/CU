@@ -30,6 +30,7 @@ const navItems = [
   { path: '/chat', icon: AiBlobWarpAvatar, label: 'AI 聊天' },
   { path: '/image', icon: Picture, label: '图片生成' },
   { path: '/video', icon: VideoCamera, label: '视频生成' },
+  { path: '/canvas', icon: Brush, label: '创作画布' },
   { path: '/drama', icon: Film, label: '导演台' },
   { path: '/assets', icon: FolderOpened, label: '我的资产' },
 ]

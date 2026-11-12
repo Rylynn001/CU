@@ -3,6 +3,7 @@ import { apiVideoGenerate, uploadInputImage } from '../api/apiService'
 export interface VideoGenerateParams {
   modelId: string | number
   prompt: string
+  parameters?: Record<string, string | number | boolean>
   ratio: string
   resolution: string
   duration: number
@@ -53,9 +54,7 @@ export async function submitVideoGeneration(params: VideoGenerateParams): Promis
   const result = await apiVideoGenerate({
     model: params.modelId,
     prompt: params.prompt,
-    ratio: params.ratio,
-    resolution: params.resolution,
-    duration: params.duration,
+    parameters: params.parameters || { ratio: params.ratio, resolution: params.resolution, duration: params.duration },
     input_asset_ids: allIds.length > 0 ? allIds : undefined,
   })
 

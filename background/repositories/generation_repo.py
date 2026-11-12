@@ -11,7 +11,7 @@ def load_input_assets(input_asset_ids: List[int]):
 
     placeholders = ','.join(['%s'] * len(input_asset_ids))
     assets = execute_query(
-        f"SELECT id, location FROM assets WHERE id IN ({placeholders})",
+        f"SELECT id, location, asset_type FROM assets WHERE id IN ({placeholders})",
         tuple(input_asset_ids),
         fetch_all=True
     ) or []
@@ -23,10 +23,12 @@ def load_input_assets(input_asset_ids: List[int]):
 def get_model_info(model_id: int):
     """获取模型信息"""
     model_info = execute_query(
-        "SELECT id, name, provider, rfid FROM api_models WHERE id = %s",
+        "SELECT id, name, provider, rfid, parameters FROM api_models WHERE id = %s",
         (model_id,),
         fetch_one=True
     )
+    if model_info and isinstance(model_info.get('parameters'), str):
+        model_info['parameters'] = json.loads(model_info['parameters'])
     return model_info
 
 
