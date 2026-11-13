@@ -21,7 +21,8 @@ class SkillManager:
             skills_dir: Skills 存放目录，默认为 ~/.claude/skills
         """
         if skills_dir is None:
-            skills_dir = os.path.expanduser("~/.claude/skills")
+            # 默认路径：background/agents/skills/
+            skills_dir = Path(__file__).parent / "skills"
         self.skills_dir = Path(skills_dir)
         self.skills = {}
         self.load_skills()

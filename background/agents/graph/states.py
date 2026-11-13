@@ -1,19 +1,34 @@
 """
 LangGraph 状态定义
 """
-from typing import TypedDict, Optional, List, Any, Dict
+from typing import TypedDict, Optional, List, Any, Dict, Annotated
+from langgraph.graph.message import add_messages
 
 
 class ConversationState(TypedDict):
-    """对话状态"""
+    """对话状态（主图）"""
     session_id: Optional[int]
     user_id: int
-    messages: List[Dict[str, str]]  # [{"role": "user/agent", "content": "..."}]
-    intent: Optional[str]  # short_drama, batch_image, single_video, etc.
-    generation_request: Optional[Dict[str, Any]]  # 等待用户确认的生成请求
-    missing_params: List[str]  # 还需要询问的参数
-    workflow_ready: bool  # 参数是否完整
-    current_step: str  # intent_recognition, parameter_extraction, asking, validation, ready
+    messages: Annotated[List[Dict[str, str]], add_messages]  # LangGraph 消息管理
+    intent: Optional[str]  # txt2img, txt2video, chat
+    generation_request: Optional[Dict[str, Any]]  # 生成请求参数
+    enable_prompt_optimization: bool  # 是否启用提示词优化
+    current_tool: Optional[str]  # 当前执行的工具
+    tool_result: Optional[Dict]  # 工具执行结果
+    loop_count: int  # 循环计数(防止无限循环)
+    is_complete: bool  # 是否完成
+    workflow_ready: bool  # 参数是否完整(兼容旧代码)
+    current_step: str  # 当前步骤(兼容旧代码)
+
+
+class PromptEnhanceState(TypedDict):
+    """提示词优化子图状态"""
+    user_prompt: str  # 原始提示词
+    intent: str  # txt2img/txt2video
+    enhanced_prompt: Optional[str]  # 增强后的提示词
+    seedance_version: Optional[str]  # Seedance 版本(2.0/2.5)
+    seedance_path: Optional[str]  # Seedance 路径(A/B/C/D)
+    instruction: Optional[str]  # 生成的指令(中间结果)
 
 
 class TaskState(TypedDict):
