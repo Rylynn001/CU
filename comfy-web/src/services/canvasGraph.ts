@@ -3,6 +3,8 @@ import type { InjectionKey, Ref } from 'vue'
 import type { Connection } from '@vue-flow/core'
 import type { ApiModel } from '../api/apiService'
 
+export type CanvasParameterValue = string | number | boolean
+
 export type MediaType = 'IMAGE' | 'VIDEO' | 'STRING'
 export interface CanvasHandle {
   id: string
@@ -16,11 +18,13 @@ export interface CanvasNodeData {
   label: string
   prompt: string
   model: string
-  ratio: string
-  quality: string
-  resolution: string
-  duration: number
-  n: number
+  parameters: Record<string, CanvasParameterValue>
+  /** 兼容已保存的旧画布；新节点只使用 parameters。 */
+  ratio?: string
+  quality?: string
+  resolution?: string
+  duration?: number
+  n?: number
   handles: CanvasHandle[]
   outputs: Record<string, { dataType: MediaType; value: { assetIds: number[] } | string }>
   task?: { taskId: string; historyId: number; state: 'pending' | 'completed' | 'failed'; error?: string }
@@ -59,7 +63,7 @@ export function makeNode(type: string, position: { x: number; y: number }): Canv
   handles.push({ id: port, type: 'source', dataType: kind.output, label: `${kind.label}输出` })
   return {
     id: crypto.randomUUID(), type, position,
-    data: { label: kind.label, prompt: '', model: '', ratio: '1:1', quality: 'medium', resolution: '720p', duration: 8, n: 1, handles, outputs: {} },
+    data: { label: kind.label, prompt: '', model: '', parameters: {}, handles, outputs: {} },
   }
 }
 
@@ -104,6 +108,7 @@ export interface CanvasActions {
   assets: Ref<Record<number, CanvasAsset>>
   imageModels: Ref<ApiModel[]>
   videoModels: Ref<ApiModel[]>
+  setModel: (id: string, model: string) => void
   run: (id: string) => void
   pick: (id: string) => void
   duplicate: (id: string) => void
