@@ -1,21 +1,23 @@
 <script setup lang="ts">
-import { computed, markRaw, nextTick, onBeforeUnmount, onMounted, provide, reactive, ref, watch } from 'vue'
+import { computed, markRaw, nextTick, onBeforeUnmount, onMounted, provide, reactive, ref, watch, Teleport, type Ref } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
-import { VueFlow, useVueFlow, SelectionMode, type Connection, type OnConnectStartParams, type ViewportTransform } from '@vue-flow/core'
+import { VueFlow, useVueFlow, SelectionMode, type Connection, type OnConnectStartParams, type ViewportTransform, type GraphEdge } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import { MiniMap } from '@vue-flow/minimap'
-import { ElButton, ElSelect, ElOption, ElMessage, ElMessageBox } from 'element-plus'
+import { ElButton, ElSelect, ElOption, ElMessage, ElMessageBox, ElDropdown, ElDropdownMenu, ElDropdownItem, ElInputNumber, ElTooltip } from 'element-plus'
 import { Plus, Picture, VideoCamera, Document, Delete } from '@element-plus/icons-vue'
-import { Focus, Folders, Info, Magnet, Map, MousePointer2, Network, Plus as PlusIcon, Search, Workflow } from '@lucide/vue'
+import { Focus, Folders, Hand, Info, Magnet, Map, MousePointer2, MousePointerClick, Network, Plus as PlusIcon, Search, Workflow, RotateCcw, RotateCw } from '@lucide/vue'
 import CanvasNodeComponent from '../components/CanvasNode.vue'
 import AssetPicker from '../components/AssetPicker.vue'
 import { apiGenerate, apiVideoGenerate, authFetch, createCanvas, getApiModels, getCanvas, listCanvases, saveCanvas, uploadInputImage, type ApiModel, type CanvasSummary, type CanvasDocument } from '../api/apiService'
 import { canvasActionsKey, collectInputs, makeNode, nodeKinds, validConnection, type CanvasAsset, type CanvasNode, type CanvasEdge, type CanvasParameterValue } from '../services/canvasGraph'
+import { arrangeCanvas } from '../services/arrangeCanvas'
 import '@vue-flow/core/dist/style.css'
 import '@vue-flow/core/dist/theme-default.css'
 import '@vue-flow/minimap/dist/style.css'
 
 const flow = useVueFlow({ id: 'creative-canvas' })
+const { removeEdges } = flow
 const nodes = ref<CanvasNode[]>([])
 const edges = ref<CanvasEdge[]>([])
 const viewport = ref<ViewportTransform>({ x: 0, y: 0, zoom: 1 })
@@ -49,8 +51,71 @@ let pollTimer: ReturnType<typeof setInterval> | undefined
 let saveQueue: Promise<void> = Promise.resolve()
 const savedSnapshot = ref('')
 let disposed = false
+let arranging = false
+
+// 简易撤销/重做历史（最多 50 步）
+type HistorySnapshot = { nodes: string; edges: string }
+const historyStack = ref<HistorySnapshot[]>([])
+const historyIndex = ref(-1)
+const MAX_HISTORY = 50
+
+function takeSnapshot(): HistorySnapshot {
+  return {
+    nodes: JSON.stringify(nodes.value.map(n => ({ id: n.id, type: n.type, position: { x: n.position.x, y: n.position.y }, data: JSON.parse(JSON.stringify(n.data)) }))),
+    edges: JSON.stringify(edges.value.map(e => ({ id: e.id, source: e.source, target: e.target, sourceHandle: e.sourceHandle, targetHandle: e.targetHandle, type: e.type }))),
+  }
+}
+
+function pushHistory() {
+  const snap = takeSnapshot()
+  historyStack.value = historyStack.value.slice(0, historyIndex.value + 1)
+  historyStack.value.push(snap)
+  if (historyStack.value.length > MAX_HISTORY) historyStack.value.shift()
+  historyIndex.value = historyStack.value.length - 1
+}
+
+function undo() {
+  if (historyIndex.value <= 0) return
+  historyIndex.value--
+  applySnapshot(historyStack.value[historyIndex.value]!)
+}
+
+function redo() {
+  if (historyIndex.value >= historyStack.value.length - 1) return
+  historyIndex.value++
+  applySnapshot(historyStack.value[historyIndex.value]!)
+}
+
+function applySnapshot(snap: HistorySnapshot) {
+  nodes.value = JSON.parse(snap.nodes)
+  edges.value = JSON.parse(snap.edges)
+}
+
+const canUndo = computed(() => historyIndex.value > 0)
+const canRedo = computed(() => historyIndex.value < historyStack.value.length - 1)
+
+// 连线点击断开
+const edgeDisconnect = ref<{ id: string; x: number; y: number }>()
+
+function showEdgeDisconnect(event: MouseEvent | TouchEvent, edgeId: string) {
+  if (!(event instanceof MouseEvent)) return
+  event.stopPropagation()
+  edgeDisconnect.value = { id: edgeId, x: event.clientX, y: event.clientY }
+}
 
 const nodeTypes = Object.fromEntries(nodeKinds.map(kind => [kind.type, markRaw(CanvasNodeComponent)]))
+// 节点被选中或拖动时，连接到它的连线高亮并显示流动动画。
+const defaultEdgeOptions = markRaw({
+  type: 'simplebezier',
+  animated: false,
+  class: (edge: GraphEdge) => {
+    const { sourceNode, targetNode } = edge
+    if (!sourceNode?.selected && !sourceNode?.dragging && !targetNode?.selected && !targetNode?.dragging) return ''
+    return 'edge-node-active animated'
+  },
+  focusable: false,
+  interactionWidth: 40,
+})
 // 与 Toonflow 相同，只持久化文档字段，排除 Vue Flow 的测量及交互状态。
 const document = computed<CanvasDocument>(() => ({
   version: 1,
@@ -151,6 +216,9 @@ async function openBoard(id: number) {
     loadError.value = ''
     await nextTick()
     await flow.setViewport(viewport.value)
+    historyStack.value = []
+    historyIndex.value = -1
+    pushHistory()
     await hydrateAssets().catch(error => ElMessage.warning(message(error)))
     void pollTasks()
   } catch (error) {
@@ -187,6 +255,7 @@ function addNode(type: string, position?: { x: number; y: number }) {
   node.selected = true
   nodes.value.push(node)
   menu.value = undefined
+  pushHistory()
   return node
 }
 
@@ -195,6 +264,7 @@ function connect(connection: Connection) {
   edges.value.push({ ...connection, id: crypto.randomUUID(), type: 'simplebezier' })
   pendingConnection.value = undefined
   connectionMenu.value = undefined
+  pushHistory()
 }
 
 function connectStart(start: OnConnectStartParams) {
@@ -237,10 +307,10 @@ function connectEnd(event?: MouseEvent | TouchEvent) {
 }
 
 function paneClick() {
-  // 拖线松手后的合成点击不能立即关掉刚打开的菜单。
   if (ignorePaneClick) { ignorePaneClick = false; return }
   menu.value = undefined
   connectionMenu.value = undefined
+  edgeDisconnect.value = undefined
 }
 
 function addConnectedNode(type: string) {
@@ -275,6 +345,7 @@ function duplicate(id: string) {
   nodes.value.forEach(node => { node.selected = false })
   copy.selected = true
   nodes.value.push(copy)
+  pushHistory()
 }
 
 function remove(id: string) {
@@ -285,11 +356,46 @@ function remove(id: string) {
   }
   nodes.value = nodes.value.filter(node => node.id !== id)
   edges.value = edges.value.filter(edge => edge.source !== id && edge.target !== id)
+  pushHistory()
 }
 
 function deleteSelection() {
   nodes.value.filter(node => node.selected).forEach(node => remove(node.id))
   edges.value = edges.value.filter(edge => !edge.selected)
+}
+
+// 整理画布前的位置快照，用于撤销。
+const arrangeSnapshot = ref<Array<{ id: string; position: { x: number; y: number } }>>()
+let arrangeController: AbortController | undefined
+
+async function arrangeNodes() {
+  if (!canEdit.value || !nodes.value.length || arranging) return
+  arranging = true
+  arrangeController = new AbortController()
+  try {
+    await arrangeCanvas(flow, arrangeController.signal)
+    arrangeSnapshot.value = nodes.value.map(node => ({ id: node.id, position: { x: node.position.x, y: node.position.y } }))
+    saveState.value = '未保存'
+  } catch (error) {
+    if (!arrangeController.signal.aborted) ElMessage.error(message(error))
+  } finally {
+    arrangeController = undefined
+    arranging = false
+  }
+}
+
+function undoArrange() {
+  const snapshot = arrangeSnapshot.value
+  if (!snapshot) return
+  const ids = new Set(nodes.value.map(node => node.id))
+  for (const item of snapshot) {
+    if (ids.has(item.id)) {
+      const node = nodes.value.find(n => n.id === item.id)
+      if (node) node.position = { ...item.position }
+    }
+  }
+  arrangeSnapshot.value = undefined
+  saveState.value = '未保存'
 }
 
 function pick(id?: string) { pickerNode.value = id; pickerVisible.value = true }
@@ -317,6 +423,28 @@ async function upload(event: Event) {
     }
   } catch (error) { ElMessage.error(message(error)) }
   finally { input.value = ''; uploadBusy.value = false }
+}
+
+function dragover(event: DragEvent) {
+  if (!canEdit.value) return
+  const files = Array.from(event.dataTransfer?.items ?? [])
+  if (files.some(item => item.kind === 'file' && (item.type.startsWith('image/') || item.type.startsWith('video/')))) {
+    event.dataTransfer!.dropEffect = 'copy'
+  }
+}
+
+async function drop(event: DragEvent) {
+  if (!canEdit.value) return
+  const files = Array.from(event.dataTransfer?.files ?? []).filter(f => f.type.startsWith('image/') || f.type.startsWith('video/'))
+  if (!files.length) return
+  uploadBusy.value = true
+  try {
+    for (const file of files) {
+      const asset = await uploadInputImage(file)
+      applyAssets([{ ...asset, asset_type: file.type.startsWith('video/') ? 'video' : 'picture' }])
+    }
+  } catch (error) { ElMessage.error(message(error)) }
+  finally { uploadBusy.value = false }
 }
 
 async function run(id: string) {
@@ -409,6 +537,8 @@ function keydown(event: KeyboardEvent) {
   if ((event.target as HTMLElement).closest('input,textarea,select,[contenteditable="true"],.el-dialog')) return
   if (event.key === 'Delete' || event.key === 'Backspace') { event.preventDefault(); deleteSelection() }
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'd') { event.preventDefault(); nodes.value.filter(node => node.selected).forEach(node => duplicate(node.id)) }
+  if ((event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === 'z') { event.preventDefault(); undo() }
+  if ((event.ctrlKey || event.metaKey) && (event.shiftKey && event.key.toLowerCase() === 'z' || event.key.toLowerCase() === 'y')) { event.preventDefault(); redo() }
 }
 
 function beforeUnload(event: BeforeUnloadEvent) { if (dirty.value || submitting.size || uploadBusy.value) { event.preventDefault(); event.returnValue = '' } }
@@ -460,8 +590,8 @@ onBeforeUnmount(() => { disposed = true; clearTimeout(saveTimer); clearInterval(
       <ElButton :disabled="!canEdit || !dirty" @click="persist().catch(error => ElMessage.error(message(error)))">保存</ElButton>
       <ElButton :icon="Delete" :disabled="!canEdit || submitting.size > 0 || uploadBusy" aria-label="删除画布" @click="deleteBoard" />
     </header>
-    <div class="canvas-workspace" @contextmenu.prevent="contextMenu" @pointerdown.capture="ignorePaneClick = false">
-      <VueFlow v-model:nodes="nodes" v-model:edges="edges" id="creative-canvas" :node-types="nodeTypes" :min-zoom="0.2" :max-zoom="8" :pan-on-drag="handMode ? true : [1, 2]" :selection-mode="SelectionMode.Partial" selection-on-drag :snap-to-grid="snapEnabled" :snap-grid="[16, 16]" :delete-key-code="null" :zoom-on-double-click="false" :nodes-draggable="canEdit" :nodes-connectable="canEdit" :connect-on-click="false" :is-valid-connection="(connection) => validConnection(connection, nodes, edges)" :class="{ 'edges-hidden': !showEdges }" @connect="connect" @connect-start="connectStart" @connect-end="connectEnd" @move-end="({ flowTransform }) => viewport = flowTransform" @pane-click="paneClick">
+    <div class="canvas-workspace" :class="{ 'hand-mode': handMode }" @contextmenu.prevent="contextMenu" @pointerdown.capture="ignorePaneClick = false" @dragover.prevent="dragover" @drop.prevent="drop">
+      <VueFlow v-model:nodes="nodes" v-model:edges="edges" id="creative-canvas" :node-types="nodeTypes" :default-edge-options="defaultEdgeOptions" :min-zoom="0.2" :max-zoom="8" :pan-on-drag="handMode ? true : [1, 2]" :selection-mode="SelectionMode.Partial" selection-on-drag :snap-to-grid="snapEnabled" :snap-grid="[16, 16]" :delete-key-code="null" :zoom-on-double-click="false" :nodes-draggable="canEdit" :nodes-connectable="canEdit" :connect-on-click="false" :is-valid-connection="(connection) => validConnection(connection, nodes, edges)" :class="{ 'edges-hidden': !showEdges }" @connect="connect" @connect-start="connectStart" @connect-end="connectEnd" @edge-click="({ event, edge }) => showEdgeDisconnect(event, edge.id)" @move-end="({ flowTransform }) => viewport = flowTransform" @pane-click="paneClick">
         <Background :gap="16" pattern-color="var(--color-border)" />
         <MiniMap v-if="showMap && nodes.length" class="canvas-map" pannable zoomable :width="180" :height="120" />
       </VueFlow>
@@ -484,19 +614,62 @@ onBeforeUnmount(() => { disposed = true; clearTimeout(saveTimer); clearInterval(
       </div>
       <footer class="canvas-status"><span>{{ nodes.length }} 个节点 · {{ edges.length }} 条连线</span><span v-if="selectedCount">已选 {{ selectedCount }} 个节点</span></footer>
       <div class="canvas-controls canvas-controls-left" aria-label="画布控制">
-        <ElButton text aria-label="素材库" title="素材库" @click="pick()"><Folders :size="18" /></ElButton>
-        <ElButton text aria-label="整理画布" title="整理画布" @click="flow.fitView({ padding: .3 })"><Network :size="18" /></ElButton>
-        <ElButton text :type="showMap ? 'primary' : undefined" aria-label="显示地图" title="显示地图" @click="showMap = !showMap"><Map :size="18" /></ElButton>
-        <ElButton text :type="snapEnabled ? 'primary' : undefined" aria-label="网格吸附" title="网格吸附" @click="snapEnabled = !snapEnabled"><Magnet :size="18" /></ElButton>
-        <ElButton text :type="showEdges ? 'primary' : undefined" aria-label="显示连线" title="显示连线" @click="showEdges = !showEdges"><Workflow :size="18" /></ElButton>
-        <ElButton text aria-label="适应视图" title="适应视图" @click="flow.fitView({ padding: .3 })"><Focus :size="18" /></ElButton>
-        <ElButton text aria-label="缩放" title="缩放" @click="flow.zoomIn()">{{ Math.round(viewport.zoom * 100) }}%</ElButton>
+        <el-tooltip content="素材库" placement="top" :show-after="400" :hide-after="0" :enterable="false">
+          <ElButton text aria-label="素材库" @click="pick()"><Folders :size="18" /></ElButton>
+        </el-tooltip>
+        <el-tooltip content="整理画布" placement="top" :show-after="400" :hide-after="0" :enterable="false">
+          <ElButton text aria-label="整理画布" @click="arrangeNodes"><Network :size="18" /></ElButton>
+        </el-tooltip>
+        <el-tooltip v-if="arrangeSnapshot" content="撤销整理" placement="top" :show-after="400" :hide-after="0" :enterable="false">
+          <ElButton text aria-label="撤销整理" @click="undoArrange"><Network :size="18" style="opacity:.45" /></ElButton>
+        </el-tooltip>
+        <el-tooltip :content="showMap ? '隐藏地图' : '显示地图'" placement="top" :show-after="400" :hide-after="0" :enterable="false">
+          <ElButton text :type="showMap ? 'primary' : undefined" aria-label="显示地图" @click="showMap = !showMap"><Map :size="18" /></ElButton>
+        </el-tooltip>
+        <el-tooltip :content="snapEnabled ? '关闭网格吸附（节点拖动时自动对齐）' : '开启网格吸附（节点拖动时自动对齐）'" placement="top" :show-after="400" :hide-after="0" :enterable="false">
+          <ElButton text :type="snapEnabled ? 'primary' : undefined" aria-label="网格吸附" @click="snapEnabled = !snapEnabled"><Magnet :size="18" /></ElButton>
+        </el-tooltip>
+        <el-tooltip :content="showEdges ? '隐藏连线' : '显示连线'" placement="top" :show-after="400" :hide-after="0" :enterable="false">
+          <ElButton text :type="showEdges ? 'primary' : undefined" aria-label="显示连线" @click="showEdges = !showEdges"><Workflow :size="18" /></ElButton>
+        </el-tooltip>
+        <el-tooltip content="适应视图" placement="top" :show-after="400" :hide-after="0" :enterable="false">
+          <ElButton text aria-label="适应视图" @click="flow.fitView({ padding: .3 })"><Focus :size="18" /></ElButton>
+        </el-tooltip>
+        <ElDropdown trigger="click" placement="top-start" :show-timeout="0" :hide-timeout="0">
+          <el-tooltip content="缩放菜单（点击调整缩放比例）" placement="top" :show-after="400" :hide-after="0" :enterable="false">
+            <ElButton text aria-label="缩放菜单" class="zoom-pct-btn">{{ Math.round(viewport.zoom * 100) }}%</ElButton>
+          </el-tooltip>
+          <template #dropdown>
+            <ElDropdownMenu>
+              <div class="zoom-menu">
+                <ElInputNumber :model-value="Math.round(viewport.zoom * 100)" :min="20" :max="800" :controls="false" aria-label="缩放百分比" @change="(v: number | null) => v !== null && flow.zoomTo(v / 100)" /><span class="zoom-suffix">%</span>
+              </div>
+              <ElDropdownItem @click="flow.zoomIn()">放大</ElDropdownItem>
+              <ElDropdownItem @click="flow.zoomOut()">缩小</ElDropdownItem>
+              <ElDropdownItem @click="flow.fitView({ padding: .3, duration: 250 })">适合屏幕</ElDropdownItem>
+            </ElDropdownMenu>
+          </template>
+        </ElDropdown>
       </div>
       <div class="canvas-controls canvas-controls-center" aria-label="画布工具">
-        <ElButton text aria-label="添加节点" title="添加节点" @click="openCenterNodeMenu"><PlusIcon :size="18" /></ElButton>
-        <ElButton text :type="handMode ? 'primary' : undefined" aria-label="移动工具" title="移动工具" @click="handMode = !handMode"><MousePointer2 :size="18" /></ElButton>
-        <ElButton text aria-label="定位节点" title="定位节点" @click="flow.fitView({ padding: .3 })"><Search :size="18" /></ElButton>
-        <ElButton text aria-label="画布提示" title="双击画布添加节点；从端口拖出可自动创建兼容节点"><Info :size="18" /></ElButton>
+        <el-tooltip content="撤销 (Ctrl+Z)" placement="top" :show-after="400" :hide-after="0" :enterable="false">
+          <ElButton text :disabled="!canUndo" aria-label="撤销" @click="undo"><RotateCcw :size="18" /></ElButton>
+        </el-tooltip>
+        <el-tooltip content="重做 (Ctrl+Y)" placement="top" :show-after="400" :hide-after="0" :enterable="false">
+          <ElButton text :disabled="!canRedo" aria-label="重做" @click="redo"><RotateCw :size="18" /></ElButton>
+        </el-tooltip>
+        <el-tooltip content="添加节点" placement="top" :show-after="400" :hide-after="0" :enterable="false">
+          <ElButton text aria-label="添加节点" @click="openCenterNodeMenu"><PlusIcon :size="18" /></ElButton>
+        </el-tooltip>
+        <el-tooltip :content="handMode ? '切换到移动工具' : '切换到抓手工具'" placement="top" :show-after="400" :hide-after="0" :enterable="false">
+          <ElButton text :type="handMode ? 'primary' : undefined" aria-label="移动工具" @click="handMode = !handMode"><component :is="handMode ? Hand : MousePointer2" :size="18" /></ElButton>
+        </el-tooltip>
+        <el-tooltip content="适应视图" placement="top" :show-after="400" :hide-after="0" :enterable="false">
+          <ElButton text aria-label="定位节点" @click="flow.fitView({ padding: .3 })"><Search :size="18" /></ElButton>
+        </el-tooltip>
+        <el-tooltip content="双击画布添加节点；从端口拖出可自动创建兼容节点" placement="top" :show-after="400" :hide-after="0" :enterable="false">
+          <ElButton text aria-label="画布提示"><Info :size="18" /></ElButton>
+        </el-tooltip>
       </div>
     </div>
     <div v-if="menu" class="canvas-menu" :style="{ left: `${menu.x}px`, top: `${menu.y}px` }" @mouseleave="menu = undefined">
@@ -510,6 +683,19 @@ onBeforeUnmount(() => { disposed = true; clearTimeout(saveTimer); clearInterval(
       <button v-for="kind in connectionCandidates()" :key="kind.type" @click="addConnectedNode(kind.type)">{{ kind.label }}</button>
     </div>
     <AssetPicker v-model:visible="pickerVisible" :max-select="pickerNode ? 1 : 20" allow-video @select="applyAssets" />
+    <Teleport to="body">
+      <ElButton
+        v-if="edgeDisconnect && flow.findEdge(edgeDisconnect.id)"
+        class="edge-disconnect-btn"
+        type="danger"
+        circle
+        aria-label="断开连接"
+        title="断开连接"
+        :style="{ left: `${edgeDisconnect.x}px`, top: `${edgeDisconnect.y}px` }"
+        @click.stop="removeEdges(edgeDisconnect.id); edgeDisconnect = undefined"
+        @mouseleave="edgeDisconnect = undefined"
+      >×</ElButton>
+    </Teleport>
   </main>
 </template>
 
@@ -522,15 +708,23 @@ onBeforeUnmount(() => { disposed = true; clearTimeout(saveTimer); clearInterval(
 .board-select { width: 160px; flex-shrink: 0; }.canvas-name { width: 140px; min-width: 60px; background: transparent; color: var(--color-text); border: 0; border-bottom: 1px solid var(--color-border); padding: 6px; font-size: 13px; }
 .save-state { margin-left: auto; white-space: nowrap; font-size: 11px; color: var(--color-muted); }
 .canvas-workspace { position: relative; flex: 1; min-height: 0; container-type: inline-size; }
-.canvas-controls :deep(.el-button) { width: 28px; height: 28px; margin-left: 0; padding: 0; color: var(--color-muted); font-size: 12px; font-variant-numeric: tabular-nums; }.canvas-controls :deep(.el-button:hover) { color: var(--color-text); background: var(--color-surface-soft); }
+.canvas-workspace.hand-mode :deep(.vue-flow__pane) { cursor: grab; }
+.canvas-workspace.hand-mode :deep(.vue-flow__pane:active) { cursor: grabbing; }
+.canvas-workspace.hand-mode :deep(.vue-flow__node) { pointer-events: none; }
+.canvas-controls :deep(.el-button) { width: 28px; height: 28px; margin-left: 0; padding: 0; color: var(--color-muted); font-size: 12px; font-variant-numeric: tabular-nums; }.canvas-controls :deep(.el-button:hover) { color: var(--color-text); background: var(--color-surface-soft); }.canvas-controls :deep(.el-button.is-text.is-has-bg), .canvas-controls :deep(.el-button--primary.is-text) { color: var(--color-primary); }
 .canvas-empty { pointer-events: none; position: absolute; inset: 0; z-index: 4; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 32px; padding: 24px; user-select: none; }.canvas-empty > :deep(.el-button) { pointer-events: auto; margin-top: 20px; }
 .empty-hint { display: flex; align-items: center; gap: 12px; color: var(--color-muted); font-size: 14px; font-weight: 500; }.empty-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; max-width: 100%; pointer-events: auto; }.empty-actions button { display: flex; align-items: center; gap: 16px; width: 200px; max-width: 100%; min-height: 56px; padding: 6px 8px; border: 1px solid var(--color-border); border-radius: 16px; background: var(--color-surface-soft); color: var(--color-text); font: inherit; font-size: 14px; font-weight: 600; text-align: left; cursor: pointer; transition: background-color .15s, border-color .15s; }.empty-actions button:hover { border-color: var(--color-border-strong); background: var(--color-surface); }.action-icon { display: flex; flex: 0 0 40px; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: color-mix(in srgb, var(--color-surface-soft) 70%, var(--color-border)); }.action-icon :deep(svg) { width: 22px; height: 22px; color: var(--color-muted); }
 .canvas-status { position: absolute; bottom: 16px; left: 18px; display: flex; gap: 18px; color: var(--color-muted); font-size: 11px; pointer-events: none; }
 .canvas-controls { position: absolute; z-index: 5; bottom: 16px; display: flex; align-items: center; gap: 2px; padding: 2px 4px; border: 1px solid var(--color-border); border-radius: 6px; background: color-mix(in srgb, var(--color-surface-base) 88%, transparent); backdrop-filter: blur(18px); box-shadow: var(--shadow-soft); }.canvas-controls-left { left: 16px; }.canvas-controls-center { left: 50%; transform: translateX(-50%); }.canvas-controls span { min-width: 42px; color: var(--color-muted); font-size: 11px; text-align: center; }
 .canvas-menu { position: fixed; z-index: 200; width: 180px; padding: 4px; border: 1px solid var(--color-border); border-radius: 4px; background: var(--color-surface-base); box-shadow: var(--shadow-soft); }.canvas-menu button { display: block; width: 100%; text-align: left; border: 0; border-radius: 3px; background: transparent; color: var(--color-text); padding: 8px 10px; cursor: pointer; font-size: 13px; }.canvas-menu button:hover { background: var(--color-surface-soft); }.canvas-menu-divider { display: block; height: 1px; margin: 4px 6px; background: var(--color-border); }.connection-menu-title { margin: 4px 8px 6px; color: var(--color-muted); font-size: 11px; }
-:deep(.vue-flow__node) { background: transparent; border: 0; padding: 0; }:deep(.vue-flow__edge-path) { stroke: var(--color-primary); stroke-width: 2; }:deep(.vue-flow.edges-hidden .vue-flow__edge) { opacity: 0; pointer-events: none; }:deep(.vue-flow__edge.selected .vue-flow__edge-path) { stroke: var(--color-info); stroke-width: 3; }:deep(.vue-flow__minimap) { border: 1px solid var(--color-border); border-radius: 10px; background: color-mix(in srgb, var(--color-surface-base) 90%, transparent); margin: 16px; overflow: hidden; }:deep(.vue-flow__minimap-mask) { fill: var(--color-surface); }:deep(.vue-flow__minimap-node) { fill: var(--color-muted); }
+:deep(.vue-flow__node) { background: transparent; border: 0; padding: 0; }:deep(.vue-flow__node:hover .handle-icon) { opacity: 1; }:deep(.vue-flow__edge-path) { stroke: var(--color-primary); stroke-width: 2; }:deep(.vue-flow__edge.selected .vue-flow__edge-path) { stroke: var(--color-info); stroke-width: 3; }:deep(.vue-flow__edge.edge-node-active .vue-flow__edge-path) { stroke: var(--color-primary); }:deep(.vue-flow.edges-hidden .vue-flow__edge) { opacity: 0; pointer-events: none; }:deep(.vue-flow__minimap) { border: 1px solid var(--color-border); border-radius: 10px; background: color-mix(in srgb, var(--color-surface-base) 90%, transparent); margin: 16px; overflow: hidden; }:deep(.vue-flow__minimap-mask) { fill: var(--color-surface); }:deep(.vue-flow__minimap-node) { fill: var(--color-muted); }
 .canvas-page { --el-bg-color: var(--color-surface-base); --el-bg-color-overlay: var(--color-surface-base); --el-fill-color-blank: var(--color-surface-base); --el-text-color-regular: var(--color-text); --el-text-color-primary: var(--color-text); --el-text-color-placeholder: var(--color-muted); --el-border-color: var(--color-border); --el-border-color-light: var(--color-border); --el-fill-color-light: var(--color-surface-soft); }
 :deep(.el-textarea__inner) { background: var(--color-surface-soft); color: var(--color-text); }:deep(.el-button) { background: var(--color-surface-soft); color: var(--color-text); border-color: var(--color-border); }:deep(.el-button:hover) { border-color: var(--color-border-strong); background: var(--color-surface-soft); }:deep(.el-button.is-disabled) { color: var(--color-faint); }
 @media (max-width: 1050px) { .canvas-toolbar { flex-wrap: wrap; padding: 10px 12px; }.canvas-heading { margin-right: 0; }.canvas-name { width: 100px; }.canvas-status span:last-child { display: none; } }
 @media (max-width: 600px) { .canvas-heading p, .save-state { display: none; }.canvas-heading h1 { font-size: 13px; }.board-select { width: 120px; }.canvas-toolbar { gap: 6px; }.empty-actions { flex-wrap: wrap; }.canvas-controls-left { left: 12px; max-width: calc(100% - 24px); overflow-x: auto; }.canvas-controls-center { right: 12px; left: auto; transform: none; } }
+.zoom-menu { display: flex; align-items: center; gap: 4px; padding: 8px 12px 4px; }
+.zoom-menu :deep(.el-input-number) { width: 90px; }
+.zoom-suffix { font-size: 12px; color: var(--color-muted); }
+.canvas-controls :deep(.zoom-pct-btn) { min-width: 42px; width: auto; padding: 0 4px; }
+.edge-disconnect-btn { position: fixed; z-index: 1000; width: 28px; height: 28px; padding: 0; transform: translate(-50%, -50%); font-size: 16px; line-height: 1; }
 </style>

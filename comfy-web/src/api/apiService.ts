@@ -50,7 +50,7 @@ export interface ApiModel {
 export interface ApiModelParameterField {
   key: string
   label: string
-  type: 'select' | 'number' | 'text' | 'boolean'
+  type: 'select' | 'number' | 'text' | 'boolean' | 'slider'
   default?: string | number | boolean
   options?: Array<string | number>
   min?: number

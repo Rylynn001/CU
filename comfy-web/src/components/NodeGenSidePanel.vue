@@ -54,6 +54,16 @@ const duration = ref(8)
 const VIDEO_RATIOS = ['16:9', '4:3', '1:1', '3:4', '9:16']
 const RESOLUTIONS = ['480p', '720p', '1080p']
 
+const selectedModel = computed(() => models.value.find(m => m.id === modelId.value))
+const durationField = computed(() => selectedModel.value?.parameters?.fields?.find(f => f.key === 'duration'))
+const durationMin = computed(() => durationField.value?.min ?? 1)
+const durationMax = computed(() => durationField.value?.max ?? 60)
+const durationStep = computed(() => durationField.value?.step ?? 1)
+
+watch(durationMax, (max) => {
+  if (duration.value > max) duration.value = max
+})
+
 const localPrompt = computed({
   get: () => props.prompt,
   set: (v) => emit('update:prompt', v),
@@ -331,7 +341,7 @@ async function handleGenerate() {
         </div>
         <div class="gsp-section">
           <div class="gsp-label">时长 <span class="gsp-val">{{ duration }}s</span></div>
-          <input type="range" v-model.number="duration" min="1" max="60" step="1" class="gsp-range" />
+          <input type="range" v-model.number="duration" :min="durationMin" :max="durationMax" :step="durationStep" class="gsp-range" />
         </div>
       </template>
     </div>
