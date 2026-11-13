@@ -13,6 +13,8 @@ from typing import Optional, Dict, Any, List
 
 from api.auth import get_current_user
 from agents.conversation_agent import ConversationAgent
+from agents.graph.workflow import create_conversation_workflow
+from openai import AsyncOpenAI
 from repositories.workflow_repo import WorkflowRepository
 from repositories.generation_repo import get_language_model_info
 from config import get_provider_config_by_rfid
@@ -46,6 +48,99 @@ def get_conversation_agent(model_id: int) -> ConversationAgent:
         model=model_info['name'],
         context_window=model_info.get('context_window'),
     )
+
+
+def _get_llm_client(model_id: int):
+    """按模型编号创建 AsyncOpenAI 客户端，供 LangGraph 提示词优化子图使用。"""
+    model_info = get_language_model_info(model_id)
+    if not model_info:
+        return None
+    provider_config = get_provider_config_by_rfid(model_info['rfid'])
+    if not provider_config:
+        return None
+    return AsyncOpenAI(api_key=provider_config['api_key'], base_url=provider_config['base_url'])
+
+
+_GRAPH_NODE_PROGRESS = {
+    "intent": "正在分析你的请求…",
+    "prompt_enhance": "正在优化提示词…",
+    "direct_execute": "准备生成参数…",
+    "execute_tool": "正在执行生成任务…",
+}
+
+
+async def _run_conversation_graph(
+    request: 'ChatRequest',
+    workflow_tools,
+    existing_state: Optional[dict],
+    user_content: str,
+    request_id: str,
+    on_progress=None,
+    on_delta=None,
+) -> dict:
+    """使用 LangGraph 工作流处理对话请求，返回与 ConversationAgent.process 同构的结果。"""
+    llm_client = _get_llm_client(request.model_id)
+    graph = create_conversation_workflow(workflow_tools=workflow_tools, llm_client=llm_client)
+
+    messages = list((existing_state or {}).get("messages", []))
+    messages.append({"role": "user", "content": user_content})
+
+    initial_state = {
+        "messages": messages,
+        "enable_prompt_optimization": True,
+        "intent": None,
+        "generation_request": None,
+        "current_tool": None,
+        "tool_result": None,
+        "loop_count": 0,
+        "is_complete": False,
+    }
+
+    config = {"configurable": {"thread_id": f"req_{request_id}"}}
+    final_state: dict = dict(initial_state)
+
+    async for state in graph.astream(initial_state, config=config):
+        if isinstance(state, dict) and on_progress:
+            if state.get("intent") and not final_state.get("intent"):
+                await on_progress(_GRAPH_NODE_PROGRESS["intent"])
+            elif state.get("generation_request") and not final_state.get("generation_request"):
+                await on_progress(_GRAPH_NODE_PROGRESS["direct_execute"])
+            elif state.get("tool_result") and not final_state.get("tool_result"):
+                await on_progress(_GRAPH_NODE_PROGRESS["execute_tool"])
+        if isinstance(state, dict):
+            final_state = state
+
+    intent = final_state.get("intent")
+    tool_result = final_state.get("tool_result") or {}
+
+    tasks: list = []
+    workflow_ready = False
+    if isinstance(tool_result, dict):
+        if tool_result.get("task_id"):
+            tasks = [tool_result]
+            workflow_ready = True
+        elif tool_result.get("selection_required"):
+            workflow_tools.pending_generation = tool_result
+
+    if tasks:
+        reply = "生成任务已提交，请查看下方进度。"
+    elif isinstance(tool_result, dict) and tool_result.get("selection_required"):
+        reply = "请在弹出的选择框中补全生成参数。"
+    elif intent in ("txt2img", "txt2video"):
+        reply = "好的，正在处理你的生成请求。"
+    else:
+        reply = "我是 AI 绘画助手，描述你想生成的图片或视频，我来帮你实现！"
+
+    if on_delta:
+        await on_delta(reply)
+
+    return {
+        "reply": reply,
+        "state": {"intent": intent},
+        "workflow_ready": workflow_ready,
+        "tasks": tasks,
+        "context_usage": None,
+    }
 
 
 class ChatRequest(BaseModel):
@@ -238,20 +333,14 @@ async def _process_chat(request: ChatRequest, current_user: dict, on_progress=No
         if on_delta and result.get("tasks"):
             await on_delta(result["reply"])
     else:
-        agent = get_conversation_agent(request.model_id)
-        result = await agent.process(
-            message=request.message,
-            session_id=session_id,
-            user_id=user_id,
+        result = await _run_conversation_graph(
+            request=request,
+            workflow_tools=workflow_tools,
             existing_state=existing_state,
+            user_content=user_content,
+            request_id=request_id,
             on_progress=on_progress,
             on_delta=on_delta,
-            tool_executor=workflow_tools.discover_and_execute,
-            tool_discoverer=workflow_tools.discover,
-            executions=previous_tasks,
-            request_id=request_id,
-            user_content=user_content,
-            on_event=record_event,
         )
 
     # 4. 保存本轮对话和会话状态。

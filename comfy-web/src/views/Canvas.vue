@@ -9,6 +9,8 @@ import { Plus, Picture, VideoCamera, Document, Delete } from '@element-plus/icon
 import { Focus, Folders, Hand, Info, Magnet, Map, MousePointer2, MousePointerClick, Network, Plus as PlusIcon, Search, Workflow, RotateCcw, RotateCw } from '@lucide/vue'
 import CanvasNodeComponent from '../components/CanvasNode.vue'
 import AssetPicker from '../components/AssetPicker.vue'
+import AiChatPanel from '../components/AiChatPanel.vue'
+import AiBlobWarpAvatar from '../components/AiBlobWarpAvatar.vue'
 import { apiGenerate, apiVideoGenerate, authFetch, createCanvas, getApiModels, getCanvas, listCanvases, saveCanvas, uploadInputImage, type ApiModel, type CanvasSummary, type CanvasDocument } from '../api/apiService'
 import { canvasActionsKey, collectInputs, makeNode, nodeKinds, validConnection, type CanvasAsset, type CanvasNode, type CanvasEdge, type CanvasParameterValue } from '../services/canvasGraph'
 import { arrangeCanvas } from '../services/arrangeCanvas'
@@ -36,6 +38,7 @@ const pickerNode = ref<string>()
 const fileInput = ref<HTMLInputElement>()
 const uploadBusy = ref(false)
 const creating = ref(false)
+const chatPanelOpen = ref(false)
 const menu = ref<{ x: number; y: number; position: { x: number; y: number } }>()
 const connectionMenu = ref<{ x: number; y: number; position: { x: number; y: number }; nodeId: string; handleId: string; handleType: 'source' | 'target' }>()
 const pendingConnection = ref<OnConnectStartParams>()
@@ -582,15 +585,19 @@ onBeforeUnmount(() => { disposed = true; clearTimeout(saveTimer); clearInterval(
 <template>
   <main class="canvas-page">
     <header class="canvas-toolbar">
-      <div class="canvas-heading"><span class="canvas-mark">⌘</span><div><h1>创作画布</h1><p>把想法连接起来</p></div></div>
+      <span class="canvas-mark">⌘</span>
       <ElSelect :model-value="activeId" :disabled="loading || submitting.size > 0 || uploadBusy" placeholder="选择画布" class="board-select" @change="openBoard"><ElOption v-for="board in boards" :key="board.id" :value="board.id" :label="board.name" /></ElSelect>
       <input v-if="ready" v-model="name" class="canvas-name" maxlength="100" aria-label="画布名称" :disabled="loading" />
       <span class="save-state" role="status">{{ saveState }}</span>
-      <ElButton :icon="Plus" :disabled="loading || submitting.size > 0 || uploadBusy" @click="newBoard">新建画布</ElButton>
-      <ElButton :disabled="!canEdit || !dirty" @click="persist().catch(error => ElMessage.error(message(error)))">保存</ElButton>
-      <ElButton :icon="Delete" :disabled="!canEdit || submitting.size > 0 || uploadBusy" aria-label="删除画布" @click="deleteBoard" />
+      <div class="toolbar-spacer" />
+      <ElButton size="small" :icon="Plus" :disabled="loading || submitting.size > 0 || uploadBusy" @click="newBoard">新建</ElButton>
+      <ElButton size="small" :disabled="!canEdit || !dirty" @click="persist().catch(error => ElMessage.error(message(error)))">保存</ElButton>
+      <ElButton size="small" :icon="Delete" :disabled="!canEdit || submitting.size > 0 || uploadBusy" aria-label="删除画布" @click="deleteBoard" />
     </header>
     <div class="canvas-workspace" :class="{ 'hand-mode': handMode }" @contextmenu.prevent="contextMenu" @pointerdown.capture="ignorePaneClick = false" @dragover.prevent="dragover" @drop.prevent="drop">
+      <div class="ai-orb" :class="{ active: chatPanelOpen }" aria-label="AI 助手" role="button" tabindex="0" @click="chatPanelOpen = !chatPanelOpen" @keydown.enter="chatPanelOpen = !chatPanelOpen">
+        <AiBlobWarpAvatar class="ai-orb-avatar" />
+      </div>
       <VueFlow v-model:nodes="nodes" v-model:edges="edges" id="creative-canvas" :node-types="nodeTypes" :default-edge-options="defaultEdgeOptions" :min-zoom="0.2" :max-zoom="8" :pan-on-drag="handMode ? true : [1, 2]" :selection-mode="SelectionMode.Partial" selection-on-drag :snap-to-grid="snapEnabled" :snap-grid="[16, 16]" :delete-key-code="null" :zoom-on-double-click="false" :nodes-draggable="canEdit" :nodes-connectable="canEdit" :connect-on-click="false" :is-valid-connection="(connection) => validConnection(connection, nodes, edges)" :class="{ 'edges-hidden': !showEdges }" @connect="connect" @connect-start="connectStart" @connect-end="connectEnd" @edge-click="({ event, edge }) => showEdgeDisconnect(event, edge.id)" @move-end="({ flowTransform }) => viewport = flowTransform" @pane-click="paneClick">
         <Background :gap="16" pattern-color="var(--color-border)" />
         <MiniMap v-if="showMap && nodes.length" class="canvas-map" pannable zoomable :width="180" :height="120" />
@@ -683,6 +690,7 @@ onBeforeUnmount(() => { disposed = true; clearTimeout(saveTimer); clearInterval(
       <button v-for="kind in connectionCandidates()" :key="kind.type" @click="addConnectedNode(kind.type)">{{ kind.label }}</button>
     </div>
     <AssetPicker v-model:visible="pickerVisible" :max-select="pickerNode ? 1 : 20" allow-video @select="applyAssets" />
+    <AiChatPanel v-model="chatPanelOpen" />
     <Teleport to="body">
       <ElButton
         v-if="edgeDisconnect && flow.findEdge(edgeDisconnect.id)"
@@ -701,12 +709,11 @@ onBeforeUnmount(() => { disposed = true; clearTimeout(saveTimer); clearInterval(
 
 <style scoped>
 .canvas-page { height: 100vh; display: flex; flex-direction: column; background: transparent; color: var(--color-text); }
-.canvas-toolbar { min-height: 56px; padding: 10px 18px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--color-border); background: color-mix(in srgb, var(--color-surface-base) 68%, transparent); backdrop-filter: blur(18px); }
-.canvas-heading { display: flex; align-items: center; gap: 10px; margin-right: 12px; flex-shrink: 0; }
-.canvas-mark { display: grid; width: 28px; height: 28px; place-items: center; border: 1px solid var(--color-border-strong); border-radius: 8px; color: var(--color-text); font-size: 16px; }
-.canvas-heading h1 { font-size: 14px; font-weight: 600; letter-spacing: .4px; }.canvas-heading p { margin-top: 2px; font-size: 10px; color: var(--color-muted); }
-.board-select { width: 160px; flex-shrink: 0; }.canvas-name { width: 140px; min-width: 60px; background: transparent; color: var(--color-text); border: 0; border-bottom: 1px solid var(--color-border); padding: 6px; font-size: 13px; }
-.save-state { margin-left: auto; white-space: nowrap; font-size: 11px; color: var(--color-muted); }
+.canvas-toolbar { height: 44px; padding: 0 14px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--color-border); background: color-mix(in srgb, var(--color-surface-base) 85%, transparent); backdrop-filter: blur(18px); flex-shrink: 0; }
+.canvas-mark { display: grid; width: 26px; height: 26px; place-items: center; border: 1px solid var(--color-border-strong); border-radius: 7px; color: var(--color-text); font-size: 14px; flex-shrink: 0; }
+.board-select { width: 148px; flex-shrink: 0; }.canvas-name { width: 160px; min-width: 60px; background: transparent; color: var(--color-text); border: 0; border-bottom: 1px solid transparent; padding: 4px 6px; font-size: 13px; font-weight: 500; transition: border-color 0.15s; }.canvas-name:hover, .canvas-name:focus { border-bottom-color: var(--color-border); outline: none; }
+.save-state { white-space: nowrap; font-size: 11px; color: var(--color-muted); }
+.toolbar-spacer { flex: 1; }
 .canvas-workspace { position: relative; flex: 1; min-height: 0; container-type: inline-size; }
 .canvas-workspace.hand-mode :deep(.vue-flow__pane) { cursor: grab; }
 .canvas-workspace.hand-mode :deep(.vue-flow__pane:active) { cursor: grabbing; }
@@ -720,11 +727,15 @@ onBeforeUnmount(() => { disposed = true; clearTimeout(saveTimer); clearInterval(
 :deep(.vue-flow__node) { background: transparent; border: 0; padding: 0; }:deep(.vue-flow__node:hover .handle-icon) { opacity: 1; }:deep(.vue-flow__edge-path) { stroke: var(--color-primary); stroke-width: 2; }:deep(.vue-flow__edge.selected .vue-flow__edge-path) { stroke: var(--color-info); stroke-width: 3; }:deep(.vue-flow__edge.edge-node-active .vue-flow__edge-path) { stroke: var(--color-primary); }:deep(.vue-flow.edges-hidden .vue-flow__edge) { opacity: 0; pointer-events: none; }:deep(.vue-flow__minimap) { border: 1px solid var(--color-border); border-radius: 10px; background: color-mix(in srgb, var(--color-surface-base) 90%, transparent); margin: 16px; overflow: hidden; }:deep(.vue-flow__minimap-mask) { fill: var(--color-surface); }:deep(.vue-flow__minimap-node) { fill: var(--color-muted); }
 .canvas-page { --el-bg-color: var(--color-surface-base); --el-bg-color-overlay: var(--color-surface-base); --el-fill-color-blank: var(--color-surface-base); --el-text-color-regular: var(--color-text); --el-text-color-primary: var(--color-text); --el-text-color-placeholder: var(--color-muted); --el-border-color: var(--color-border); --el-border-color-light: var(--color-border); --el-fill-color-light: var(--color-surface-soft); }
 :deep(.el-textarea__inner) { background: var(--color-surface-soft); color: var(--color-text); }:deep(.el-button) { background: var(--color-surface-soft); color: var(--color-text); border-color: var(--color-border); }:deep(.el-button:hover) { border-color: var(--color-border-strong); background: var(--color-surface-soft); }:deep(.el-button.is-disabled) { color: var(--color-faint); }
-@media (max-width: 1050px) { .canvas-toolbar { flex-wrap: wrap; padding: 10px 12px; }.canvas-heading { margin-right: 0; }.canvas-name { width: 100px; }.canvas-status span:last-child { display: none; } }
-@media (max-width: 600px) { .canvas-heading p, .save-state { display: none; }.canvas-heading h1 { font-size: 13px; }.board-select { width: 120px; }.canvas-toolbar { gap: 6px; }.empty-actions { flex-wrap: wrap; }.canvas-controls-left { left: 12px; max-width: calc(100% - 24px); overflow-x: auto; }.canvas-controls-center { right: 12px; left: auto; transform: none; } }
+@media (max-width: 1050px) { .canvas-toolbar { padding: 0 10px; gap: 6px; }.canvas-name { width: 110px; } }
+@media (max-width: 600px) { .save-state { display: none; }.canvas-name { width: 80px; }.board-select { width: 110px; }.canvas-toolbar { gap: 4px; }.canvas-controls-left { left: 12px; max-width: calc(100% - 24px); overflow-x: auto; }.canvas-controls-center { right: 12px; left: auto; transform: none; } }
 .zoom-menu { display: flex; align-items: center; gap: 4px; padding: 8px 12px 4px; }
 .zoom-menu :deep(.el-input-number) { width: 90px; }
 .zoom-suffix { font-size: 12px; color: var(--color-muted); }
 .canvas-controls :deep(.zoom-pct-btn) { min-width: 42px; width: auto; padding: 0 4px; }
 .edge-disconnect-btn { position: fixed; z-index: 1000; width: 28px; height: 28px; padding: 0; transform: translate(-50%, -50%); font-size: 16px; line-height: 1; }
+.ai-orb { position: absolute; right: 20px; bottom: 20px; width: 48px; height: 48px; border-radius: 50%; background: color-mix(in srgb, var(--color-surface-base) 92%, transparent); border: 1px solid var(--color-border); backdrop-filter: blur(16px); cursor: pointer; z-index: 10; display: grid; place-items: center; transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s, border-color 0.2s; box-shadow: 0 4px 18px rgba(0,0,0,0.28); }
+.ai-orb:hover { transform: scale(1.12); box-shadow: 0 6px 26px rgba(0,0,0,0.38); }
+.ai-orb.active { border-color: var(--color-primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 28%, transparent), 0 4px 18px rgba(0,0,0,0.28); }
+.ai-orb-avatar { width: 30px; height: 30px; pointer-events: none; }
 </style>
