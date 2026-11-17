@@ -55,7 +55,7 @@ async def generate_instruction_node(state: Dict[str, Any]) -> Dict[str, Any]:
     return {"instruction": instruction}
 
 
-async def llm_enhance_node(state: Dict[str, Any], llm_client=None) -> Dict[str, Any]:
+async def llm_enhance_node(state: Dict[str, Any], llm_client=None, model_name: Optional[str] = None) -> Dict[str, Any]:
     """
     使用 LLM 优化提示词
 
@@ -74,12 +74,15 @@ async def llm_enhance_node(state: Dict[str, Any], llm_client=None) -> Dict[str, 
 
     try:
         response = await llm_client.chat.completions.create(
+            model=model_name or "gpt-4o-mini",
             messages=[
                 {"role": "system", "content": instruction},
                 {"role": "user", "content": user_prompt}
             ]
         )
         enhanced = response.choices[0].message.content
+        if not isinstance(enhanced, str) or not enhanced.strip():
+            raise ValueError("提示词优化未返回有效内容")
         logger.info("提示词优化完成")
         return {"enhanced_prompt": enhanced}
 
@@ -92,7 +95,7 @@ async def llm_enhance_node(state: Dict[str, Any], llm_client=None) -> Dict[str, 
 # 子图工厂
 # ─────────────────────────────────────────────
 
-def create_prompt_enhance_subgraph(llm_client=None):
+def create_prompt_enhance_subgraph(llm_client=None, model_name: Optional[str] = None):
     """
     创建提示词优化子图
 
@@ -106,7 +109,7 @@ def create_prompt_enhance_subgraph(llm_client=None):
 
     # 注入 llm_client
     async def _llm_enhance(state):
-        return await llm_enhance_node(state, llm_client=llm_client)
+        return await llm_enhance_node(state, llm_client=llm_client, model_name=model_name)
 
     subgraph.add_node("analyze", analyze_need_node)
     subgraph.add_node("generate_ins", generate_instruction_node)

@@ -3,11 +3,13 @@ import { computed, inject, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { Handle, Position, useVueFlow, type NodeProps } from '@vue-flow/core'
 import { CircleDashed, CircleDot, FileText, Image, Video, Loader2 } from '@lucide/vue'
 import { ElButton, ElInput, ElSelect, ElOption, ElInputNumber, ElSwitch, ElCard, ElDropdown, ElDropdownMenu, ElDropdownItem, ElSlider } from 'element-plus'
-import { canvasActionsKey, type CanvasNodeData } from '../services/canvasGraph'
+import { canvasActionsKey, canvasReferences, type CanvasNodeData } from '../services/canvasGraph'
+import mediaReferenceInput from './mediaReferenceInput.vue'
 
 const props = defineProps<NodeProps<CanvasNodeData>>()
 const actions = inject(canvasActionsKey)!
-const { updateNodeInternals, viewport, connectionLookup, findNode } = useVueFlow()
+const { updateNodeInternals, viewport, connectionLookup, findNode, getNodes, getEdges } = useVueFlow()
+const references = computed(() => canvasReferences(getNodes.value, actions.assets.value, getEdges.value, props.id))
 
 const generating = computed(() => props.type.includes('Generation'))
 const isVideo = computed(() => props.type.includes('video'))
@@ -227,7 +229,7 @@ function handleCommand(command: string) {
       </Handle>
     </template>
     <section v-if="generating && selected" class="node-settings nodrag nopan nowheel" @keydown.stop @dblclick.stop>
-      <ElInput v-model="data.prompt" type="textarea" :rows="3" :disabled="busy" placeholder="描述你想生成的内容" aria-label="生成提示词" />
+      <mediaReferenceInput v-model="data.prompt" :items="references" :disabled="busy" />
       <div class="settings-grid">
         <label>模型<ElSelect :model-value="data.model" :disabled="busy" placeholder="选择模型" @update:model-value="setModel"><ElOption v-for="model in models" :key="model.id" :label="model.description || model.name" :value="String(model.id)" /></ElSelect></label>
         <template v-for="field in parameterFields" :key="field.key">

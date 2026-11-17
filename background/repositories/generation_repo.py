@@ -23,13 +23,20 @@ def load_input_assets(input_asset_ids: List[int]):
 def get_model_info(model_id: int):
     """获取模型信息"""
     model_info = execute_query(
-        "SELECT id, name, provider, rfid, parameters FROM api_models WHERE id = %s",
+        "SELECT id, name, type, provider, rfid, parameters FROM api_models WHERE id = %s",
         (model_id,),
         fetch_one=True
     )
     if model_info and isinstance(model_info.get('parameters'), str):
         model_info['parameters'] = json.loads(model_info['parameters'])
     return model_info
+
+
+def get_task_history(task_id: str, user_id: int):
+    return execute_query(
+        'SELECT id, status FROM history WHERE task_id = %s AND user_id = %s ORDER BY id DESC LIMIT 1',
+        (task_id, user_id), fetch_one=True,
+    )
 
 
 def get_language_model_info(model_id: int):

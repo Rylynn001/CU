@@ -6,7 +6,7 @@ import logging
 import redis
 from pathlib import Path
 from typing import List, Optional
-from fastapi import APIRouter, HTTPException, Depends, Header
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 
 from repositories import generation_repo
@@ -34,11 +34,15 @@ def get_redis():
 def enqueue_task(queue_name: str, task_data: dict) -> None:
     """任务入队"""
     client = get_redis()
-    # 设置任务状态
-    task_id = task_data['task_id']
-    client.setex(f'task:{task_id}:status', 3600, 'pending')
-    # 先写状态再入队，避免 worker 或前端在状态键写入前读到 404。
-    client.lpush(queue_name, json.dumps(task_data, ensure_ascii=False))
+    # 标记和入队原子完成。计划恢复时使用同一 task_id，不重复提交生成。
+    client.eval("""
+        if redis.call('EXISTS', KEYS[1]) == 1 then return 0 end
+        redis.call('SET', KEYS[1], '1')
+        redis.call('SETEX', KEYS[2], 3600, 'pending')
+        redis.call('LPUSH', KEYS[3], ARGV[1])
+        return 1
+    """, 3, f"task:{task_data['task_id']}:enqueued", f"task:{task_data['task_id']}:status",
+        queue_name, json.dumps(task_data, ensure_ascii=False))
 
 
 class Txt2ImgRequest(BaseModel):
@@ -106,12 +110,6 @@ def _validate_model_references(model_info: dict, input_asset_ids: List[int], all
     if not input_asset_ids:
         return
 
-    config = model_info.get('parameters') or {}
-    references = config.get('references') or {}
-    image_config = references.get('images') or {}
-    video_config = references.get('videos') or {}
-    image_max = image_config.get('max', 12 if not references else 0)
-    video_max = video_config.get('max', 0)
     assets = generation_repo.load_input_assets(input_asset_ids)
     image_count = 0
     video_count = 0
@@ -124,6 +122,16 @@ def _validate_model_references(model_info: dict, input_asset_ids: List[int], all
         else:
             image_count += 1
 
+    validate_reference_counts(model_info, image_count, video_count, allow_video)
+
+
+def validate_reference_counts(model_info: dict, image_count: int, video_count: int, allow_video: bool):
+    config = model_info.get('parameters') or {}
+    references = config.get('references') or {}
+    image_config = references.get('images') or {}
+    video_config = references.get('videos') or {}
+    image_max = image_config.get('max', 12 if not references else 0)
+    video_max = video_config.get('max', 0)
     if image_count and image_config and not image_config.get('supported', False):
         raise HTTPException(status_code=400, detail=f'模型 {model_info["name"]} 不支持图片参考素材')
     if video_count and (not allow_video or not video_config.get('supported', False)):
@@ -134,200 +142,61 @@ def _validate_model_references(model_info: dict, input_asset_ids: List[int], all
         raise HTTPException(status_code=400, detail=f'模型 {model_info["name"]} 最多支持 {video_max} 个视频参考素材')
 
 
-def _save_history(
-    task_id: str,
-    prompt: str,
-    user_id: int,
-    model_id: Optional[int],
-    input_asset_ids: List[int],
-    output_asset_ids: List[int],
-    status: str,
-    type_: str,
-    mode: str,
-    payload: dict
-) -> int:
-    """保存历史记录"""
-    return generation_repo.save_history(
-        task_id=task_id,
-        prompt=prompt,
-        user_id=user_id,
-        model_id=model_id,
-        input_asset_ids=input_asset_ids,
-        output_asset_ids=output_asset_ids,
-        status=status,
-        type_=type_,
-        mode=mode,
-        payload=payload
+async def submit_generation_task(req, user: dict, media_type: str, *, task_id: str | None = None):
+    """统一校验、写历史和入队；后台计划用固定编号恢复未完成的提交。"""
+    from config import get_provider_config_by_rfid
+    from agents.services.chat_assets import load_chat_assets
+
+    user_id = user['user_id']
+    if not req.prompt.strip():
+        raise HTTPException(status_code=400, detail='生成描述不能为空')
+    task_id = task_id or str(uuid.uuid4())
+    existing = generation_repo.get_task_history(task_id, user_id)
+    if existing and (existing['status'] != 'pending' or get_redis().exists(f'task:{task_id}:enqueued')):
+        return TaskResponse(task_id=task_id, history_id=existing['id'])
+
+    input_asset_ids = req.input_asset_ids or []
+    if input_asset_ids:
+        load_chat_assets(input_asset_ids, user_id)
+    model_info = generation_repo.get_model_info(req.model)
+    if not model_info:
+        raise HTTPException(status_code=404, detail=f'模型 {req.model} 不存在')
+    providers = ('openai', 'gemini') if media_type == 'image' else ('ark', 'openai')
+    if model_info['type'] != media_type or model_info['provider'] not in providers:
+        raise HTTPException(status_code=400, detail='模型类型或供应商不支持此生成任务')
+    _validate_model_references(model_info, input_asset_ids, allow_video=media_type == 'video')
+    provider_config = get_provider_config_by_rfid(model_info['rfid'])
+    if not provider_config:
+        raise HTTPException(status_code=400, detail='模型未配置供应商')
+
+    keys = ('aspect_ratio', 'quality', 'n') if media_type == 'image' else ('ratio', 'resolution', 'duration')
+    parameters = req.parameters or {key: getattr(req, key) for key in keys if getattr(req, key) is not None}
+    payload = {'model': req.model, 'prompt': req.prompt, 'parameters': parameters,
+               'input_asset_ids': input_asset_ids, 'user_id': user_id}
+    history_id = existing['id'] if existing else generation_repo.save_history(
+        task_id=task_id, prompt=req.prompt, user_id=user_id, model_id=req.model,
+        input_asset_ids=input_asset_ids, output_asset_ids=[], status='pending',
+        type_='img2img' if media_type == 'image' and input_asset_ids else ('txt2img' if media_type == 'image' else 'txt2video'),
+        mode='api', payload=payload,
     )
+    task_data = {
+        'task_id': task_id, 'history_id': history_id, 'provider': model_info['provider'],
+        'model': model_info['name'], 'model_id': model_info['id'], 'prompt': req.prompt,
+        'parameters': parameters, 'user_id': user_id, 'api_key': provider_config['api_key'],
+        'base_url': provider_config['base_url'], 'input_asset_ids': input_asset_ids,
+    }
+    if media_type == 'image':
+        task_data['image_b64_list'] = _load_input_assets_as_b64(input_asset_ids)
+    enqueue_task('queue:txt2img' if media_type == 'image' else 'queue:txt2video', task_data)
+    logger.info('生成任务入队 task_id=%s history_id=%s media_type=%s', task_id, history_id, media_type)
+    return TaskResponse(task_id=task_id, history_id=history_id)
 
 
-@router.post("/txt2img", response_model=TaskResponse)
+@router.post('/txt2img', response_model=TaskResponse)
 async def txt2img(req: Txt2ImgRequest, user: dict = Depends(get_current_user)):
-    """文生图接口。
-
-    这是后端真正创建图片任务的接口。被对话 Agent 调用时，参数已经由
-    agents/services/workflow_tools.py 校验过一次；这里仍然按普通 API 再校验和查询，
-    因为接口不能假设调用方一定可信。
-    """
-    user_id = user['user_id']
-
-    if not req.prompt:
-        raise HTTPException(status_code=400, detail="prompt is required")
-
-    # =====【生成任务编号】=====
-    # 这个 task_id 用于后续查询任务状态和关联 history。
-    task_id = str(uuid.uuid4())
-
-    # 加载参考图（如果有）
-    input_asset_ids = req.input_asset_ids or []
-    image_b64_list = _load_input_assets_as_b64(input_asset_ids) if input_asset_ids else []
-
-    # =====【读取图片模型配置】=====
-    # req.model 是 api_models.id。这里根据编号读取真实模型名称、提供商和 rfid。
-    model_info = generation_repo.get_model_info(req.model)
-    if not model_info:
-        raise HTTPException(status_code=404, detail=f"model {req.model} not found")
-    _validate_model_references(model_info, input_asset_ids, allow_video=False)
-
-    # 根据模型的 rfid 读取对应供应商配置；密钥不会返回给前端。
-    from config import get_provider_config_by_rfid
-    provider_config = get_provider_config_by_rfid(model_info['rfid'])
-    if not provider_config:
-        raise HTTPException(status_code=500, detail=f"provider config not found for model {req.model}")
-
-    # 日志：打印解密后的 provider 配置（api_key 脱敏）
-    api_key_masked = provider_config['api_key'][:8] + '***' if len(provider_config['api_key']) > 8 else '(too short)'
-    logger.info(f'[txt2img] task_id={task_id}, model={model_info["name"]}, provider={model_info["provider"]}, '
-                f'rfid={model_info["rfid"]}, api_key={api_key_masked}, base_url={provider_config["base_url"]}')
-
-    # =====【保存生成历史】=====
-    # 先写 history，状态为 pending。worker 完成后会把它改成 done/error。
-    type_ = 'img2img' if input_asset_ids else 'txt2img'
-    parameters = req.parameters or {k: v for k, v in {
-        'aspect_ratio': req.aspect_ratio,
-        'quality': req.quality,
-        'n': req.n,
-    }.items() if v is not None}
-    payload = {
-        'model': req.model,
-        'prompt': req.prompt,
-        'parameters': parameters,
-        'input_asset_ids': input_asset_ids,
-        'user_id': user_id
-    }
-
-    history_id = _save_history(
-        task_id=task_id,
-        prompt=req.prompt,
-        user_id=user_id,
-        model_id=req.model,
-        input_asset_ids=input_asset_ids,
-        output_asset_ids=[],
-        status='pending',
-        type_=type_,
-        mode='api',
-        payload=payload
-    )
-
-    # =====【提交到 Redis 队列】=====
-    # 这里不是直接调用 OpenAI/Gemini，而是把任务交给后台 worker 异步处理。
-    task_data = {
-        'task_id': task_id,
-        'provider': model_info['provider'],
-        'model': model_info['name'],
-        'model_id': model_info['id'],
-        'prompt': req.prompt,
-        'parameters': parameters,
-        'user_id': user_id,
-        'api_key': provider_config['api_key'],
-        'base_url': provider_config['base_url'],
-        'image_b64_list': image_b64_list,
-        'input_asset_ids': input_asset_ids,
-        'history_id': history_id,
-    }
-    enqueue_task('queue:txt2img', task_data)
-
-    logger.info(f'[txt2img] 任务已创建: {task_id}')
-
-    # 返回到 WorkflowTools，再返回到 ConversationAgent，最后进入 SSE done 事件。
-    return TaskResponse(task_id=task_id, history_id=history_id)
+    return await submit_generation_task(req, user, 'image')
 
 
-@router.post("/txt2video", response_model=TaskResponse)
+@router.post('/txt2video', response_model=TaskResponse)
 async def txt2video(req: Txt2VideoRequest, user: dict = Depends(get_current_user)):
-    """文生视频接口(支持图生视频)"""
-    user_id = user['user_id']
-
-    if not req.prompt:
-        raise HTTPException(status_code=400, detail="prompt is required")
-
-    # 生成任务 ID
-    task_id = str(uuid.uuid4())
-
-    input_asset_ids = req.input_asset_ids or []
-
-    # 获取模型信息
-    model_info = generation_repo.get_model_info(req.model)
-    if not model_info:
-        raise HTTPException(status_code=404, detail=f"model {req.model} not found")
-    _validate_model_references(model_info, input_asset_ids, allow_video=True)
-
-    # 获取 provider 配置
-    from config import get_provider_config_by_rfid
-    provider_config = get_provider_config_by_rfid(model_info['rfid'])
-    if not provider_config:
-        raise HTTPException(status_code=500, detail=f"provider config not found for model {req.model}")
-
-    # 日志：打印解密后的 provider 配置（api_key 脱敏）
-    api_key_masked = provider_config['api_key'][:8] + '***' if len(provider_config['api_key']) > 8 else '(too short)'
-    logger.info(f'[txt2video] task_id={task_id}, model={model_info["name"]}, provider={model_info["provider"]}, '
-                f'rfid={model_info["rfid"]}, api_key={api_key_masked}, base_url={provider_config["base_url"]}, '
-                f'input_asset_ids={input_asset_ids}')
-
-    # 保存历史记录 (统一使用 txt2video,支持可选的 input_asset_ids)
-    type_ = 'txt2video'
-    parameters = req.parameters or {k: v for k, v in {
-        'ratio': req.ratio,
-        'resolution': req.resolution,
-        'duration': req.duration,
-    }.items() if v is not None}
-    payload = {
-        'model': req.model,
-        'prompt': req.prompt,
-        'parameters': parameters,
-        'input_asset_ids': input_asset_ids,
-        'user_id': user_id
-    }
-
-    history_id = _save_history(
-        task_id=task_id,
-        prompt=req.prompt,
-        user_id=user_id,
-        model_id=req.model,
-        input_asset_ids=input_asset_ids,
-        output_asset_ids=[],
-        status='pending',
-        type_=type_,
-        mode='api',
-        payload=payload
-    )
-
-    # 任务入队到 Redis（平铺结构，与 ComfyUI 原版一致）
-    task_data = {
-        'task_id': task_id,
-        'history_id': history_id,
-        'provider': model_info['provider'],
-        'model': model_info['name'],
-        'model_id': model_info['id'],
-        'prompt': req.prompt,
-        'parameters': parameters,
-        'user_id': user_id,
-        'api_key': provider_config['api_key'],
-        'base_url': provider_config['base_url'],
-        'input_asset_ids': input_asset_ids,
-    }
-    enqueue_task('queue:txt2video', task_data)
-
-    logger.info(f'[txt2video] 任务已创建: {task_id}')
-
-    return TaskResponse(task_id=task_id, history_id=history_id)
+    return await submit_generation_task(req, user, 'video')

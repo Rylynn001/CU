@@ -12,10 +12,10 @@ from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional, Dict, Any, List
 
 from api.auth import get_current_user
-from agents.conversation_agent import ConversationAgent
 from agents.graph.workflow import create_conversation_workflow
 from openai import AsyncOpenAI
 from repositories.workflow_repo import WorkflowRepository
+from repositories import canvas_repo
 from repositories.generation_repo import get_language_model_info
 from config import get_provider_config_by_rfid
 from agents.graph.states import ConversationState
@@ -26,39 +26,16 @@ router = APIRouter(prefix="/workflow", tags=["workflow"])
 logger = logging.getLogger(__name__)
 
 
-def get_conversation_agent(model_id: int) -> ConversationAgent:
-    """按前端选择的模型编号创建对话 Agent。"""
-    model_info = get_language_model_info(model_id)
-    if not model_info:
-        raise HTTPException(
-            status_code=404,
-            detail=f"未找到语言模型配置（id={model_id}）"
-        )
-
-    provider_config = get_provider_config_by_rfid(model_info['rfid'])
-    if not provider_config:
-        raise HTTPException(
-            status_code=500,
-            detail=f"未找到模型 {model_info['name']} 的 provider 配置"
-        )
-
-    return ConversationAgent(
-        api_key=provider_config['api_key'],
-        base_url=provider_config['base_url'],
-        model=model_info['name'],
-        context_window=model_info.get('context_window'),
-    )
-
-
 def _get_llm_client(model_id: int):
-    """按模型编号创建 AsyncOpenAI 客户端，供 LangGraph 提示词优化子图使用。"""
+    """按模型编号创建 AsyncOpenAI 客户端，返回 (client, model_name)。"""
     model_info = get_language_model_info(model_id)
     if not model_info:
-        return None
+        raise HTTPException(status_code=404, detail=f"未找到语言模型配置（id={model_id}）")
     provider_config = get_provider_config_by_rfid(model_info['rfid'])
     if not provider_config:
-        return None
-    return AsyncOpenAI(api_key=provider_config['api_key'], base_url=provider_config['base_url'])
+        raise HTTPException(status_code=500, detail="未找到语言模型的服务配置")
+    client = AsyncOpenAI(api_key=provider_config['api_key'], base_url=provider_config['base_url'])
+    return client, model_info['name']
 
 
 _GRAPH_NODE_PROGRESS = {
@@ -73,17 +50,18 @@ async def _run_conversation_graph(
     request: 'ChatRequest',
     workflow_tools,
     existing_state: Optional[dict],
-    user_content: str,
+    user_content: str | list,
     request_id: str,
     on_progress=None,
     on_delta=None,
+    on_event=None,
 ) -> dict:
     """使用 LangGraph 工作流处理对话请求，返回与 ConversationAgent.process 同构的结果。"""
-    llm_client = _get_llm_client(request.model_id)
-    graph = create_conversation_workflow(workflow_tools=workflow_tools, llm_client=llm_client)
+    llm_client, model_name = _get_llm_client(request.model_id)
+    graph = create_conversation_workflow(workflow_tools=workflow_tools, llm_client=llm_client, model_name=model_name, on_event=on_event)
 
     messages = list((existing_state or {}).get("messages", []))
-    messages.append({"role": "user", "content": user_content})
+    messages.append({"role": "user", "content": user_content})  # LangChain 标准角色
 
     initial_state = {
         "messages": messages,
@@ -99,7 +77,7 @@ async def _run_conversation_graph(
     config = {"configurable": {"thread_id": f"req_{request_id}"}}
     final_state: dict = dict(initial_state)
 
-    async for state in graph.astream(initial_state, config=config):
+    async for state in graph.astream(initial_state, config=config, stream_mode="values"):
         if isinstance(state, dict) and on_progress:
             if state.get("intent") and not final_state.get("intent"):
                 await on_progress(_GRAPH_NODE_PROGRESS["intent"])
@@ -113,23 +91,28 @@ async def _run_conversation_graph(
     intent = final_state.get("intent")
     tool_result = final_state.get("tool_result") or {}
 
+    logger.info("图执行结束 request_id=%s intent=%s result_keys=%s", request_id, intent, list(tool_result))
+
     tasks: list = []
     workflow_ready = False
+    reply = None
+
     if isinstance(tool_result, dict):
-        if tool_result.get("task_id"):
+        if tool_result.get("error"):
+            raise HTTPException(status_code=502, detail=str(tool_result["error"]))
+        if tool_result.get("reply"):
+            # 对话结果
+            reply = tool_result["reply"]
+        elif tool_result.get("task_id"):
             tasks = [tool_result]
             workflow_ready = True
+            reply = "生成任务已提交，请查看下方进度。"
         elif tool_result.get("selection_required"):
-            workflow_tools.pending_generation = tool_result
+            workflow_tools.pending_generation = tool_result["selection_required"]
+            reply = "请在弹出的选择框中补全生成参数。"
 
-    if tasks:
-        reply = "生成任务已提交，请查看下方进度。"
-    elif isinstance(tool_result, dict) and tool_result.get("selection_required"):
-        reply = "请在弹出的选择框中补全生成参数。"
-    elif intent in ("txt2img", "txt2video"):
-        reply = "好的，正在处理你的生成请求。"
-    else:
-        reply = "我是 AI 绘画助手，描述你想生成的图片或视频，我来帮你实现！"
+    if not isinstance(reply, str) or not reply.strip():
+        raise HTTPException(status_code=502, detail="本次处理未返回有效结果，请重试")
 
     if on_delta:
         await on_delta(reply)
@@ -148,6 +131,7 @@ class ChatRequest(BaseModel):
 
     message: str
     model_id: int
+    canvas_id: int = Field(gt=0)
     session_id: Optional[int] = None
     generation_options: Optional[Dict[str, Any]] = None
     asset_ids: List[int] = Field(default_factory=list, max_length=10)
@@ -183,7 +167,8 @@ async def _stream_chat_events(request: ChatRequest, current_user: dict):
         await event_queue.put(("progress", {"message": message}))
 
     async def report_delta(text: str):
-        await event_queue.put(("delta", {"text": text}))
+        if isinstance(text, str) and text:
+            await event_queue.put(("delta", {"text": text}))
 
     async def report_event(event: str, data: dict):
         await event_queue.put((event, data))
@@ -255,6 +240,7 @@ async def _process_chat(request: ChatRequest, current_user: dict, on_progress=No
     request_id = str(uuid.uuid4())[:8]
     user_id = current_user["id"]
     session_id = request.session_id or None
+    _require_canvas(request.canvas_id, user_id)
     started_at = time.perf_counter()
     logger.info(
         "工作流对话开始 request_id=%s user_id=%s session_id=%s message_length=%d",
@@ -262,7 +248,7 @@ async def _process_chat(request: ChatRequest, current_user: dict, on_progress=No
     )
 
     # 1. 读取历史，并确认会话属于当前用户。新会话返回 None。
-    existing_state = await asyncio.to_thread(_load_chat_state, session_id, user_id)
+    existing_state = await asyncio.to_thread(_load_chat_state, session_id, user_id, request.canvas_id)
     assets = await asyncio.to_thread(load_chat_assets, request.asset_ids, user_id) if request.asset_ids else []
     user_content = await asyncio.to_thread(build_asset_content, request.message, assets)
 
@@ -270,7 +256,7 @@ async def _process_chat(request: ChatRequest, current_user: dict, on_progress=No
     def ensure_session():
         nonlocal session_id
         if session_id is None:
-            session_id = WorkflowRepository.create_session(user_id)
+            session_id = WorkflowRepository.create_session(user_id, request.canvas_id)
         return session_id
 
     user_conversation_id = None
@@ -284,7 +270,7 @@ async def _process_chat(request: ChatRequest, current_user: dict, on_progress=No
         return user_conversation_id
 
     generation_options = request.generation_options or {}
-    workflow_tools = WorkflowTools(current_user, ensure_session, generation_options, ensure_conversation)
+    workflow_tools = WorkflowTools(current_user, ensure_session, generation_options, ensure_conversation, canvas_id=request.canvas_id)
     workflow_tools.asset_ids = [asset["id"] for asset in assets]
     for previous_message in (existing_state or {}).get("messages", []):
         workflow_tools.allowed_asset_ids.update(previous_message.get("asset_ids", []))
@@ -298,39 +284,39 @@ async def _process_chat(request: ChatRequest, current_user: dict, on_progress=No
         if on_event:
             await on_event(event, data)
 
+    async def canvas_changed():
+        await record_event('canvas_changed', {'canvas_id': request.canvas_id})
+
+    workflow_tools.on_canvas_change = canvas_changed
+
     # 3. 助手理解需求；发现工具时调用 discover，执行工具时调用 discover_and_execute。
     if generation_options:
         pending = (existing_state or {}).get("generation_request")
         if not pending or pending["media_type"] != generation_options.get("media_type"):
             raise HTTPException(status_code=400, detail="生成请求已变化，请重新发起生成并确认参数")
-        if pending.get("input_asset_ids"):
-            workflow_tools.allowed_asset_ids.update(pending["input_asset_ids"])
-            tool_name = pending.get("tool_name") or ("txt2img" if pending["media_type"] == "image" else "txt2video")
-            task = await workflow_tools.discover_and_execute(tool_name, {
-                "prompt": pending["prompt"], "input_asset_ids": pending["input_asset_ids"]
-            })
-            if task.get("task_id"):
-                reply = "生成任务已提交，请查看下方进度。"
-                result = {"reply": reply, "state": {"intent": "batch_image" if tool_name in ("txt2img", "img2img") else "text_to_video"}, "tasks": [task], "workflow_ready": True}
-            else:
-                result = {"reply": "请在弹出的选择框中补全生成参数。", "state": existing_state, "tasks": [], "workflow_ready": False}
+        input_asset_ids = pending.get("input_asset_ids", [])
+        workflow_tools.allowed_asset_ids.update(input_asset_ids)
+        tool_name = 'generation_plan' if pending['media_type'] == 'plan' else (pending.get("tool_name") or ("txt2img" if pending["media_type"] == "image" else "txt2video"))
+        tool_input = {'steps': pending['steps']} if pending['media_type'] == 'plan' else {"prompt": pending["prompt"], "input_asset_ids": input_asset_ids}
+        await record_event("trace", {"type": "tool_call", "round": 1,
+            "call_id": "confirmed-generation", "name": tool_name, "input": tool_input})
+        task = await workflow_tools.confirm_plan(pending) if tool_name == 'generation_plan' else await workflow_tools.discover_and_execute(tool_name, tool_input)
+        await record_event("trace", {"type": "tool_result", "round": 1,
+            "call_id": "confirmed-generation", "name": tool_name, "output": task})
+        if task.get("error"):
+            raise HTTPException(status_code=502, detail=str(task["error"]))
+        if task.get('plan_id'):
+            result = {'reply': '任务计划已提交，节点和连线已创建，关闭页面后后台仍会继续执行。',
+                      'state': {'intent': 'generation_plan'}, 'tasks': task['tasks'], 'workflow_ready': True}
+        elif task.get("task_id"):
+            reply = "生成任务已提交，请查看下方进度。"
+            result = {"reply": reply, "state": {"intent": "batch_image" if tool_name in ("txt2img", "img2img") else "text_to_video"}, "tasks": [task], "workflow_ready": True}
+        elif task.get("selection_required"):
+            workflow_tools.pending_generation = task["selection_required"]
+            result = {"reply": "请在弹出的选择框中补全生成参数。", "state": existing_state, "tasks": [], "workflow_ready": False}
         else:
-            agent = get_conversation_agent(request.model_id)
-            result = await agent.process(
-                message=request.message,
-                session_id=session_id,
-                user_id=user_id,
-                existing_state=existing_state,
-                on_progress=on_progress,
-                on_delta=on_delta,
-                tool_executor=workflow_tools.discover_and_execute,
-                tool_discoverer=workflow_tools.discover,
-                executions=previous_tasks,
-                request_id=request_id,
-                user_content=user_content,
-                on_event=record_event,
-            )
-        if on_delta and result.get("tasks"):
+            raise HTTPException(status_code=502, detail="生成任务未提交，请重试")
+        if on_delta:
             await on_delta(result["reply"])
     else:
         result = await _run_conversation_graph(
@@ -341,13 +327,14 @@ async def _process_chat(request: ChatRequest, current_user: dict, on_progress=No
             request_id=request_id,
             on_progress=on_progress,
             on_delta=on_delta,
+            on_event=record_event,
         )
 
     # 4. 保存本轮对话和会话状态。
     session_id = ensure_session()
     pending_generation = workflow_tools.pending_generation if isinstance(workflow_tools.pending_generation, dict) else None
     if pending_generation:
-        result["state"]["intent"] = "batch_image" if pending_generation["media_type"] == "image" else "text_to_video"
+        result["state"]["intent"] = {'image': 'batch_image', 'video': 'text_to_video', 'plan': 'generation_plan'}[pending_generation['media_type']]
     result["metadata"] = {"events": events, "context_usage": result.get("context_usage")}
     if request.asset_ids:
         ensure_conversation()
@@ -377,23 +364,40 @@ async def _process_chat(request: ChatRequest, current_user: dict, on_progress=No
     )
 
 
-def _load_chat_state(session_id: Optional[int], user_id: int) -> Optional[ConversationState]:
+def _require_canvas(canvas_id: int, user_id: int):
+    if not canvas_repo.get_canvas(canvas_id, user_id):
+        raise HTTPException(status_code=404, detail="画布不存在")
+
+
+def _require_session(session_id: int, user_id: int, canvas_id: int):
+    _require_canvas(canvas_id, user_id)
+    session = WorkflowRepository.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="会话不存在")
+    if session["user_id"] != user_id or session.get('canvas_id') != canvas_id:
+        raise HTTPException(status_code=403, detail="会话不属于当前画布")
+    return session
+
+
+def _load_chat_state(session_id: Optional[int], user_id: int, canvas_id: int) -> Optional[ConversationState]:
     """恢复已有会话的权限、历史消息和参数；新会话暂不写数据库。"""
     if not session_id:
         return None
 
-    session = WorkflowRepository.get_session(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="会话不存在")
-    if session["user_id"] != user_id:
-        raise HTTPException(status_code=403, detail="无权访问此会话")
+    session = _require_session(session_id, user_id, canvas_id)
 
     conversations = WorkflowRepository.get_conversations(session_id)
+
+    def _normalize_role(role: str) -> str:
+        """将数据库角色映射到 LangChain 支持的消息类型"""
+        role_map = {"agent": "assistant", "user": "user", "human": "user"}
+        return role_map.get(role, "user")
+
     return {
         "session_id": session_id,
         "user_id": user_id,
         "messages": [
-            {"role": item["role"], "content": build_asset_content(item["message"], load_chat_assets(item["asset_ids"], user_id))
+            {"role": _normalize_role(item["role"]), "content": build_asset_content(item["message"], load_chat_assets(item["asset_ids"], user_id))
              if item.get("asset_ids") else item["message"], "asset_ids": item.get("asset_ids", [])}
             for item in conversations
         ],
@@ -435,6 +439,8 @@ def _save_chat_result(
 
 class SessionResponse(BaseModel):
     id: int
+    canvas_id: int
+    title: Optional[str] = None
     intent: Optional[str]
     status: str
     created_at: str
@@ -442,14 +448,17 @@ class SessionResponse(BaseModel):
 
 
 @router.get("/sessions", response_model=List[SessionResponse])
-async def get_sessions(current_user: dict = Depends(get_current_user)):
+async def get_sessions(canvas_id: int, current_user: dict = Depends(get_current_user)):
     """获取用户的会话列表"""
     user_id = current_user["id"]
-    sessions = WorkflowRepository.get_user_sessions(user_id, limit=20)
+    _require_canvas(canvas_id, user_id)
+    sessions = WorkflowRepository.get_user_sessions(user_id, canvas_id)
 
     return [
         SessionResponse(
             id=s["id"],
+            canvas_id=s['canvas_id'],
+            title=s.get('title'),
             intent=s["intent"],
             status=s["status"],
             created_at=s["created_at"].isoformat(),
@@ -460,19 +469,24 @@ async def get_sessions(current_user: dict = Depends(get_current_user)):
 
 
 @router.delete("/sessions/{session_id}", status_code=204)
-async def delete_session(session_id: int, current_user: dict = Depends(get_current_user)):
+async def delete_session(session_id: int, canvas_id: int, current_user: dict = Depends(get_current_user)):
     """软删除当前用户的会话。"""
     user_id = current_user["id"]
-    session = WorkflowRepository.get_session(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="会话不存在")
-    if session["user_id"] != user_id:
-        raise HTTPException(status_code=403, detail="无权访问此会话")
+    _require_session(session_id, user_id, canvas_id)
     WorkflowRepository.soft_delete_session(session_id, user_id)
+
+
+@router.post('/plans/{plan_id}/retry')
+async def retry_generation_plan(plan_id: str, canvas_id: int, current_user: dict = Depends(get_current_user)):
+    from agents.services.plan_scheduler import retry_plan
+    _require_canvas(canvas_id, current_user['id'])
+    await asyncio.to_thread(retry_plan, plan_id, current_user['id'], canvas_id)
+    return {'status': 'running'}
 
 
 class SessionDetailResponse(BaseModel):
     id: int
+    canvas_id: int
     intent: Optional[str]
     generation_request: Optional[Dict[str, Any]] = None
     status: str
@@ -481,20 +495,17 @@ class SessionDetailResponse(BaseModel):
 
 
 @router.get("/sessions/{session_id}", response_model=SessionDetailResponse)
-async def get_session_detail(session_id: int, current_user: dict = Depends(get_current_user)):
+async def get_session_detail(session_id: int, canvas_id: int, current_user: dict = Depends(get_current_user)):
     """获取会话详情"""
     user_id = current_user["id"]
 
-    session = WorkflowRepository.get_session(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="会话不存在")
-    if session["user_id"] != user_id:
-        raise HTTPException(status_code=403, detail="无权访问此会话")
+    session = _require_session(session_id, user_id, canvas_id)
 
     conversations = WorkflowRepository.get_conversations(session_id)
 
     return SessionDetailResponse(
         id=session["id"],
+        canvas_id=canvas_id,
         intent=session.get("intent"),
         generation_request=session.get("parameters", {}).get("generation_request"),
         status=session["status"],

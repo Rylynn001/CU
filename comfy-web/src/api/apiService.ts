@@ -103,13 +103,14 @@ export async function getCanvas(canvasId: number): Promise<{ id: number; name: s
   return res.json()
 }
 
-export async function saveCanvas(canvasId: number, payload: { name: string; document: CanvasDocument }): Promise<void> {
+export async function saveCanvas(canvasId: number, payload: { name: string; document: CanvasDocument; base_node_ids: string[] }): Promise<{ document: CanvasDocument }> {
   const res = await authFetch(`${BASE}/canvases/${canvasId}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   })
   if (!res.ok) throw new Error((await res.text()) || `画布保存失败: ${res.status}`)
+  return res.json()
 }
 
 // 图片生成请求参数

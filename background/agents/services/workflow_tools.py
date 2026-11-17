@@ -1,26 +1,16 @@
-"""
-对话可调用的图片工具，复用现有文生图接口和执行表。
-
-本文件是”语言模型决定调用工具”与”后端真实执行动作”之间的桥梁：
-
-    list_image_models -> 查询 api_models
-    txt2img           -> 校验模型和参数 -> 调用 api.generation.txt2img
-"""
-import logging
+"""助手生成工具：统一模型选择、参数确认和单次/多步任务提交。"""
+import uuid
 from pathlib import Path
-from pathlib import PureWindowsPath
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
-from api.generation import Txt2ImgRequest, Txt2VideoRequest, txt2img, txt2video
-from repositories import asset_repo, history_repo, provider_repo
+from repositories import asset_repo, history_repo, provider_repo, canvas_repo
 from repositories.workflow_repo import WorkflowRepository
 from .seedance_tool import SeedancePromptTool
 from .workflow_tool_definitions import WorkflowTool
 from .chat_assets import load_chat_assets
-
-logger = logging.getLogger(__name__)
-
+from .canvas_tasks import submit_generation, refresh_tasks
+from .generation_plan import GenerationPlan
 
 class ImageArguments(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -44,47 +34,10 @@ class VideoArguments(BaseModel):
 
 def session_tasks(session_id: int, user_id: int) -> list:
     """读取会话任务，并用 history/assets 的持久化数据恢复最新状态。"""
-    tasks = []
-    for execution in WorkflowRepository.get_session_executions(session_id):
-        task = execution["result"]
-        if not task.get("task_id"):
-            continue
-        task = {
-            **task,
-            "execution_id": execution["id"],
-            "conversation_id": execution.get("conversation_id"),
-            "status": execution["status"],
-        }
-        if task["status"] in ("running", "completed") and task.get("history_id"):
-            rows = WorkflowRepository.get_generation_result(task["history_id"], user_id)
-            if rows:
-                status = rows[0]["status"]
-                if status in ("done", "completed"):
-                    task["status"] = "completed"
-                    output_asset_ids = [row["asset_id"] for row in rows if row["asset_id"] is not None]
-                    WorkflowRepository.add_conversation_assets(
-                        task.get("conversation_id"), session_id, user_id, output_asset_ids
-                    )
-                    outputs = [
-                        {"url": f"/api/api-proxy/output/{PureWindowsPath(row['location']).name}", "asset_id": row["asset_id"]}
-                        for row in rows if row["location"]
-                    ]
-                    task["videos" if task.get("media_type") == "video" else "images"] = outputs
-                elif status in ("error", "failed"):
-                    task["status"] = "failed"
-                    task["error"] = rows[0]["message"] or "生成失败"
-                else:
-                    task["stage"] = status
-                if task["status"] != "running":
-                    WorkflowRepository.update_execution(
-                        execution["id"], status=task["status"], result=task,
-                        progress=100 if task["status"] == "completed" else 0,
-                        error=task.get("error")
-                    )
-        tasks.append(task)
+    tasks = refresh_tasks(WorkflowRepository.get_session_executions(session_id), user_id)
     if tasks:
         statuses = {task["status"] for task in tasks}
-        session_status = "executing" if "running" in statuses else (
+        session_status = "executing" if statuses & {"running", "queued", "submitting"} else (
             "failed" if "failed" in statuses else "completed"
         )
         WorkflowRepository.update_session(session_id, status=session_status)
@@ -92,14 +45,15 @@ def session_tasks(session_id: int, user_id: int) -> list:
 
 
 class WorkflowTools:
-    def __init__(self, user: dict, ensure_session, generation_options: dict | None = None, ensure_conversation=None):
+    def __init__(self, user: dict, ensure_session, generation_options: dict | None = None, ensure_conversation=None, *, canvas_id: int):
         self.user = user
+        self.canvas_id = canvas_id
+        self.on_canvas_change = None
         self.ensure_session = ensure_session
         self.ensure_conversation = ensure_conversation
         self.generation_options = generation_options or {}
         self.pending_generation = None
-        self.models = None
-        self.video_models = None
+        self.model_catalog = None
         self.submitted = []
         self.asset_ids = []
         self.allowed_asset_ids = set()
@@ -111,16 +65,10 @@ class WorkflowTools:
             if tool is not WorkflowTool.DISCOVER_TOOLS
         }
         self.handlers = {
-            WorkflowTool.IMG2IMG.value["function"]["name"]: lambda args: self.execute(WorkflowTool.IMG2IMG.value["function"]["name"], args),
-            WorkflowTool.IMG2VIDEO.value["function"]["name"]: self._img2video,
-            WorkflowTool.LIST_IMAGE_MODELS.value["function"]["name"]: lambda args: self.execute(WorkflowTool.LIST_IMAGE_MODELS.value["function"]["name"], args),
-            WorkflowTool.TXT2IMG.value["function"]["name"]: lambda args: self.execute(WorkflowTool.TXT2IMG.value["function"]["name"], args),
-            WorkflowTool.LIST_VIDEO_MODELS.value["function"]["name"]: self._list_video_models,
-            WorkflowTool.TXT2VIDEO.value["function"]["name"]: self._txt2video,
-            WorkflowTool.LIST_MY_IMAGES.value["function"]["name"]: self._list_my_images,
-            WorkflowTool.LIST_MY_GENERATION_HISTORY.value["function"]["name"]: self._list_my_generation_history,
-            WorkflowTool.SEARCH_SESSION_REFERENCE_ASSETS.value["function"]["name"]: self._search_session_reference_assets,
-            WorkflowTool.GENERATE_SEEDANCE_PROMPT.value["function"]["name"]: self._generate_seedance_prompt,
+            'list_my_images': self._list_my_images,
+            'list_my_generation_history': self._list_my_generation_history,
+            'search_session_reference_assets': self._search_session_reference_assets,
+            'generate_seedance_prompt': self._generate_seedance_prompt,
         }
 
     def discover(self, query: str) -> list[dict]:
@@ -145,60 +93,105 @@ class WorkflowTools:
         return found
 
     async def discover_and_execute(self, name: str, arguments: dict) -> dict:
-        handler = self.handlers.get(name)
-        if not handler:
-            raise ValueError(f"不支持的工具：{name}")
-        return await handler(arguments)
+        match name:
+            case 'txt2img' | 'img2img':
+                return await self._generate('image', name, arguments)
+            case 'txt2video' | 'img2video':
+                return await self._generate('video', name, arguments)
+            case 'list_image_models':
+                return {'models': self._models('image')}
+            case 'list_video_models':
+                return {'models': self._models('video')}
+            case 'generation_plan':
+                return self._request_plan(arguments)
+            case _:
+                handler = self.handlers.get(name)
+                if not handler:
+                    raise ValueError(f'不支持的工具：{name}')
+                return await handler(arguments)
 
-    async def _list_video_models(self, _arguments: dict) -> dict:
-        self.video_models = [
-            {key: model.get(key) for key in ("id", "name", "description", "provider")}
-            for model in provider_repo.get_all_models()
-            if model.get("type") == "video"
+    def _models(self, media_type: str) -> list[dict]:
+        if self.model_catalog is None:
+            self.model_catalog = provider_repo.get_all_models()
+        providers = ('openai', 'gemini') if media_type == 'image' else ('ark', 'openai')
+        return [
+            {key: model.get(key) for key in ('id', 'name', 'description', 'provider', 'parameters')}
+            for model in self.model_catalog
+            if model.get('type') == media_type and model.get('provider') in providers
         ]
-        return {"models": self.video_models}
 
-    async def _txt2video(self, arguments: dict) -> dict:
-        input_asset_ids = self._input_assets(arguments, "video")
-        if input_asset_ids:
-            arguments = {**arguments, "input_asset_ids": input_asset_ids}
-        options = self._selected_generation_options("video", ("model", "ratio", "resolution", "duration"))
-        if options is None:
-            return self._request_generation_selection("video", arguments)
-        args = Txt2VideoRequest(**VideoArguments.model_validate({**arguments, **options}).model_dump())
-        if self.video_models is None:
-            await self._list_video_models({})
-        selected = next((model for model in self.video_models if model["id"] == args.model), None)
+    def generation_parameters(self, media_type: str, arguments: dict, options: dict) -> tuple[dict, dict]:
+        schema = ImageArguments if media_type == 'image' else VideoArguments
+        keys = ('model', 'n', 'aspect_ratio', 'quality') if media_type == 'image' else ('model', 'ratio', 'resolution', 'duration')
+        args = schema.model_validate({**arguments, **{key: options[key] for key in keys if key in options}})
+        if not args.prompt.strip():
+            raise ValueError('生成描述不能为空')
+        selected = next((model for model in self._models(media_type) if model['id'] == args.model), None)
         if selected is None:
-            raise ValueError("所选模型不是查询结果中的可用视频模型")
+            raise ValueError('所选生成模型不可用，请重新选择')
+        if media_type == 'image' and selected['provider'] == 'gemini' and args.n != 1:
+            raise ValueError('当前 Gemini 生成接口每次支持一张图片，请改为一张')
+        return args.model_dump(exclude={'regenerate'}, exclude_none=True), selected
+
+    async def _generate(self, media_type: str, name: str, arguments: dict) -> dict:
+        input_asset_ids = self._input_assets(arguments, media_type)
+        if name in ('img2img', 'img2video') and not input_asset_ids:
+            raise ValueError('请先引入参考素材')
+        arguments = {**arguments, 'input_asset_ids': input_asset_ids}
+        keys = ('model', 'n', 'aspect_ratio', 'quality') if media_type == 'image' else ('model', 'ratio', 'resolution', 'duration')
+        options = self._selected_generation_options(media_type, keys)
+        if options is None:
+            return self._request_generation_selection(media_type, arguments)
+        parameters, selected = self.generation_parameters(media_type, arguments, options)
         session_id = self.ensure_session()
-        definition = {"type": "txt2video", **args.model_dump()}
-        for execution in WorkflowRepository.get_session_executions(session_id):
-            if execution["workflow_definition"] == definition:
-                if execution["result"].get("task_id"):
-                    return {**execution["result"], "reused": True}
-                raise ValueError("相同视频请求已存在提交记录，请先检查任务状态")
-        conversation_id = self.ensure_conversation() if self.ensure_conversation else None
-        execution_id = WorkflowRepository.create_execution(session_id, definition, conversation_id)
-        try:
-            response = await txt2video(args, user=self.user)
-        except Exception as error:
-            WorkflowRepository.update_execution(execution_id, status="failed", error=str(getattr(error, "detail", error)))
-            raise
-        task = {
-            "execution_id": execution_id, "task_id": response.task_id,
-            "history_id": response.history_id, "status": "running", "media_type": "video",
-            "model_name": selected["name"], "parameters": args.model_dump(),
-        }
-        WorkflowRepository.update_execution(execution_id, current_node="txt2video", result=task)
-        WorkflowRepository.update_session(session_id, intent="text_to_video", parameters={}, status="executing")
+        task = await submit_generation(
+            self.user, self.canvas_id, media_type, parameters, session_id=session_id,
+            conversation_id=self.ensure_conversation() if self.ensure_conversation else None,
+            model_name=selected['name'], on_change=self.on_canvas_change,
+        )
+        WorkflowRepository.update_session(session_id, intent='batch_image' if media_type == 'image' else 'text_to_video', parameters={}, status='executing')
         self.submitted.append(task)
         return task
 
-    async def _img2video(self, arguments: dict) -> dict:
-        if not arguments.get("input_asset_ids", self.asset_ids):
-            raise ValueError("请先引入参考图片或视频资产")
-        return await self._txt2video(arguments)
+    def _request_plan(self, arguments: dict) -> dict:
+        plan = GenerationPlan.model_validate(arguments)
+        for step in plan.steps:
+            step.input_asset_ids = self._input_assets({'input_asset_ids': step.input_asset_ids}, step.media_type)
+        self.pending_generation = {
+            'media_type': 'plan', 'plan_id': str(uuid.uuid4()),
+            'prompt': '按以下步骤依次生成', 'steps': plan.model_dump(exclude_none=True)['steps'],
+            'models_by_type': {kind: self._models(kind) for kind in {step.media_type for step in plan.steps}},
+        }
+        return {'selection_required': self.pending_generation}
+
+    async def confirm_plan(self, pending: dict) -> dict:
+        from repositories import generation_plan_repo
+        from api.generation import validate_reference_counts
+        plan = GenerationPlan.model_validate({'steps': pending['steps']})
+        options = self.generation_options
+        if options.get('plan_id') != pending['plan_id']:
+            raise ValueError('任务计划已变化，请重新确认')
+        steps = []
+        kinds = {step.id: step.media_type for step in plan.steps}
+        for step in plan.steps:
+            parameters, selected = self.generation_parameters(
+                step.media_type, {'prompt': step.prompt, 'input_asset_ids': step.input_asset_ids},
+                {**options.get(step.media_type, {}), **({'duration': step.duration} if step.duration else {})},
+            )
+            if step.media_type == 'image' and parameters['n'] != 1:
+                raise ValueError('长任务每个图片步骤只生成一张，请将张数改为一张')
+            assets = load_chat_assets(step.input_asset_ids, self.user['user_id']) if step.input_asset_ids else []
+            image_count = sum(asset['asset_type'] == 'picture' for asset in assets) + sum(kinds[key] == 'image' for key in step.depends_on)
+            video_count = sum(asset['asset_type'] == 'video' for asset in assets) + sum(kinds[key] == 'video' for key in step.depends_on)
+            validate_reference_counts(selected, image_count, video_count, step.media_type == 'video')
+            steps.append({**step.model_dump(exclude_none=True), 'parameters': parameters, 'model_name': selected['name']})
+        generation_plan_repo.create_plan(
+            pending['plan_id'], self.user['user_id'], self.canvas_id, self.ensure_session(),
+            self.ensure_conversation() if self.ensure_conversation else None, steps,
+        )
+        if self.on_canvas_change:
+            await self.on_canvas_change()
+        return {'plan_id': pending['plan_id'], 'tasks': session_tasks(self.ensure_session(), self.user['user_id'])}
 
     async def _list_my_images(self, arguments: dict) -> dict:
         page = max(1, min(int(arguments.get("page", 1)), 1000))
@@ -234,8 +227,7 @@ class WorkflowTools:
         keywords = arguments.get("keywords")
         if not isinstance(keywords, list) or not 1 <= len(keywords) <= 8 or any(not isinstance(word, str) or not word.strip() for word in keywords):
             raise ValueError("请提供图片描述关键词")
-        session_id = self.ensure_session()
-        messages = WorkflowRepository.get_session_asset_messages(session_id, self.user["user_id"])
+        messages = canvas_repo.get_asset_messages(self.canvas_id, self.user["user_id"])
         keywords = list(dict.fromkeys(word.strip().casefold() for word in keywords))
         matching_messages = [
             message for message in messages
@@ -314,80 +306,7 @@ class WorkflowTools:
         }
 
     async def execute(self, name: str, arguments: dict) -> dict:
-        """执行语言模型请求的工具。
-
-        ``name`` 和 ``arguments`` 来自 ConversationAgent 解析的模型 tool_call，
-        因此这里必须把模型输入当成不可信数据重新校验，不能直接相信模型。
-        """
-        if name == "list_image_models":
-            # =====【查询模型工具】=====
-            # 只暴露 worker 已支持的图片模型，不返回供应商密钥或配置地址。
-            # 这里读取的是数据库 api_models，不是语言模型凭空生成的模型名单。
-            self.models = [
-                {key: model.get(key) for key in ("id", "name", "description", "provider")}
-                for model in provider_repo.get_all_models()
-                if model.get("type") == "image" and model.get("provider") in ("openai", "gemini")
-            ]
-            logger.info("对话工具查询图片模型 count=%s", len(self.models))
-            return {"models": self.models}
-        if name not in ("txt2img", "img2img"):
-            raise ValueError(f"不支持的工具：{name}")
-        input_asset_ids = self._input_assets(arguments, "image")
-        if name == "img2img" and not input_asset_ids:
-            raise ValueError("请先引入参考图片资产")
-        if input_asset_ids:
-            arguments = {**arguments, "input_asset_ids": input_asset_ids}
-        options = self._selected_generation_options("image", ("model", "n", "aspect_ratio", "quality"))
-        if options is None:
-            return self._request_generation_selection("image", arguments)
-        if self.models is None:
-            await self.execute("list_image_models", {})
-        # =====【图片参数校验】=====
-        # 将语言模型返回的 JSON 转成严格的 Pydantic 对象，检查类型、范围和枚举值。
-        args = ImageArguments.model_validate({**arguments, **options})
-        if not args.prompt.strip():
-            raise ValueError("图片描述不能为空")
-        selected = next((model for model in self.models if model["id"] == args.model), None)
-        if selected is None:
-            raise ValueError("所选模型不是查询结果中的可用图片模型，请重新选择")
-        # Gemini worker 单次只生成一张，不能把数量大于一的任务提交后谎报成功。
-        if selected["provider"] == "gemini" and args.n != 1:
-            raise ValueError("当前 Gemini 生成接口每次支持一张图片，请改为一张")
-        parameters = args.model_dump(exclude={"regenerate", "input_asset_ids"})
-        if input_asset_ids:
-            parameters["input_asset_ids"] = input_asset_ids
-        # =====【创建/恢复任务所属会话】=====
-        session_id = self.ensure_session()
-        for execution in WorkflowRepository.get_session_executions(session_id):
-            if execution["workflow_definition"] == parameters and not args.regenerate:
-                if execution["result"].get("task_id"):
-                    return {**execution["result"], "reused": True}
-                raise ValueError("相同请求已存在提交记录，请先检查生成历史；不会自动重复提交")
-
-        # 先创建工作流执行记录，之后无论成功还是失败都能追踪这次提交。
-        conversation_id = self.ensure_conversation() if self.ensure_conversation else None
-        execution_id = WorkflowRepository.create_execution(session_id, parameters, conversation_id)
-        try:
-            # =====【真正调用文生图接口】=====
-            # 这里才进入 background/api/generation.py 的 txt2img 函数。
-            # 它会保存 history 并把任务放入 Redis，返回 task_id/history_id。
-            response = await txt2img(Txt2ImgRequest(**parameters), user=self.user)
-        except Exception as error:
-            WorkflowRepository.update_execution(
-                execution_id, status="failed", error=str(getattr(error, "detail", error))
-            )
-            raise
-        # txt2img 返回的是“任务已入队”，所以这里状态是 running，图片还没有完成。
-        task = {
-            "execution_id": execution_id, "task_id": response.task_id,
-            "history_id": response.history_id, "status": "running",
-            "model_name": selected["name"], "parameters": parameters, "images": [],
-        }
-        WorkflowRepository.update_execution(execution_id, current_node="txt2img", result=task)
-        WorkflowRepository.update_session(session_id, intent="batch_image", parameters={}, status="executing")
-        self.submitted.append(task)
-        logger.info("对话工具已提交文生图 session_id=%s execution_id=%s task_id=%s model_id=%s", session_id, execution_id, response.task_id, args.model)
-        return task
+        return await self.discover_and_execute(name, arguments)
 
     def _selected_generation_options(self, media_type: str, required: tuple[str, ...]) -> dict | None:
         options = self.generation_options
@@ -400,13 +319,7 @@ class WorkflowTools:
 
     def _request_generation_selection(self, media_type: str, arguments: dict) -> dict:
         input_asset_ids = arguments.get("input_asset_ids", [])
-        providers = ("openai", "gemini") if media_type == "image" else ("ark", "openai")
-        models = [
-            {key: model.get(key) for key in ("id", "name", "description", "provider")}
-            for model in provider_repo.get_all_models()
-            if model.get("type") == media_type and model.get("provider") in providers
-        ]
-        self.pending_generation = {"media_type": media_type, "prompt": arguments.get("prompt", ""), "models": models}
+        self.pending_generation = {"media_type": media_type, "prompt": arguments.get("prompt", ""), "models": self._models(media_type)}
         if input_asset_ids:
             self.pending_generation.update({
                 "tool_name": "img2img" if media_type == "image" else "img2video",
@@ -418,9 +331,9 @@ class WorkflowTools:
         asset_ids = arguments.get("input_asset_ids", self.asset_ids)
         if not isinstance(asset_ids, list) or any(type(asset_id) is not int for asset_id in asset_ids):
             raise ValueError("参考资产编号必须是整数列表")
-        # 即使模型没先调用检索工具，也只接受当前会话用户消息实际引用过的编号。
-        session_messages = WorkflowRepository.get_session_asset_messages(
-            self.ensure_session(), self.user["user_id"],
+        # 即使模型没先调用检索工具，也只接受当前画布实际引用过的编号。
+        session_messages = canvas_repo.get_asset_messages(
+            self.canvas_id, self.user["user_id"],
         ) if asset_ids else []
         session_asset_ids = {
             asset_id for message in session_messages for asset_id in message["asset_ids"]
@@ -429,7 +342,7 @@ class WorkflowTools:
         unavailable_ids = sorted(set(asset_ids) - self.allowed_asset_ids)
         if unavailable_ids:
             raise ValueError(
-                f"资产 {unavailable_ids} 未关联到当前会话消息，请先在本会话引入这些图片"
+                f"资产 {unavailable_ids} 未关联到当前画布，请先引入这些图片"
             )
         assets = load_chat_assets(asset_ids, self.user["user_id"]) if asset_ids else []
         if media_type == "image" and any(asset["asset_type"] != "picture" for asset in assets):

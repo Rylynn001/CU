@@ -19,6 +19,8 @@ export interface CanvasNodeData {
   prompt: string
   model: string
   parameters: Record<string, CanvasParameterValue>
+  inputAssetIds?: number[]
+  executionId?: string
   /** 兼容已保存的旧画布；新节点只使用 parameters。 */
   ratio?: string
   quality?: string
@@ -46,6 +48,29 @@ export interface CanvasEdge {
   selected?: boolean
 }
 export interface CanvasAsset { id: number; url: string; type: 'image' | 'video' }
+export interface CanvasReference extends CanvasAsset { label: string; mention: string; referenceId: number }
+
+export function canvasReferences(nodes: CanvasNode[], assets: Record<number, CanvasAsset>, edges?: CanvasEdge[], targetId?: string): CanvasReference[] {
+  const seen = new Set<number>()
+  const counters = { image: 0, video: 0 }
+  const sources = edges
+    ? edges.filter(edge => edge.target === targetId).map(edge => ({ node: nodes.find(node => node.id === edge.source), port: edge.sourceHandle }))
+    : nodes.map(node => ({ node, port: undefined }))
+  return sources.flatMap(({ node, port }) => {
+    if (!node || node.data.task?.state === 'pending') return []
+    const outputs = port ? [node.data.outputs[port]] : Object.values(node.data.outputs)
+    return outputs.flatMap(output => {
+      if (!output || typeof output.value === 'string') return []
+      return output.value.assetIds.flatMap(id => {
+        if (seen.has(id)) return []
+        seen.add(id)
+        const type = output.dataType === 'VIDEO' ? 'video' : 'image'
+        counters[type] += 1
+        return [{ id, url: assets[id]?.url ?? '', type, label: node.data.label, referenceId: counters[type], mention: `@${type === 'video' ? '视频' : '图片'}${counters[type]}` } satisfies CanvasReference]
+      })
+    })
+  })
+}
 export const nodeKinds = [
   { type: 'remote-imageGenerationNode', label: '图片生成', output: 'IMAGE' },
   { type: 'remote-videoGenerationNode', label: '视频生成', output: 'VIDEO' },

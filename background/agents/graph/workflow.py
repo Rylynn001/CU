@@ -6,10 +6,8 @@ LangGraph 对话工作流主图编排
 
     prompt_enhance 是子图: analyze → generate_ins → enhance
 """
-import logging
-from typing import Optional, Callable, Any
+from typing import Optional
 from langgraph.graph import StateGraph, END
-from langgraph.checkpoint.memory import MemorySaver
 
 from .states import ConversationState
 from .nodes.intent_node import intent_recognition_node
@@ -18,23 +16,21 @@ from .nodes.check_node import check_done_node
 from .subgraphs.prompt_enhance import create_prompt_enhance_subgraph
 from .utils.routing import should_optimize_prompt, should_continue
 
-logger = logging.getLogger(__name__)
-
-MAX_LOOP = 8  # 最大循环次数
-
-
 def create_conversation_workflow(
     workflow_tools=None,
     llm_client=None,
-    checkpointer=None
+    model_name: Optional[str] = None,
+    checkpointer=None,
+    on_event=None,
 ):
     """
     创建对话工作流主图
 
     Args:
         workflow_tools: WorkflowTools 实例(工具执行器)
-        llm_client: AsyncOpenAI 实例(LLM 客户端，用于子图优化)
-        checkpointer: LangGraph checkpointer，默认 MemorySaver
+        llm_client: AsyncOpenAI 实例(LLM 客户端，用于对话和提示词优化)
+        model_name: 语言模型名称
+        checkpointer: 可选的 LangGraph 检查点；会话历史与长任务从数据库恢复
 
     Returns:
         编译好的 LangGraph 工作流
@@ -43,17 +39,49 @@ def create_conversation_workflow(
     workflow = StateGraph(ConversationState)
 
     # 2. 准备节点闭包(注入依赖)
+    model_round = 0
+
+    async def report_model_request(state):
+        nonlocal model_round
+        model_round += 1
+        if on_event:
+            await on_event("trace", {
+                "type": "model_request", "round": model_round,
+                "model": model_name or "gpt-4o-mini",
+                "message_count": len(state.get("messages", [])), "tools": [],
+            })
+
+    async def _direct_execute(state):
+        if state.get("intent") == "chat":
+            await report_model_request(state)
+        return await direct_execute_node(state, llm_client=llm_client, model_name=model_name)
+
     async def _execute_tool(state):
-        return await execute_tool_node(state, workflow_tools=workflow_tools)
+        tool_name = state.get("current_tool")
+        parameters = state.get("generation_request")
+        report_tool = on_event and tool_name and parameters and not (state.get("tool_result") or {}).get("reply")
+        call_id = f"graph-tool-{model_round}"
+        if report_tool:
+            await on_event("trace", {"type": "tool_call", "round": model_round,
+                "call_id": call_id, "name": tool_name, "input": parameters})
+        result = await execute_tool_node(state, workflow_tools=workflow_tools)
+        if report_tool:
+            await on_event("trace", {"type": "tool_result", "round": model_round,
+                "call_id": call_id, "name": tool_name, "output": result.get("tool_result", {})})
+        return result
+
+    async def _intent(state):
+        await report_model_request(state)
+        return await intent_recognition_node(state, llm_client=llm_client, model_name=model_name)
 
     # 3. 添加普通节点
-    workflow.add_node("intent", intent_recognition_node)
-    workflow.add_node("direct_execute", direct_execute_node)
+    workflow.add_node("intent", _intent)
+    workflow.add_node("direct_execute", _direct_execute)
     workflow.add_node("execute_tool", _execute_tool)
     workflow.add_node("check_done", check_done_node)
 
     # 4. 添加子图节点，并包一层 state 转换（主图 state → 子图 state）
-    prompt_subgraph = create_prompt_enhance_subgraph(llm_client=llm_client)
+    prompt_subgraph = create_prompt_enhance_subgraph(llm_client=llm_client, model_name=model_name)
 
     async def _prompt_enhance_wrapper(state):
         """将主图 state 转为子图 state 并执行子图，结果合并回主图"""
@@ -61,7 +89,9 @@ def create_conversation_workflow(
         last_msg = messages[-1] if messages else None
         if last_msg is None:
             return {}
-        user_prompt = last_msg.content if hasattr(last_msg, "content") else last_msg.get("content", "")
+        user_prompt = (state.get("generation_request") or {}).get("prompt")
+        if not user_prompt:
+            user_prompt = last_msg.content if hasattr(last_msg, "content") else last_msg.get("content", "")
 
         sub_input = {
             "user_prompt": user_prompt,
@@ -71,6 +101,8 @@ def create_conversation_workflow(
             "seedance_path": None,
             "instruction": None,
         }
+        if llm_client is not None:
+            await report_model_request(state)
         sub_result = await prompt_subgraph.ainvoke(sub_input)
 
         # 把优化后的提示词写到 generation_request
@@ -95,23 +127,30 @@ def create_conversation_workflow(
         }
     )
 
-    # 7. 子图出口 + 直接执行 → 工具执行
-    workflow.add_edge("prompt_enhance", "execute_tool")
-    workflow.add_edge("direct_execute", "execute_tool")
+    # 7. direct_execute 的条件路由：对话完成→check_done，生成→execute_tool
+    def route_after_direct_execute(state):
+        if state.get("is_complete"):
+            return "check_done"
+        return "execute_tool"
 
-    # 8. 工具执行 → 完成检查
+    workflow.add_conditional_edges(
+        "direct_execute",
+        route_after_direct_execute,
+        {"check_done": "check_done", "execute_tool": "execute_tool"}
+    )
+
+    # 8. 子图出口 → 工具执行
+    workflow.add_edge("prompt_enhance", "execute_tool")
+
+    # 9. 工具执行 → 完成检查
     workflow.add_edge("execute_tool", "check_done")
 
-    # 9. 完成检查 → END 或循环回 intent
+    # 10. 完成检查 → END 或循环回 intent
     workflow.add_conditional_edges(
         "check_done",
         should_continue,
         {END: END, "intent": "intent"}
     )
-
-    # 10. 配置检查点
-    if checkpointer is None:
-        checkpointer = MemorySaver()
 
     return workflow.compile(checkpointer=checkpointer)
 

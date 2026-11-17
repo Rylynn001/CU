@@ -6,6 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, model_validator
 from api.auth import get_current_user
 from repositories import canvas_repo
+from repositories.workflow_repo import WorkflowRepository
+from agents.services.canvas_tasks import submit_generation, refresh_tasks, apply_tasks
 
 router = APIRouter()
 
@@ -52,6 +54,14 @@ class CanvasCreate(BaseModel):
 
 class CanvasSave(CanvasCreate):
     document: CanvasDocument
+    base_node_ids: list[str] = Field(default_factory=list, max_length=2000)
+
+
+class CanvasGeneration(BaseModel):
+    prompt: str = Field(min_length=1)
+    model: int
+    parameters: dict = Field(default_factory=dict)
+    input_asset_ids: list[int] = Field(default_factory=list, max_length=20)
 
 
 def serialize(row):
@@ -90,14 +100,30 @@ def get_canvas_task(history_id: int, user: dict = Depends(get_current_user)):
 
 @router.get('/canvases/{canvas_id}')
 def get_canvas(canvas_id: int, user: dict = Depends(get_current_user)):
-    return serialize(require_canvas(canvas_id, user))
+    row = serialize(require_canvas(canvas_id, user))
+    tasks = refresh_tasks(WorkflowRepository.get_canvas_executions(canvas_id, user['user_id']), user['user_id'])
+    row['document'] = apply_tasks(row['document'], tasks)
+    return row
 
 
 @router.put('/canvases/{canvas_id}')
 def save_canvas(canvas_id: int, req: CanvasSave, user: dict = Depends(get_current_user)):
     require_canvas(canvas_id, user)
-    canvas_repo.save_canvas(canvas_id, user['user_id'], req.name.strip() or '新画布', req.document.model_dump())
-    return {'success': True}
+    document = canvas_repo.save_canvas(canvas_id, user['user_id'], req.name.strip() or '新画布', req.document.model_dump(), req.base_node_ids)
+    tasks = refresh_tasks(WorkflowRepository.get_canvas_executions(canvas_id, user['user_id']), user['user_id'])
+    return {'success': True, 'document': apply_tasks(document, tasks)}
+
+
+@router.post('/canvases/{canvas_id}/nodes/{node_id}/generate')
+async def generate_node(canvas_id: int, node_id: str, req: CanvasGeneration, user: dict = Depends(get_current_user)):
+    row = serialize(require_canvas(canvas_id, user))
+    node = next((node for node in row['document']['nodes'] if node['id'] == node_id), None)
+    if not node or node['type'] not in ('remote-imageGenerationNode', 'remote-videoGenerationNode'):
+        raise HTTPException(404, '生成节点不存在')
+    try:
+        return await submit_generation(user, canvas_id, 'video' if node['type'] == 'remote-videoGenerationNode' else 'image', req.model_dump(), node_id=node_id)
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
 
 
 @router.delete('/canvases/{canvas_id}')

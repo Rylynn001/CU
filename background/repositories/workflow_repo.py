@@ -4,7 +4,6 @@
 import json
 import uuid
 from typing import Dict, Any, List, Optional
-from datetime import datetime
 from database import get_db, execute_query
 
 
@@ -12,14 +11,14 @@ class WorkflowRepository:
     """工作流数据访问"""
 
     @staticmethod
-    def create_session(user_id: int, intent: Optional[str] = None) -> int:
+    def create_session(user_id: int, canvas_id: int, intent: Optional[str] = None) -> int:
         """创建工作流会话并返回数据库自动生成的整数编号。"""
         return execute_query(
             """
-            INSERT INTO workflow_sessions (user_id, intent, status)
-            VALUES (%s, %s, 'collecting')
+            INSERT INTO workflow_sessions (user_id, canvas_id, intent, status)
+            VALUES (%s, %s, %s, 'collecting')
             """,
-            (user_id, intent)
+            (user_id, canvas_id, intent)
         )
 
     @staticmethod
@@ -42,20 +41,10 @@ class WorkflowRepository:
                       parameters: Optional[Dict[str, Any]] = None,
                       status: Optional[str] = None):
         """更新会话"""
-        updates = []
-        values = []
-
-        if intent is not None:
-            updates.append("intent = %s")
-            values.append(intent)
-
-        if parameters is not None:
-            updates.append("parameters = %s")
-            values.append(json.dumps(parameters))
-
-        if status is not None:
-            updates.append("status = %s")
-            values.append(status)
+        fields = {'intent': intent, 'parameters': parameters, 'status': status}
+        updates = [f'{key} = %s' for key, value in fields.items() if value is not None]
+        values = [json.dumps(value) if key == 'parameters' else value
+                  for key, value in fields.items() if value is not None]
 
         if not updates:
             return
@@ -110,37 +99,21 @@ class WorkflowRepository:
             return rows
 
     @staticmethod
-    def get_session_asset_messages(session_id: int, user_id: int) -> List[Dict[str, Any]]:
-        """仅查询当前用户当前会话中带有引用资产的用户消息。"""
-        rows = execute_query(
-            """SELECT c.message, c.asset_ids
-               FROM workflow_conversations c
-               JOIN workflow_sessions s ON s.id = c.session_id
-               WHERE c.session_id = %s AND s.user_id = %s
-                 AND c.role = 'user' AND c.asset_ids IS NOT NULL
-               ORDER BY c.id DESC LIMIT 100""",
-            (session_id, user_id), fetch_all=True,
-        ) or []
-        for row in rows:
-            if isinstance(row["asset_ids"], (str, bytes)):
-                row["asset_ids"] = json.loads(row["asset_ids"])
-        return rows
-
-    @staticmethod
-    def get_user_sessions(user_id: int, limit: int = 10) -> List[Dict[str, Any]]:
-        """获取用户的会话列表（只返回有对话内容的会话）"""
+    def get_user_sessions(user_id: int, canvas_id: int) -> List[Dict[str, Any]]:
+        """只返回当前画布有消息的会话，以首条用户消息作为窗口名称。"""
         with get_db() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                SELECT DISTINCT s.id, s.intent, s.status, s.created_at, s.updated_at
+                SELECT s.id, s.canvas_id, s.intent, s.status, s.created_at, s.updated_at,
+                       (SELECT LEFT(c.message, 80) FROM workflow_conversations c
+                        WHERE c.session_id = s.id AND c.role = 'user' ORDER BY c.id LIMIT 1) AS title
                 FROM workflow_sessions s
-                INNER JOIN workflow_conversations c ON s.id = c.session_id
-                WHERE s.user_id = %s AND s.deleted_at IS NULL
-                ORDER BY s.updated_at DESC
-                LIMIT %s
+                WHERE s.user_id = %s AND s.canvas_id = %s AND s.deleted_at IS NULL
+                  AND EXISTS (SELECT 1 FROM workflow_conversations c WHERE c.session_id = s.id)
+                ORDER BY s.updated_at DESC, s.id DESC
                 """,
-                (user_id, limit)
+                (user_id, canvas_id)
             )
             return cursor.fetchall()
 
@@ -169,6 +142,19 @@ class WorkflowRepository:
         return rows
 
     @staticmethod
+    def get_canvas_executions(canvas_id: int, user_id: int) -> List[Dict[str, Any]]:
+        rows = execute_query(
+            """SELECT e.* FROM workflow_executions e JOIN canvas c ON c.id = e.canvas_id
+               WHERE e.canvas_id = %s AND c.user_id = %s AND c.deleted_at IS NULL
+               ORDER BY e.started_at ASC, e.id ASC""",
+            (canvas_id, user_id), fetch_all=True,
+        ) or []
+        for row in rows:
+            for key in ("workflow_definition", "result"):
+                row[key] = json.loads(row[key]) if row[key] else {}
+        return rows
+
+    @staticmethod
     def get_generation_result(history_id: int, user_id: int):
         """从 history 和关联的 assets 读取最终状态与图片地址。
 
@@ -185,105 +171,21 @@ class WorkflowRepository:
         ) or []
 
     @staticmethod
-    def add_conversation_assets(
-        conversation_id: Optional[int],
-        session_id: int,
-        user_id: int,
-        asset_ids: List[int],
-    ):
-        """将当前用户拥有的生成资产去重追加到任务对应的用户消息。"""
-        if not conversation_id or not asset_ids:
-            return
-
-        with get_db() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                """SELECT c.asset_ids
-                   FROM workflow_conversations c
-                   JOIN workflow_sessions s ON s.id = c.session_id
-                   WHERE c.id = %s AND c.session_id = %s
-                     AND c.role = 'user' AND s.user_id = %s
-                   FOR UPDATE""",
-                (conversation_id, session_id, user_id),
-            )
-            conversation = cursor.fetchone()
-            if not conversation:
-                return
-
-            cursor.execute(
-                """SELECT id FROM assets
-                   WHERE rfid = %s AND id IN ({})""".format(
-                    ",".join(["%s"] * len(asset_ids))
-                ),
-                (user_id, *asset_ids),
-            )
-            owned_asset_ids = {row["id"] for row in cursor.fetchall()}
-            if not owned_asset_ids:
-                return
-
-            existing = conversation["asset_ids"]
-            if isinstance(existing, (str, bytes)):
-                existing = json.loads(existing)
-            existing = existing or []
-            updated = list(dict.fromkeys(
-                [*existing, *(asset_id for asset_id in asset_ids if asset_id in owned_asset_ids)]
-            ))
-            if updated != existing:
-                cursor.execute(
-                    "UPDATE workflow_conversations SET asset_ids = %s WHERE id = %s",
-                    (json.dumps(updated), conversation_id),
-                )
-                conn.commit()
-
-    @staticmethod
-    def create_execution(
-        session_id: int,
-        workflow_definition: Dict[str, Any],
-        conversation_id: Optional[int] = None,
-    ) -> str:
-        """向 workflow_executions 写入一次工具任务的初始执行记录。"""
-        execution_id = str(uuid.uuid4())
-
-        execute_query(
-            """
-            INSERT INTO workflow_executions (id, session_id, conversation_id, workflow_definition, status)
-            VALUES (%s, %s, %s, %s, 'running')
-            """,
-            (execution_id, session_id, conversation_id, json.dumps(workflow_definition))
-        )
-
-        return execution_id
-
-    @staticmethod
     def update_execution(execution_id: str, current_node: Optional[str] = None,
                         status: Optional[str] = None, progress: Optional[float] = None,
-                        result: Optional[Dict[str, Any]] = None, error: Optional[str] = None):
+                        result: Optional[Dict[str, Any]] = None, error: Optional[str] = None,
+                        workflow_definition: Optional[Dict[str, Any]] = None):
         """更新 workflow_executions 中的执行节点、状态、结果或错误。"""
-        updates = []
-        values = []
-
-        if current_node is not None:
-            updates.append("current_node = %s")
-            values.append(current_node)
-
-        if status is not None:
-            updates.append("status = %s")
-            values.append(status)
-
-        if progress is not None:
-            updates.append("progress = %s")
-            values.append(progress)
-
-        if result is not None:
-            updates.append("result = %s")
-            values.append(json.dumps(result))
-
-        if error is not None:
-            updates.append("error = %s")
-            values.append(error)
+        fields = {'current_node': current_node, 'status': status, 'progress': progress,
+                  'result': result, 'error': error, 'workflow_definition': workflow_definition}
+        updates = [f'{key} = %s' for key, value in fields.items() if value is not None]
+        values = [json.dumps(value) if key in ('result', 'workflow_definition') else value
+                  for key, value in fields.items() if value is not None]
 
         if status in ("completed", "failed"):
             updates.append("completed_at = NOW()")
+        elif status is not None:
+            updates.append("completed_at = NULL")
 
         if not updates:
             return

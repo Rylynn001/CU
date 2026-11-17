@@ -1,106 +1,46 @@
-"""
-工具节点：准备工具参数和执行工具
-"""
-from typing import Dict, Any
+"""准备生成请求，或把普通对话交给语言模型。"""
 import logging
 
 logger = logging.getLogger(__name__)
 
 
-async def direct_execute_node(state: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    直接准备工具参数，不做提示词优化
-
-    Args:
-        state: ConversationState
-
-    Returns:
-        更新的状态，包含 current_tool 和 generation_request
-    """
-    intent = state.get("intent")
-    messages = state.get("messages", [])
-
-    if not messages:
-        logger.warning("消息列表为空")
-        return {"is_complete": True}
-
-    # 获取最后一条用户消息内容
-    last_msg = messages[-1]
-    if hasattr(last_msg, "content"):
-        last_message = last_msg.content
-    else:
-        last_message = last_msg.get("content", "")
-
-    logger.info(f"Direct execute: intent={intent}")
-
-    # 根据意图选择工具
-    if intent == "txt2img":
-        return {
-            "current_tool": "txt2img",
-            "generation_request": {"prompt": last_message}
-        }
-    elif intent == "txt2video":
-        return {
-            "current_tool": "txt2video",
-            "generation_request": {"prompt": last_message}
-        }
-    else:
-        # 普通对话，无需工具
-        logger.info("普通对话，不需要工具执行")
-        return {"is_complete": True}
+async def direct_execute_node(state, llm_client=None, model_name=None):
+    intent = state.get('intent')
+    match intent:
+        case 'txt2img' | 'txt2video' | 'generation_plan':
+            return {'current_tool': intent, 'generation_request': state['generation_request']}
+        case 'chat':
+            if llm_client is None:
+                return {'tool_result': {'error': '对话模型未初始化'}, 'is_complete': True}
+            messages = []
+            for message in state.get('messages', []):
+                if isinstance(message, dict):
+                    role, content = message.get('role', 'user'), message.get('content', '')
+                else:
+                    role, content = ('user' if message.type == 'human' else 'assistant'), message.content
+                messages.append({'role': 'assistant' if role == 'agent' else role, 'content': content})
+            try:
+                response = await llm_client.chat.completions.create(
+                    model=model_name or 'gpt-4o-mini', messages=messages,
+                    temperature=0.7, max_tokens=1024,
+                )
+                reply = response.choices[0].message.content
+                if not isinstance(reply, str) or not reply.strip():
+                    raise ValueError('对话模型未返回有效回复，请重试')
+                return {'tool_result': {'reply': reply}, 'is_complete': True}
+            except Exception as error:
+                logger.exception('对话生成失败')
+                return {'tool_result': {'error': str(error) or '对话生成失败'}, 'is_complete': True}
+        case _:
+            return {'tool_result': {'error': '无法识别请求类型'}, 'is_complete': True}
 
 
-async def execute_tool_node(
-    state: Dict[str, Any],
-    workflow_tools=None  # 外部注入的工具执行器
-) -> Dict[str, Any]:
-    """
-    执行工具调用
-
-    Args:
-        state: ConversationState
-        workflow_tools: WorkflowTools 实例
-
-    Returns:
-        更新的状态，包含 tool_result 和 is_complete
-    """
-    tool_name = state.get("current_tool")
-    generation_request = state.get("generation_request")
-
-    if not tool_name or not generation_request:
-        logger.warning("工具名或参数为空，跳过执行")
-        return {"is_complete": True}
-
-    logger.info(f"执行工具: {tool_name}, 参数: {generation_request}")
-
+async def execute_tool_node(state, workflow_tools=None):
     if workflow_tools is None:
-        logger.error("WorkflowTools 未注入，无法执行工具")
-        return {
-            "tool_result": {"error": "工具执行器未初始化"},
-            "is_complete": True
-        }
-
+        return {'tool_result': {'error': '工具执行器未初始化'}, 'is_complete': True}
     try:
-        # 调用 WorkflowTools.discover_and_execute
-        result = await workflow_tools.discover_and_execute(tool_name, generation_request)
-
-        # 检查是否需要用户选择参数
-        if result.get("selection_required"):
-            logger.info("需要用户选择参数，暂停执行")
-            return {
-                "tool_result": result,
-                "is_complete": False
-            }
-
-        logger.info(f"工具执行完成: {tool_name}")
-        return {
-            "tool_result": result,
-            "is_complete": True
-        }
-
-    except Exception as e:
-        logger.error(f"工具执行失败: {e}", exc_info=True)
-        return {
-            "tool_result": {"error": str(e)},
-            "is_complete": True
-        }
+        result = await workflow_tools.discover_and_execute(state['current_tool'], state['generation_request'])
+        return {'tool_result': result, 'is_complete': not bool(result.get('selection_required'))}
+    except Exception as error:
+        logger.exception('工具执行失败')
+        return {'tool_result': {'error': str(error)}, 'is_complete': True}

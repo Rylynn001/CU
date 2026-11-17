@@ -8,7 +8,7 @@ import DotFieldBackground from './components/DotFieldBackground.vue'
 
 const route = useRoute()
 const keepPrismBackground = computed(() => route.path === '/login' || route.path === '/')
-const hideSideNav = computed(() => route.path === '/node-panel')
+const hideSideNav = computed(() => route.path === '/node-panel' || route.path === '/canvas')
 type BusinessTheme = 'light' | 'dot' | 'black'
 
 const savedTheme = localStorage.getItem('business-theme')

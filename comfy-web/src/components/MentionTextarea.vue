@@ -6,6 +6,7 @@ const props = withDefaults(defineProps<{
   modelValue: string
   rows?: number
   placeholder?: string
+  disabled?: boolean
 }>(), {
   rows: 4,
   placeholder: '',
@@ -96,6 +97,7 @@ defineExpose({ textarea })
       :rows="rows"
       :model-value="modelValue"
       :placeholder="placeholder"
+      :disabled="disabled"
       @update:model-value="emit('update:modelValue', $event)"
       @keyup="emit('keyup', $event)"
       @keydown="emit('keydown', $event)"

@@ -21,12 +21,12 @@ class WorkflowTool(Enum):
         "type": "function",
         "function": {
             "name": "img2img",
-            "description": "使用用户在当前会话中引用或检索到的图片资产生成或编辑图片。调用前查询图片模型，生成参数由用户在弹窗确认。",
+            "description": "使用用户在当前画布中引用或检索到的图片资产生成或编辑图片。调用前查询图片模型，生成参数由用户在弹窗确认。",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "prompt": {"type": "string", "description": "图片内容或修改要求"},
-                    "input_asset_ids": {"type": "array", "items": {"type": "integer"}, "minItems": 1, "description": "当前会话中用户引用的图片资产编号"},
+                    "input_asset_ids": {"type": "array", "items": {"type": "integer"}, "minItems": 1, "description": "当前画布中用户引用的图片资产编号"},
                 },
                 "required": ["prompt", "input_asset_ids"],
                 "additionalProperties": False,
@@ -38,12 +38,12 @@ class WorkflowTool(Enum):
         "type": "function",
         "function": {
             "name": "img2video",
-            "description": "使用用户在当前会话中引用或检索到的图片、视频资产生成视频。调用前查询视频模型，生成参数由用户在弹窗确认。",
+            "description": "使用用户在当前画布中引用或检索到的图片、视频资产生成视频。调用前查询视频模型，生成参数由用户在弹窗确认。",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "prompt": {"type": "string", "description": "视频内容描述"},
-                    "input_asset_ids": {"type": "array", "items": {"type": "integer"}, "minItems": 1, "description": "当前会话中用户引用的图片或视频资产编号"},
+                    "input_asset_ids": {"type": "array", "items": {"type": "integer"}, "minItems": 1, "description": "当前画布中用户引用的图片或视频资产编号"},
                 },
                 "required": ["prompt", "input_asset_ids"],
                 "additionalProperties": False,
@@ -143,17 +143,17 @@ class WorkflowTool(Enum):
         "type": "function",
         "function": {
             "name": "search_session_reference_assets",
-            "description": "仅在当前会话之前用户消息中搜索已引入的图片。按消息内容关键词匹配，并返回原消息及其资产编号；不搜索其他会话或生成历史。需要复用本会话之前引入的图片时必须先调用。",
+            "description": "在当前画布节点中搜索引用或生成的图片，按提示词关键词匹配并返回资产编号。可在该画布的不同会话之间复用，不搜索其他画布。",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "keywords": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1, "maxItems": 8, "description": "当前会话之前消息中的主体或场景关键词"},
+                    "keywords": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1, "maxItems": 8, "description": "当前画布节点提示词中的主体或场景关键词"},
                 },
                 "required": ["keywords"],
                 "additionalProperties": False,
             },
         },
-        "keywords": ["之前引入的图片", "当前会话之前的图片", "本会话之前图片", "本会话参考图", "之前消息中的图片", "找回本会话图片", "参考之前图片", "session reference assets"],
+        "keywords": ["之前引入的图片", "当前画布之前的图片", "本画布之前图片", "本画布参考图", "之前消息中的图片", "找回本画布图片", "参考之前图片", "session reference assets"],
     }
     GENERATE_SEEDANCE_PROMPT = {
         "type": "function",

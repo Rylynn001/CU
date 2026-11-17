@@ -50,7 +50,8 @@ def build_asset_content(message: str, assets: list[dict]) -> str | list[dict]:
         return message
     content = [{"type": "text", "text": message}]
     for asset in assets:
-        label = f"参考资产编号：{asset['id']}，类型：{asset['asset_type']}"
+        mention = f"@{'视频' if asset['asset_type'] == 'video' else '图'}{asset['id']}"
+        label = f"{mention} 对应参考资产编号：{asset['id']}，类型：{asset['asset_type']}"
         content.append({"type": "text", "text": label})
         if asset["asset_type"] == "picture":
             content.append(_image_part(Path(asset["location"]).read_bytes()))

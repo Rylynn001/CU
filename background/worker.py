@@ -12,6 +12,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent))
 
 from config import settings
 from workers import openai_worker, gemini_worker, ark_worker
+from agents.services.plan_scheduler import plan_scheduler_loop
 
 logging.basicConfig(
     level=logging.INFO,
@@ -55,20 +56,17 @@ async def worker_loop(worker_id: int) -> None:
 
             logger.info(f'[Worker-{worker_id}] 拿到任务: task_id={task_id}, queue={queue_name}, provider={provider}')
 
-            # 异步处理任务
-            if queue_name == b'queue:txt2img' or queue_name == 'queue:txt2img':
-                if provider == 'gemini':
-                    await gemini_worker.process(task)
-                elif provider == 'openai':
-                    await openai_worker.process(task)
-                else:
-                    logger.warning(f'[Worker-{worker_id}] 未知提供商: {provider}')
-
-            elif queue_name in (b'queue:txt2video', 'queue:txt2video'):
-                if provider in ('ark', 'openai'):
-                    await ark_worker.process_txt2video(task)
-                else:
-                    logger.warning(f'[Worker-{worker_id}] 未知视频提供商: {provider}')
+            handlers = {
+                (b'queue:txt2img', 'gemini'): gemini_worker.process,
+                (b'queue:txt2img', 'openai'): openai_worker.process,
+                (b'queue:txt2video', 'ark'): ark_worker.process_txt2video,
+                (b'queue:txt2video', 'openai'): ark_worker.process_txt2video,
+            }
+            handler = handlers.get((queue_name, provider))
+            if handler:
+                await handler(task)
+            else:
+                logger.warning('[Worker-%s] 不支持的生成队列或供应商: %s %s', worker_id, queue_name, provider)
 
         except asyncio.CancelledError:
             logger.info(f'[Worker-{worker_id}] 协程被取消')
@@ -83,6 +81,7 @@ async def main():
     logger.info(f'正在启动 {num_workers} 个异步 worker...')
 
     tasks = [asyncio.create_task(worker_loop(i + 1)) for i in range(num_workers)]
+    tasks.append(asyncio.create_task(plan_scheduler_loop()))
 
     logger.info(f'{num_workers} 个异步 worker 已启动，等待任务...')
     try:

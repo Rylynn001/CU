@@ -1,13 +1,17 @@
 import { authFetch } from './apiService'
 
 export interface WorkflowMessageRequest {
+  canvas_id: number
   message: string
   model_id: number
   session_id?: string
   asset_ids?: number[]
   generation_options?: {
-    media_type: 'image' | 'video' | null
-    model: number | null
+    media_type: 'image' | 'video' | 'plan' | null
+    model?: number | null
+    plan_id?: string
+    image?: Record<string, unknown>
+    video?: Record<string, unknown>
     n?: number | null
     aspect_ratio?: string | null
     quality?: string | null
@@ -25,9 +29,22 @@ export interface WorkflowMessageResponse {
   intent?: string | null
   workflow_ready: boolean
   tasks: WorkflowTask[]
-  generation_request?: { media_type: 'image' | 'video'; prompt: string; models: GenerationModel[]; input_asset_ids?: number[]; tool_name?: string } | null
+  generation_request?: GenerationRequest | null
   context_usage?: ContextUsage | null
 }
+
+export interface GenerationPlanStep {
+  id: string
+  label: string
+  media_type: 'image' | 'video'
+  prompt: string
+  depends_on: string[]
+  duration?: number
+}
+
+export type GenerationRequest =
+  | { media_type: 'image' | 'video'; prompt: string; models: GenerationModel[]; input_asset_ids?: number[]; tool_name?: string }
+  | { media_type: 'plan'; plan_id: string; prompt: string; steps: GenerationPlanStep[]; models_by_type: Partial<Record<'image' | 'video', GenerationModel[]>> }
 
 export interface ContextUsage {
   model: string
@@ -60,6 +77,8 @@ export interface GenerationModel {
 
 export interface WorkflowSession {
   id: string
+  canvas_id: number
+  title?: string | null
   intent: string | null
   status: string
   created_at: string
@@ -84,6 +103,7 @@ export interface ChatAsset {
 
 export interface SessionDetail {
   id: string
+  canvas_id: number
   intent: string | null
   generation_request?: WorkflowMessageResponse['generation_request']
   status: string
@@ -92,6 +112,11 @@ export interface SessionDetail {
 }
 
 export interface WorkflowTask {
+  plan_id?: string
+  label?: string
+  canvas_id: number
+  node_id: string
+  history_id?: number
   task_id: string
   execution_id: string
   conversation_id?: number | null
@@ -122,6 +147,14 @@ export async function getTaskStatus(taskId: string): Promise<Record<string, any>
   return res.json()
 }
 
+export async function retryGenerationPlan(planId: string, canvasId: number): Promise<void> {
+  const res = await authFetch(`/api/api-proxy/workflow/plans/${planId}/retry?canvas_id=${canvasId}`, { method: 'POST' })
+  if (!res.ok) {
+    const error = await res.json().catch(() => null)
+    throw new Error(error?.detail || '重试失败，请稍后再试')
+  }
+}
+
 /**
  * 流式发送工作流消息，实时读取进度和回复片段。
  */
@@ -131,6 +164,7 @@ export async function sendWorkflowMessageStream(
   onDelta: (text: string) => void,
   onTrace?: (event: WorkflowTrace) => void,
   onUsage?: (usage: ContextUsage) => void,
+  onCanvasChange?: (canvasId: number) => void,
 ): Promise<WorkflowMessageResponse> {
   const res = await authFetch('/api/api-proxy/workflow/chat/stream', {
     method: 'POST',
@@ -158,9 +192,12 @@ export async function sendWorkflowMessageStream(
     if (!data.length) return
     const payload = JSON.parse(data.join('\n'))
     if (event === 'progress') onProgress(payload.message)
-    else if (event === 'delta') onDelta(payload.text)
+    else if (event === 'delta') {
+      if (typeof payload?.text === 'string' && payload.text) onDelta(payload.text)
+    }
     else if (event === 'trace') onTrace?.(payload as WorkflowTrace)
     else if (event === 'usage') onUsage?.(payload as ContextUsage)
+    else if (event === 'canvas_changed') onCanvasChange?.(payload.canvas_id)
     else if (event === 'done') result = payload as WorkflowMessageResponse
     else if (event === 'error') throw new Error(payload.message || '对话请求失败')
   }
@@ -186,25 +223,27 @@ export async function sendWorkflowMessageStream(
 /**
  * 获取会话历史
  */
-export async function getSessionHistory(sessionId: string): Promise<SessionDetail> {
-  const res = await authFetch(`/api/api-proxy/workflow/sessions/${sessionId}`, {
+export async function getSessionHistory(sessionId: string, canvasId: number): Promise<SessionDetail> {
+  const res = await authFetch(`/api/api-proxy/workflow/sessions/${sessionId}?canvas_id=${canvasId}`, {
     method: 'GET',
   })
+  if (!res.ok) throw new Error('会话加载失败，请重试')
   return res.json()
 }
 
 /**
  * 获取用户的所有会话列表
  */
-export async function getUserSessions(): Promise<WorkflowSession[]> {
-  const res = await authFetch('/api/api-proxy/workflow/sessions', {
+export async function getUserSessions(canvasId: number): Promise<WorkflowSession[]> {
+  const res = await authFetch(`/api/api-proxy/workflow/sessions?canvas_id=${canvasId}`, {
     method: 'GET',
   })
+  if (!res.ok) throw new Error('历史窗口加载失败，请重试')
   return res.json()
 }
 
-export async function deleteSession(sessionId: string): Promise<void> {
-  const res = await authFetch(`/api/api-proxy/workflow/sessions/${sessionId}`, {
+export async function deleteSession(sessionId: string, canvasId: number): Promise<void> {
+  const res = await authFetch(`/api/api-proxy/workflow/sessions/${sessionId}?canvas_id=${canvasId}`, {
     method: 'DELETE',
   })
   if (!res.ok) throw new Error(`删除会话失败：${res.status}`)

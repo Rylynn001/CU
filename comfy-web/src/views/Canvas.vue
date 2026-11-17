@@ -1,24 +1,25 @@
 <script setup lang="ts">
 import { computed, markRaw, nextTick, onBeforeUnmount, onMounted, provide, reactive, ref, watch, Teleport, type Ref } from 'vue'
-import { onBeforeRouteLeave } from 'vue-router'
+import { onBeforeRouteLeave, useRouter } from 'vue-router'
 import { VueFlow, useVueFlow, SelectionMode, type Connection, type OnConnectStartParams, type ViewportTransform, type GraphEdge } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import { MiniMap } from '@vue-flow/minimap'
-import { ElButton, ElSelect, ElOption, ElMessage, ElMessageBox, ElDropdown, ElDropdownMenu, ElDropdownItem, ElInputNumber, ElTooltip } from 'element-plus'
-import { Plus, Picture, VideoCamera, Document, Delete } from '@element-plus/icons-vue'
-import { Focus, Folders, Hand, Info, Magnet, Map, MousePointer2, MousePointerClick, Network, Plus as PlusIcon, Search, Workflow, RotateCcw, RotateCw } from '@lucide/vue'
+import { ElButton, ElSelect, ElOption, ElMessage, ElDropdown, ElDropdownMenu, ElDropdownItem, ElInputNumber, ElTooltip } from 'element-plus'
+import { Picture, VideoCamera, Document } from '@element-plus/icons-vue'
+import { Focus, Folders, Hand, Info, LogOut, Magnet, Map, MousePointer2, MousePointerClick, Network, Plus as PlusIcon, Search, Workflow, RotateCcw, RotateCw } from '@lucide/vue'
 import CanvasNodeComponent from '../components/CanvasNode.vue'
 import AssetPicker from '../components/AssetPicker.vue'
 import AiChatPanel from '../components/AiChatPanel.vue'
 import AiBlobWarpAvatar from '../components/AiBlobWarpAvatar.vue'
-import { apiGenerate, apiVideoGenerate, authFetch, createCanvas, getApiModels, getCanvas, listCanvases, saveCanvas, uploadInputImage, type ApiModel, type CanvasSummary, type CanvasDocument } from '../api/apiService'
-import { canvasActionsKey, collectInputs, makeNode, nodeKinds, validConnection, type CanvasAsset, type CanvasNode, type CanvasEdge, type CanvasParameterValue } from '../services/canvasGraph'
+import { authFetch, createCanvas, getApiModels, getCanvas, listCanvases, saveCanvas, uploadInputImage, type ApiModel, type CanvasSummary, type CanvasDocument } from '../api/apiService'
+import { canvasActionsKey, canvasReferences, collectInputs, makeNode, nodeKinds, validConnection, type CanvasAsset, type CanvasNode, type CanvasEdge, type CanvasParameterValue } from '../services/canvasGraph'
 import { arrangeCanvas } from '../services/arrangeCanvas'
 import '@vue-flow/core/dist/style.css'
 import '@vue-flow/core/dist/theme-default.css'
 import '@vue-flow/minimap/dist/style.css'
 
 const flow = useVueFlow({ id: 'creative-canvas' })
+const router = useRouter()
 const { removeEdges } = flow
 const nodes = ref<CanvasNode[]>([])
 const edges = ref<CanvasEdge[]>([])
@@ -33,12 +34,15 @@ const saveState = ref('')
 const assets = ref<Record<number, CanvasAsset>>({})
 const imageModels = ref<ApiModel[]>([])
 const videoModels = ref<ApiModel[]>([])
+const chatReferences = computed(() => canvasReferences(nodes.value, assets.value))
 const pickerVisible = ref(false)
 const pickerNode = ref<string>()
 const fileInput = ref<HTMLInputElement>()
 const uploadBusy = ref(false)
 const creating = ref(false)
 const chatPanelOpen = ref(false)
+const chatBusy = ref(false)
+let syncingGenerations = false
 const menu = ref<{ x: number; y: number; position: { x: number; y: number } }>()
 const connectionMenu = ref<{ x: number; y: number; position: { x: number; y: number }; nodeId: string; handleId: string; handleType: 'source' | 'target' }>()
 const pendingConnection = ref<OnConnectStartParams>()
@@ -166,8 +170,12 @@ function persist(): Promise<void> {
     const current = snapshot.value
     saveState.value = '保存中…'
     try {
-      await saveCanvas(id, JSON.parse(current))
-      savedSnapshot.value = current
+      const payload = JSON.parse(current)
+      const base = savedSnapshot.value ? JSON.parse(savedSnapshot.value).document.nodes : []
+      const result = await saveCanvas(id, { ...payload, base_node_ids: base.map((node: CanvasNode) => node.id) })
+      if (activeId.value !== id || disposed) return
+      mergeGenerationNodes(result.document.nodes as unknown as CanvasNode[], result.document.edges as unknown as CanvasEdge[])
+      savedSnapshot.value = JSON.stringify({ name: payload.name, document: result.document })
       saveState.value = '已保存'
       const board = boards.value.find(item => item.id === id)
       if (board) board.name = name.value
@@ -201,7 +209,7 @@ async function hydrateAssets() {
 }
 
 async function openBoard(id: number) {
-  if (loading.value || submitting.size || uploadBusy.value) return
+  if (loading.value || submitting.size || uploadBusy.value || chatBusy.value) return
   loading.value = true
   try {
     await persist()
@@ -231,7 +239,7 @@ async function openBoard(id: number) {
 }
 
 async function newBoard() {
-  if (loading.value || creating.value || submitting.size || uploadBusy.value) return
+  if (loading.value || creating.value || submitting.size || uploadBusy.value || chatBusy.value) return
   creating.value = true
   try {
     await persist()
@@ -461,24 +469,26 @@ async function run(id: string) {
     if (!prompt) throw new Error('请填写提示词或连接文本节点')
     if (!data.model) throw new Error('请选择模型')
     await persist()
-    const result = node.type === 'remote-videoGenerationNode'
-      ? await apiVideoGenerate({ model: Number(data.model), prompt, parameters: data.parameters, input_asset_ids: input.assetIds })
-      : await apiGenerate({ model: Number(data.model), prompt, parameters: data.parameters, input_asset_ids: input.assetIds })
-    const taskId = 'task_id' in result ? result.task_id : 'taskId' in result ? result.taskId : undefined
-    const historyId = 'history_id' in result ? result.history_id : 'historyId' in result ? result.historyId : undefined
-    if (!taskId || !historyId) throw new Error('生成接口没有返回任务和历史记录 ID')
-    data.task = { taskId, historyId, state: 'pending' }
+    const response = await authFetch(`/api/api-proxy/canvases/${activeId.value}/nodes/${id}/generate`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: Number(data.model), prompt, parameters: data.parameters, input_asset_ids: [...new Set([...input.assetIds, ...(data.inputAssetIds ?? [])])] }),
+    })
+    const result = await response.json()
+    if (!response.ok) throw new Error(typeof result.detail === 'string' ? result.detail : '任务提交失败')
+    data.executionId = result.execution_id
+    data.task = { taskId: result.task_id, historyId: result.history_id, state: 'pending' }
     // 先保存任务归属，离开页面后也能通过历史记录恢复结果。
     await persist()
     void pollTasks()
-  } catch (error) { ElMessage.error(message(error)) }
+  } catch (error) { ElMessage.error(message(error)); void syncGenerationNodes(activeId.value) }
   finally { submitting.delete(id) }
 }
 
 async function pollTasks() {
+  await syncGenerationNodes(activeId.value)
   for (const node of nodes.value) {
     const task = node.data?.task
-    if (!task || task.state !== 'pending' || polling.has(task.taskId)) continue
+    if (!task || !task.historyId || task.state !== 'pending' || polling.has(task.taskId)) continue
     const boardId = activeId.value
     polling.add(task.taskId)
     try {
@@ -518,17 +528,44 @@ async function pollTasks() {
   }
 }
 
-async function deleteBoard() {
-  if (!activeId.value || submitting.size || uploadBusy.value) return
+function mergeGenerationNodes(incoming: CanvasNode[], incomingEdges: CanvasEdge[] = []) {
+  const added: string[] = []
+  const known = new Set<string>(savedSnapshot.value ? JSON.parse(savedSnapshot.value).document.nodes.map((node: CanvasNode) => node.id) : [])
+  for (const serverNode of incoming) {
+    const local = nodes.value.find(node => node.id === serverNode.id)
+    if (!local) {
+      // 已加载后被用户删除的节点不再补回；只补入助手新建的节点。
+      if (!known.has(serverNode.id)) { nodes.value.push(serverNode); added.push(serverNode.id) }
+    } else if (serverNode.data.executionId) {
+      local.data.executionId = serverNode.data.executionId
+      if (serverNode.data.task) local.data.task = serverNode.data.task
+      if (serverNode.data.task?.state === 'completed') local.data.outputs = serverNode.data.outputs
+    }
+  }
+  const nodeIds = new Set(nodes.value.map(node => node.id))
+  for (const edge of incomingEdges) {
+    if (added.includes(edge.target) && nodeIds.has(edge.source) && !edges.value.some(local => local.id === edge.id)) edges.value.push(edge)
+  }
+  return added
+}
+
+async function syncGenerationNodes(canvasId?: number) {
+  if (!canvasId || canvasId !== activeId.value || !ready.value || loading.value || syncingGenerations || disposed) return
+  syncingGenerations = true
   try {
-    await ElMessageBox.confirm('删除画布不会删除资产和生成记录。确定删除？', '删除画布', { confirmButtonText: '删除', cancelButtonText: '取消' })
-    await persist()
-    const response = await authFetch(`/api/api-proxy/canvases/${activeId.value}`, { method: 'DELETE' })
-    if (!response.ok) throw new Error('画布删除失败')
-    boards.value = boards.value.filter(board => board.id !== activeId.value)
-    ready.value = false; activeId.value = undefined; nodes.value = []; edges.value = []
-    if (boards.value[0]) await openBoard(boards.value[0].id)
-  } catch (error) { if (error !== 'cancel' && error !== 'close') ElMessage.error(message(error)) }
+    const board = await getCanvas(canvasId)
+    if (canvasId !== activeId.value || disposed || loading.value) return
+    const added = mergeGenerationNodes(board.document.nodes as unknown as CanvasNode[], board.document.edges as unknown as CanvasEdge[])
+    if (added.length) {
+      await nextTick()
+      await flow.fitView({ nodes: added, maxZoom: 1, padding: .3, duration: 250 })
+    }
+    const missingAssets = nodes.value.some(node => Object.values(node.data.outputs).some(output =>
+      typeof output.value !== 'string' && output.value.assetIds.some(id => !assets.value[id])))
+    if (missingAssets) await hydrateAssets()
+  } catch (error) {
+    if (canvasId === activeId.value && chatBusy.value) saveState.value = message(error)
+  } finally { syncingGenerations = false }
 }
 
 function contextMenu(event: MouseEvent) {
@@ -544,9 +581,9 @@ function keydown(event: KeyboardEvent) {
   if ((event.ctrlKey || event.metaKey) && (event.shiftKey && event.key.toLowerCase() === 'z' || event.key.toLowerCase() === 'y')) { event.preventDefault(); redo() }
 }
 
-function beforeUnload(event: BeforeUnloadEvent) { if (dirty.value || submitting.size || uploadBusy.value) { event.preventDefault(); event.returnValue = '' } }
+function beforeUnload(event: BeforeUnloadEvent) { if (dirty.value || submitting.size || uploadBusy.value || chatBusy.value) { event.preventDefault(); event.returnValue = '' } }
 onBeforeRouteLeave(async () => {
-  if (submitting.size || uploadBusy.value) { ElMessage.warning('请等待任务提交或素材上传完成后再离开'); return false }
+  if (submitting.size || uploadBusy.value || chatBusy.value) { ElMessage.warning('请等待任务提交或素材上传完成后再离开'); return false }
   try { await persist(); return true } catch (error) { ElMessage.error(message(error)); return false }
 })
 provide(canvasActionsKey, {
@@ -584,20 +621,15 @@ onBeforeUnmount(() => { disposed = true; clearTimeout(saveTimer); clearInterval(
 
 <template>
   <main class="canvas-page">
-    <header class="canvas-toolbar">
-      <span class="canvas-mark">⌘</span>
-      <ElSelect :model-value="activeId" :disabled="loading || submitting.size > 0 || uploadBusy" placeholder="选择画布" class="board-select" @change="openBoard"><ElOption v-for="board in boards" :key="board.id" :value="board.id" :label="board.name" /></ElSelect>
-      <input v-if="ready" v-model="name" class="canvas-name" maxlength="100" aria-label="画布名称" :disabled="loading" />
-      <span class="save-state" role="status">{{ saveState }}</span>
-      <div class="toolbar-spacer" />
-      <ElButton size="small" :icon="Plus" :disabled="loading || submitting.size > 0 || uploadBusy" @click="newBoard">新建</ElButton>
-      <ElButton size="small" :disabled="!canEdit || !dirty" @click="persist().catch(error => ElMessage.error(message(error)))">保存</ElButton>
-      <ElButton size="small" :icon="Delete" :disabled="!canEdit || submitting.size > 0 || uploadBusy" aria-label="删除画布" @click="deleteBoard" />
+    <header class="canvas-topbar">
+      <button type="button" class="canvas-exit" aria-label="退出画布" title="退出画布" @click="router.push('/')">
+        <LogOut :size="16" />
+      </button>
+      <ElSelect :model-value="activeId" :disabled="loading || submitting.size > 0 || uploadBusy || chatBusy" placeholder="选择画布" class="board-select" @change="openBoard">
+        <ElOption v-for="board in boards" :key="board.id" :value="board.id" :label="board.name" />
+      </ElSelect>
     </header>
     <div class="canvas-workspace" :class="{ 'hand-mode': handMode }" @contextmenu.prevent="contextMenu" @pointerdown.capture="ignorePaneClick = false" @dragover.prevent="dragover" @drop.prevent="drop">
-      <div class="ai-orb" :class="{ active: chatPanelOpen }" aria-label="AI 助手" role="button" tabindex="0" @click="chatPanelOpen = !chatPanelOpen" @keydown.enter="chatPanelOpen = !chatPanelOpen">
-        <AiBlobWarpAvatar class="ai-orb-avatar" />
-      </div>
       <VueFlow v-model:nodes="nodes" v-model:edges="edges" id="creative-canvas" :node-types="nodeTypes" :default-edge-options="defaultEdgeOptions" :min-zoom="0.2" :max-zoom="8" :pan-on-drag="handMode ? true : [1, 2]" :selection-mode="SelectionMode.Partial" selection-on-drag :snap-to-grid="snapEnabled" :snap-grid="[16, 16]" :delete-key-code="null" :zoom-on-double-click="false" :nodes-draggable="canEdit" :nodes-connectable="canEdit" :connect-on-click="false" :is-valid-connection="(connection) => validConnection(connection, nodes, edges)" :class="{ 'edges-hidden': !showEdges }" @connect="connect" @connect-start="connectStart" @connect-end="connectEnd" @edge-click="({ event, edge }) => showEdgeDisconnect(event, edge.id)" @move-end="({ flowTransform }) => viewport = flowTransform" @pane-click="paneClick">
         <Background :gap="16" pattern-color="var(--color-border)" />
         <MiniMap v-if="showMap && nodes.length" class="canvas-map" pannable zoomable :width="180" :height="120" />
@@ -678,6 +710,9 @@ onBeforeUnmount(() => { disposed = true; clearTimeout(saveTimer); clearInterval(
           <ElButton text aria-label="画布提示"><Info :size="18" /></ElButton>
         </el-tooltip>
       </div>
+      <button type="button" class="ai-orb" :class="{ active: chatPanelOpen }" aria-label="打开 AI 助手" :aria-expanded="chatPanelOpen" title="打开 AI 助手" @click="chatPanelOpen = !chatPanelOpen">
+        <AiBlobWarpAvatar class="ai-orb-avatar" />
+      </button>
     </div>
     <div v-if="menu" class="canvas-menu" :style="{ left: `${menu.x}px`, top: `${menu.y}px` }" @mouseleave="menu = undefined">
       <button @click="pick(); menu = undefined">打开资产库</button>
@@ -690,7 +725,8 @@ onBeforeUnmount(() => { disposed = true; clearTimeout(saveTimer); clearInterval(
       <button v-for="kind in connectionCandidates()" :key="kind.type" @click="addConnectedNode(kind.type)">{{ kind.label }}</button>
     </div>
     <AssetPicker v-model:visible="pickerVisible" :max-select="pickerNode ? 1 : 20" allow-video @select="applyAssets" />
-    <AiChatPanel v-model="chatPanelOpen" />
+    <AiChatPanel v-if="activeId && ready" :key="activeId" v-model="chatPanelOpen" :canvas-id="activeId" :prepare-canvas="persist" :references="chatReferences"
+      @canvas-changed="syncGenerationNodes" @busy-change="chatBusy = $event" />
     <Teleport to="body">
       <ElButton
         v-if="edgeDisconnect && flow.findEdge(edgeDisconnect.id)"
@@ -708,13 +744,14 @@ onBeforeUnmount(() => { disposed = true; clearTimeout(saveTimer); clearInterval(
 </template>
 
 <style scoped>
-.canvas-page { height: 100vh; display: flex; flex-direction: column; background: transparent; color: var(--color-text); }
-.canvas-toolbar { height: 44px; padding: 0 14px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--color-border); background: color-mix(in srgb, var(--color-surface-base) 85%, transparent); backdrop-filter: blur(18px); flex-shrink: 0; }
-.canvas-mark { display: grid; width: 26px; height: 26px; place-items: center; border: 1px solid var(--color-border-strong); border-radius: 7px; color: var(--color-text); font-size: 14px; flex-shrink: 0; }
-.board-select { width: 148px; flex-shrink: 0; }.canvas-name { width: 160px; min-width: 60px; background: transparent; color: var(--color-text); border: 0; border-bottom: 1px solid transparent; padding: 4px 6px; font-size: 13px; font-weight: 500; transition: border-color 0.15s; }.canvas-name:hover, .canvas-name:focus { border-bottom-color: var(--color-border); outline: none; }
-.save-state { white-space: nowrap; font-size: 11px; color: var(--color-muted); }
-.toolbar-spacer { flex: 1; }
-.canvas-workspace { position: relative; flex: 1; min-height: 0; container-type: inline-size; }
+.canvas-page { position: relative; height: 100vh; background: transparent; color: var(--color-text); }
+.canvas-topbar { position: absolute; top: 16px; left: 16px; z-index: 20; display: flex; align-items: center; gap: 8px; }
+.canvas-exit { display: grid; width: 36px; height: 36px; place-items: center; border: 1px solid var(--color-border); border-radius: 12px; background: color-mix(in srgb, var(--color-surface-base) 84%, transparent); color: var(--color-muted); backdrop-filter: blur(18px); cursor: pointer; transition: color .2s, border-color .2s, background .2s; }
+.canvas-exit:hover { border-color: var(--color-border-strong); background: var(--color-surface); color: var(--color-text); }
+.board-select { width: 168px; flex-shrink: 0; }
+.board-select :deep(.el-select__wrapper) { min-height: 36px; padding: 0 12px; border-radius: 999px !important; background: color-mix(in srgb, var(--color-surface-base) 84%, transparent) !important; border-color: var(--color-border) !important; backdrop-filter: blur(18px); box-shadow: none !important; }
+.board-select :deep(.el-select__selected-item) { color: var(--color-text); font-size: 13px; font-weight: 600; }
+.canvas-workspace { position: relative; width: 100%; height: 100%; min-height: 0; container-type: inline-size; }
 .canvas-workspace.hand-mode :deep(.vue-flow__pane) { cursor: grab; }
 .canvas-workspace.hand-mode :deep(.vue-flow__pane:active) { cursor: grabbing; }
 .canvas-workspace.hand-mode :deep(.vue-flow__node) { pointer-events: none; }
@@ -727,15 +764,15 @@ onBeforeUnmount(() => { disposed = true; clearTimeout(saveTimer); clearInterval(
 :deep(.vue-flow__node) { background: transparent; border: 0; padding: 0; }:deep(.vue-flow__node:hover .handle-icon) { opacity: 1; }:deep(.vue-flow__edge-path) { stroke: var(--color-primary); stroke-width: 2; }:deep(.vue-flow__edge.selected .vue-flow__edge-path) { stroke: var(--color-info); stroke-width: 3; }:deep(.vue-flow__edge.edge-node-active .vue-flow__edge-path) { stroke: var(--color-primary); }:deep(.vue-flow.edges-hidden .vue-flow__edge) { opacity: 0; pointer-events: none; }:deep(.vue-flow__minimap) { border: 1px solid var(--color-border); border-radius: 10px; background: color-mix(in srgb, var(--color-surface-base) 90%, transparent); margin: 16px; overflow: hidden; }:deep(.vue-flow__minimap-mask) { fill: var(--color-surface); }:deep(.vue-flow__minimap-node) { fill: var(--color-muted); }
 .canvas-page { --el-bg-color: var(--color-surface-base); --el-bg-color-overlay: var(--color-surface-base); --el-fill-color-blank: var(--color-surface-base); --el-text-color-regular: var(--color-text); --el-text-color-primary: var(--color-text); --el-text-color-placeholder: var(--color-muted); --el-border-color: var(--color-border); --el-border-color-light: var(--color-border); --el-fill-color-light: var(--color-surface-soft); }
 :deep(.el-textarea__inner) { background: var(--color-surface-soft); color: var(--color-text); }:deep(.el-button) { background: var(--color-surface-soft); color: var(--color-text); border-color: var(--color-border); }:deep(.el-button:hover) { border-color: var(--color-border-strong); background: var(--color-surface-soft); }:deep(.el-button.is-disabled) { color: var(--color-faint); }
-@media (max-width: 1050px) { .canvas-toolbar { padding: 0 10px; gap: 6px; }.canvas-name { width: 110px; } }
-@media (max-width: 600px) { .save-state { display: none; }.canvas-name { width: 80px; }.board-select { width: 110px; }.canvas-toolbar { gap: 4px; }.canvas-controls-left { left: 12px; max-width: calc(100% - 24px); overflow-x: auto; }.canvas-controls-center { right: 12px; left: auto; transform: none; } }
+@media (max-width: 600px) { .canvas-topbar { top: 12px; left: 12px; }.board-select { width: 140px; }.canvas-controls-left { left: 12px; max-width: calc(100% - 24px); overflow-x: auto; }.canvas-controls-center { right: 12px; left: auto; transform: none; } }
 .zoom-menu { display: flex; align-items: center; gap: 4px; padding: 8px 12px 4px; }
 .zoom-menu :deep(.el-input-number) { width: 90px; }
 .zoom-suffix { font-size: 12px; color: var(--color-muted); }
 .canvas-controls :deep(.zoom-pct-btn) { min-width: 42px; width: auto; padding: 0 4px; }
 .edge-disconnect-btn { position: fixed; z-index: 1000; width: 28px; height: 28px; padding: 0; transform: translate(-50%, -50%); font-size: 16px; line-height: 1; }
-.ai-orb { position: absolute; right: 20px; bottom: 20px; width: 48px; height: 48px; border-radius: 50%; background: color-mix(in srgb, var(--color-surface-base) 92%, transparent); border: 1px solid var(--color-border); backdrop-filter: blur(16px); cursor: pointer; z-index: 10; display: grid; place-items: center; transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s, border-color 0.2s; box-shadow: 0 4px 18px rgba(0,0,0,0.28); }
-.ai-orb:hover { transform: scale(1.12); box-shadow: 0 6px 26px rgba(0,0,0,0.38); }
+.ai-orb { position: absolute; left: calc(50% + 124px); bottom: 16px; width: 34px; height: 34px; padding: 0; border-radius: 50%; background: color-mix(in srgb, var(--color-surface-base) 92%, transparent); border: 1px solid var(--color-border); backdrop-filter: blur(16px); cursor: pointer; z-index: 10; display: grid; place-items: center; transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s, border-color 0.2s; box-shadow: 0 4px 18px rgba(0,0,0,0.28); }
+.ai-orb:hover { transform: scale(1.06); box-shadow: 0 6px 26px rgba(0,0,0,0.38); }
 .ai-orb.active { border-color: var(--color-primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 28%, transparent), 0 4px 18px rgba(0,0,0,0.28); }
-.ai-orb-avatar { width: 30px; height: 30px; pointer-events: none; }
+.ai-orb-avatar { width: 24px; height: 24px; pointer-events: none; }
+@media (max-width: 600px) { .ai-orb { left: auto; right: 12px; bottom: 64px; } }
 </style>
