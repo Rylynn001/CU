@@ -3,7 +3,7 @@ defineOptions({ name: 'TextToVideo' })
 // Vue 核心
 import { ref, onMounted, onUnmounted, computed, nextTick, watch } from 'vue'
 // Element Plus UI 组件
-import { ElSelect, ElOption } from 'element-plus'
+import { ElSelect, ElOption, ElSlider } from 'element-plus'
 import { UploadFilled } from '@element-plus/icons-vue'
 // 资产选择器弹窗
 import AssetSidebar from '../components/AssetSidebar.vue'
@@ -41,6 +41,7 @@ import { generateUUID } from '../utils/uuid'
 import { getAssetFavoriteTag, loadAssetFavoriteTags, setAssetFavoriteTag } from '../composables/useAssetFavorites'
 import { ElMessage } from 'element-plus'
 import { useRouter } from 'vue-router'
+import { VIDEO_ASPECT_RATIOS, generationParameterFields, normalizeAspectRatioParameters } from '../constants/aspectRatios'
 
 const router = useRouter()
 
@@ -102,9 +103,10 @@ const apiModels = ref<ApiModel[]>([])
 const apiModel = ref('')
 const apiParameters = ref<Record<string, string | number | boolean>>({})
 const selectedApiModel = computed(() => apiModels.value.find(model => model.id === apiModel.value))
-const apiParameterFields = computed(() => selectedApiModel.value?.parameters?.fields || [])
+const apiParameterFields = computed(() => generationParameterFields('video', selectedApiModel.value?.parameters?.fields))
 const showAdvancedApi = ref(false)
 function fieldOptions(field: (typeof apiParameterFields.value)[number]) {
+  if (field.key === 'aspect_ratio') return VIDEO_ASPECT_RATIOS
   return (field.options || []).map(option => ({ value: String(option), label: String(option) }))
 }
 function resetApiParameters() {
@@ -136,15 +138,7 @@ const resolution = ref('720p')
 const duration = ref(8)
 
 // 宽高比选项列表
-const ratioOptions = [
-  { label: '16:9', value: '16:9' },
-  { label: '4:3', value: '4:3' },
-  { label: '1:1', value: '1:1' },
-  { label: '3:4', value: '3:4' },
-  { label: '9:16', value: '9:16' },
-  { label: '21:9', value: '21:9' },
-  { label: 'adaptive', value: 'adaptive' },  // 自适应：由模型根据参考图决定
-]
+const ratioOptions = VIDEO_ASPECT_RATIOS
 
 // 分辨率选项列表
 const resolutionOptions = [
@@ -397,7 +391,7 @@ async function generateFromEdit() {
     id: generateUUID(), createdAt: Date.now(),
     prompt: recordEditorPrompt.value, modelName: model.name,
     modelId: Number(apiModel.value) || undefined,
-    ratio: String(apiParameters.value.ratio ?? ratio.value),
+    ratio: String(apiParameters.value.aspect_ratio ?? ratio.value),
     resolution: String(apiParameters.value.resolution ?? resolution.value),
     duration: Number(apiParameters.value.duration ?? duration.value),
     status: 'generating', mode: 'img2video',
@@ -478,7 +472,7 @@ async function handleGenerate() {
     const record: VideoRecord = {
       id: generateUUID(), createdAt: Date.now(),
       prompt: prompt.value, modelId: Number(apiModel.value) || undefined, modelName,
-      ratio: String(apiParameters.value.ratio ?? ratio.value),
+      ratio: String(apiParameters.value.aspect_ratio ?? ratio.value),
       resolution: String(apiParameters.value.resolution ?? resolution.value),
       duration: Number(apiParameters.value.duration ?? duration.value),
       status: 'generating', mode: activeTab.value,
@@ -731,11 +725,11 @@ function handleReuseParams(record: any, fromStorage = false) {
   if (record.payload) {
     const p = record.payload
     if (p.parameters && typeof p.parameters === 'object') {
-      apiParameters.value = { ...apiParameters.value, ...p.parameters }
+      apiParameters.value = { ...apiParameters.value, ...normalizeAspectRatioParameters('video', p.parameters) }
     } else {
-      if (p.ratio) ratio.value = p.ratio
-      if (p.resolution) resolution.value = p.resolution
-      if (p.duration) duration.value = p.duration
+      if (p.aspect_ratio || p.ratio) apiParameters.value.aspect_ratio = (p.aspect_ratio || p.ratio) === 'adaptive' ? 'auto' : (p.aspect_ratio || p.ratio)
+      if (p.resolution) apiParameters.value.resolution = p.resolution
+      if (p.duration) apiParameters.value.duration = p.duration
     }
   }
 
@@ -818,16 +812,18 @@ onUnmounted(() => {
                 <span class="parameter-panel-kicker">MODEL CONTROLS</span>
                 <strong>生成参数</strong>
               </div>
-              <small>{{ selectedApiModel?.name || '选择模型' }}</small>
+              <small>{{ selectedApiModel?.description || selectedApiModel?.name || '选择模型' }}</small>
             </div>
             <div class="api-parameter-list">
               <div v-for="field in apiParameterFields.slice(0, 3)" :key="field.key" class="api-parameter">
-                <span class="parameter-label">{{ field.label }}</span>
+                <span class="parameter-label">{{ field.label }}<span v-if="field.key === 'duration' || field.type === 'slider'" class="duration-value">{{ apiParameters[field.key] }}{{ field.key === 'duration' ? ' 秒' : '' }}</span></span>
+                <ElSlider v-if="field.key === 'duration' || field.type === 'slider'" :model-value="Number(apiParameters[field.key] ?? field.default ?? field.min ?? 1)" :min="field.min ?? 1" :max="field.max ?? 60" :step="field.step ?? 1" :show-tooltip="false" :aria-label="field.label" class="parameter-control" @update:model-value="apiParameters[field.key] = Number($event)" />
                 <SegmentedControl
-                  v-if="field.type === 'select' && (field.options?.length || 0) <= 5"
+                  v-else-if="field.type === 'select' && (field.key === 'aspect_ratio' || (field.options?.length || 0) <= 5)"
                   :model-value="String(apiParameters[field.key] ?? '')"
                   :options="fieldOptions(field)"
                   :label="field.label"
+                  :show-ratio-shapes="field.key === 'aspect_ratio'"
                   class="parameter-control"
                   @update:model-value="apiParameters[field.key] = $event"
                 />
@@ -847,12 +843,14 @@ onUnmounted(() => {
               </CollapsibleTrigger>
               <CollapsibleContent class="advanced-api-content">
                 <div v-for="field in apiParameterFields.slice(3)" :key="field.key" class="api-parameter">
-                  <span class="parameter-label">{{ field.label }}</span>
+                  <span class="parameter-label">{{ field.label }}<span v-if="field.key === 'duration' || field.type === 'slider'" class="duration-value">{{ apiParameters[field.key] }}{{ field.key === 'duration' ? ' 秒' : '' }}</span></span>
+                  <ElSlider v-if="field.key === 'duration' || field.type === 'slider'" :model-value="Number(apiParameters[field.key] ?? field.default ?? field.min ?? 1)" :min="field.min ?? 1" :max="field.max ?? 60" :step="field.step ?? 1" :show-tooltip="false" :aria-label="field.label" class="parameter-control" @update:model-value="apiParameters[field.key] = Number($event)" />
                   <SegmentedControl
-                    v-if="field.type === 'select' && (field.options?.length || 0) <= 5"
+                    v-else-if="field.type === 'select' && (field.key === 'aspect_ratio' || (field.options?.length || 0) <= 5)"
                     :model-value="String(apiParameters[field.key] ?? '')"
                     :options="fieldOptions(field)"
                     :label="field.label"
+                    :show-ratio-shapes="field.key === 'aspect_ratio'"
                     class="parameter-control"
                     @update:model-value="apiParameters[field.key] = $event"
                   />
@@ -868,17 +866,7 @@ onUnmounted(() => {
           </div>
           <div v-if="modelSource === 'local'" class="row-item">
             <span class="row-label">比例</span>
-            <div class="filter-group">
-              <button
-                v-for="opt in ratioOptions"
-                :key="opt.value"
-                class="filter-btn"
-                :class="{ active: ratio === opt.value }"
-                @click="ratio = opt.value"
-              >
-                {{ opt.label }}
-              </button>
-            </div>
+            <SegmentedControl v-model="ratio" :options="ratioOptions" label="视频比例" :show-ratio-shapes="true" />
           </div>
 
           <div v-if="modelSource === 'local'" class="row-item">
@@ -1145,6 +1133,7 @@ onUnmounted(() => {
 
 <style scoped>
 @import '../styles/generation-page.css';
+.duration-value { display: block; color: var(--color-text); font-variant-numeric: tabular-nums; }
 
 /* ── 视频页专属样式 ── */
 

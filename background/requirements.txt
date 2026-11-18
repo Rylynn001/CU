@@ -19,6 +19,7 @@ pyjwt==2.9.0
 
 # Utilities
 python-dotenv==1.0.1
+PyYAML>=6.0.2
 apscheduler==3.10.4
 requests==2.32.3
 

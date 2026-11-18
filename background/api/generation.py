@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 
 from repositories import generation_repo
+from core.aspect_ratios import normalize_parameters, provider_parameters
 from config import settings
 from .auth import get_current_user
 
@@ -62,6 +63,8 @@ class Txt2VideoRequest(BaseModel):
     model: int
     prompt: str
     parameters: dict = Field(default_factory=dict)
+    aspect_ratio: Optional[str] = None
+    # 兼容旧客户端，新的请求统一使用 aspect_ratio。
     ratio: Optional[str] = None
     resolution: Optional[str] = None
     duration: Optional[int] = None
@@ -142,6 +145,13 @@ def validate_reference_counts(model_info: dict, image_count: int, video_count: i
         raise HTTPException(status_code=400, detail=f'模型 {model_info["name"]} 最多支持 {video_max} 个视频参考素材')
 
 
+def normalize_generation_parameters(media_type: str, parameters: dict) -> dict:
+    try:
+        return normalize_parameters(media_type, parameters)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
 async def submit_generation_task(req, user: dict, media_type: str, *, task_id: str | None = None):
     """统一校验、写历史和入队；后台计划用固定编号恢复未完成的提交。"""
     from config import get_provider_config_by_rfid
@@ -169,8 +179,14 @@ async def submit_generation_task(req, user: dict, media_type: str, *, task_id: s
     if not provider_config:
         raise HTTPException(status_code=400, detail='模型未配置供应商')
 
-    keys = ('aspect_ratio', 'quality', 'n') if media_type == 'image' else ('ratio', 'resolution', 'duration')
-    parameters = req.parameters or {key: getattr(req, key) for key in keys if getattr(req, key) is not None}
+    keys = ('aspect_ratio', 'quality', 'n') if media_type == 'image' else ('aspect_ratio', 'ratio', 'resolution', 'duration')
+    parameters = {key: getattr(req, key) for key in keys if getattr(req, key) is not None}
+    parameters.update(req.parameters or {})
+    parameters = normalize_generation_parameters(media_type, parameters)
+    try:
+        provider_parameters(media_type, model_info['provider'], model_info['name'], parameters)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
     payload = {'model': req.model, 'prompt': req.prompt, 'parameters': parameters,
                'input_asset_ids': input_asset_ids, 'user_id': user_id}
     history_id = existing['id'] if existing else generation_repo.save_history(

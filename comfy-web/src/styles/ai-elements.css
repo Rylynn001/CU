@@ -24,6 +24,11 @@
 .ai-elements [data-slot="input-group"]:focus-within { border-color: var(--color-border-strong); }
 .ai-elements button { cursor: pointer; }
 .ai-elements button:disabled { cursor: not-allowed; }
+.ai-elements [role="combobox"],
+.ai-elements [role="option"],
+.ai-elements [role^="menuitem"] { cursor: pointer; }
+.ai-elements [aria-disabled="true"],
+.ai-elements [data-disabled] { cursor: not-allowed; }
 .ai-elements [data-slot="select-content"],
 .ai-elements [data-slot="hover-card-content"],
 .ai-elements [data-slot="dialog-content"] { background: var(--color-surface-base); color: var(--color-text); border-color: var(--color-border); }

@@ -29,7 +29,7 @@ export interface CanvasNodeData {
   n?: number
   handles: CanvasHandle[]
   outputs: Record<string, { dataType: MediaType; value: { assetIds: number[] } | string }>
-  task?: { taskId: string; historyId: number; state: 'pending' | 'completed' | 'failed'; error?: string }
+  task?: { taskId: string; historyId: number; state: 'pending' | 'completed' | 'failed'; error?: string; warning?: string }
 }
 export interface CanvasNode {
   id: string
@@ -49,6 +49,15 @@ export interface CanvasEdge {
 }
 export interface CanvasAsset { id: number; url: string; type: 'image' | 'video' }
 export interface CanvasReference extends CanvasAsset { label: string; mention: string; referenceId: number }
+export interface PromptOptimizationTarget {
+  canvasId: number
+  nodeId: string
+  label: string
+  prompt: string
+  mediaType: 'image' | 'video'
+  parameters: Record<string, CanvasParameterValue>
+  references: CanvasReference[]
+}
 
 export function canvasReferences(nodes: CanvasNode[], assets: Record<number, CanvasAsset>, edges?: CanvasEdge[], targetId?: string): CanvasReference[] {
   const seen = new Set<number>()
@@ -136,7 +145,9 @@ export interface CanvasActions {
   setModel: (id: string, model: string) => void
   run: (id: string) => void
   pick: (id: string) => void
+  preview: (asset: CanvasAsset) => void
   duplicate: (id: string) => void
   remove: (id: string) => void
+  optimizePrompt: (id: string, skillId?: string) => Promise<boolean>
 }
 export const canvasActionsKey: InjectionKey<CanvasActions> = Symbol('canvasActions')

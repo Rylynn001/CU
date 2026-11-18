@@ -1,12 +1,18 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import SideNav from './components/SideNav.vue'
 import PrismBackground from './components/PrismBackground.vue'
 import LightRaysBackground from './components/LightRaysBackground.vue'
 import DotFieldBackground from './components/DotFieldBackground.vue'
+import { startCanvasTaskMonitor, stopCanvasTaskMonitor } from './services/canvasTaskMonitor'
 
 const route = useRoute()
+watch(() => route.path, path => {
+  if (path === '/login' || !localStorage.getItem('token')) stopCanvasTaskMonitor()
+  else startCanvasTaskMonitor()
+}, { immediate: true })
+onBeforeUnmount(stopCanvasTaskMonitor)
 const keepPrismBackground = computed(() => route.path === '/login' || route.path === '/')
 const hideSideNav = computed(() => route.path === '/node-panel' || route.path === '/canvas')
 type BusinessTheme = 'light' | 'dot' | 'black'

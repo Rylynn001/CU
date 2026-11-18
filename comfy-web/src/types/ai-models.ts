@@ -11,6 +11,7 @@ export interface AIModel {
   id: string
   name: string
   provider: string
+  contextWindow?: number | null
   tag?: string
   iconName: 'openai' | 'anthropic' | 'gemini' | 'mistral'
   badgeColor: string
@@ -28,6 +29,7 @@ export interface AttachedFile {
 
 export interface ChatSubmitData {
   prompt: string
+  skillId?: string
   model: AIModel
   useWebSearch: boolean
   attachedFile: AttachedFile | null

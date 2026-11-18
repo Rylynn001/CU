@@ -1,10 +1,14 @@
 <script setup lang="ts">
 import { computed, inject, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { Handle, Position, useVueFlow, type NodeProps } from '@vue-flow/core'
-import { CircleDashed, CircleDot, FileText, Image, Video, Loader2 } from '@lucide/vue'
+import { CircleDashed, CircleDot, FileText, Image, Video, Loader2, Play } from '@lucide/vue'
 import { ElButton, ElInput, ElSelect, ElOption, ElInputNumber, ElSwitch, ElCard, ElDropdown, ElDropdownMenu, ElDropdownItem, ElSlider } from 'element-plus'
-import { canvasActionsKey, canvasReferences, type CanvasNodeData } from '../services/canvasGraph'
+import { canvasActionsKey, canvasReferences, type CanvasAsset, type CanvasNodeData } from '../services/canvasGraph'
 import mediaReferenceInput from './mediaReferenceInput.vue'
+import ChatSkillPicker from './ChatSkillPicker.vue'
+import SegmentedControl from './SegmentedControl.vue'
+import { IMAGE_ASPECT_RATIOS, VIDEO_ASPECT_RATIOS } from '@/constants/aspectRatios'
+import { getChatSkills, type ChatSkill } from '@/api/workflow'
 
 const props = defineProps<NodeProps<CanvasNodeData>>()
 const actions = inject(canvasActionsKey)!
@@ -17,10 +21,33 @@ const isText = computed(() => props.type === 'remote-textNode')
 const busy = computed(() => props.data.task?.state === 'pending' || actions.isSubmitting(props.id))
 const models = computed(() => isVideo.value ? actions.videoModels.value : actions.imageModels.value)
 const selectedModel = computed(() => models.value.find(model => String(model.id) === String(props.data.model)))
-const parameterFields = computed(() => selectedModel.value?.parameters?.fields ?? [])
-const media = computed(() => Object.values(props.data.outputs).flatMap(output =>
+const parameterFields = computed(() => (selectedModel.value?.parameters?.fields ?? []).filter(field => !['aspect_ratio', 'ratio', 'size'].includes(field.key)))
+const aspectRatios = computed(() => isVideo.value ? VIDEO_ASPECT_RATIOS : IMAGE_ASPECT_RATIOS)
+const aspectRatio = computed(() => String(parameterValue('aspect_ratio', isVideo.value ? '16:9' : '1:1')))
+const skills = ref<ChatSkill[]>([])
+const selectedSkillId = ref('')
+const skillsLoading = ref(false)
+const skillsError = ref('')
+async function loadSkills() {
+  if (skillsLoading.value) return
+  skillsLoading.value = true
+  skillsError.value = ''
+  try {
+    skills.value = await getChatSkills()
+    if (!skills.value.some(skill => skill.id === selectedSkillId.value)) selectedSkillId.value = ''
+  } catch (error) { skillsError.value = error instanceof Error ? error.message : '技能列表加载失败' }
+  finally { skillsLoading.value = false }
+}
+async function optimizePrompt() {
+  if (await actions.optimizePrompt(props.id, selectedSkillId.value || undefined)) selectedSkillId.value = ''
+}
+const media = computed<CanvasAsset[]>(() => Object.values(props.data.outputs).flatMap(output =>
   typeof output.value === 'string' ? [] : output.value.assetIds.map(id => actions.assets.value[id] ?? { id, url: '', type: isVideo.value ? 'video' : 'image' })
 ))
+
+function previewMedia(asset = media.value.find(item => item.url)) {
+  if (asset?.url) actions.preview(asset)
+}
 
 function isHandleConnected(handle: CanvasNodeData['handles'][number]) {
   return !!connectionLookup.value.get(`${props.id}-${handle.type}-${handle.id}`)?.size
@@ -140,7 +167,7 @@ function handleCommand(command: string) {
 </script>
 
 <template>
-  <article ref="nodeArticle" class="canvas-node" :class="{ selected, generating: busy }" :style="{ width: data.width ? `${data.width}px` : undefined, height: data.height ? `${data.height}px` : undefined }">
+  <article ref="nodeArticle" class="canvas-node" :class="{ selected, generating: busy }" :style="{ width: data.width ? `${data.width}px` : undefined, height: data.height ? `${data.height}px` : undefined }" @dblclick.stop="previewMedia()">
     <header class="node-header">
       <component :is="isText ? FileText : isVideo ? Video : Image" class="node-kind-icon" :size="14" aria-hidden="true" />
       <input
@@ -179,10 +206,15 @@ function handleCommand(command: string) {
         <span>生成中…</span>
       </div>
       <ElInput v-else-if="isText" class="nodrag nowheel" type="textarea" :rows="5" :model-value="data.prompt" placeholder="输入文本，连到生成节点作为提示词" @update:model-value="setText" />
-      <div v-else-if="media.length" class="node-media nowheel">
+      <div v-else-if="media.length" class="node-media">
         <template v-for="asset in media" :key="asset.id">
-          <video v-if="asset.url && asset.type === 'video'" :src="asset.url" controls preload="metadata" @loadedmetadata="refreshBounds" />
-          <img v-else-if="asset.url" :src="asset.url" alt="节点图片" draggable="false" @load="refreshBounds" />
+          <div v-if="asset.url && asset.type === 'video'" class="node-video">
+            <video :src="asset.url" muted playsinline preload="metadata" @loadedmetadata="refreshBounds" @dblclick.stop="previewMedia(asset)" />
+            <button type="button" class="node-video-play nodrag nopan" title="播放视频" aria-label="播放视频" @pointerdown.stop @mousedown.stop @click.stop="previewMedia(asset)" @dblclick.stop>
+              <Play :size="20" fill="currentColor" aria-hidden="true" />
+            </button>
+          </div>
+          <img v-else-if="asset.url" :src="asset.url" alt="节点图片" draggable="false" @load="refreshBounds" @dblclick.stop="previewMedia(asset)" />
           <div v-else class="media-missing">资产 {{ asset.id }} 暂不可用</div>
         </template>
       </div>
@@ -191,6 +223,7 @@ function handleCommand(command: string) {
         <small>{{ generating ? '连接参考素材，或直接输入描述' : '素材沿用现有资产库' }}</small>
       </div>
       <p v-if="data.task?.error" class="node-error" role="alert">{{ data.task.error }}</p>
+      <p v-if="data.task?.warning" class="node-error node-warning" role="status">{{ data.task.warning }}</p>
       <div v-if="!generating && !isText" class="nodrag node-footer">
         <ElButton size="small" @click="actions.pick(id)">选择素材</ElButton>
       </div>
@@ -230,8 +263,13 @@ function handleCommand(command: string) {
     </template>
     <section v-if="generating && selected" class="node-settings nodrag nopan nowheel" @keydown.stop @dblclick.stop>
       <mediaReferenceInput v-model="data.prompt" :items="references" :disabled="busy" />
+      <div class="prompt-tools">
+        <ChatSkillPicker v-model="selectedSkillId" :skills="skills" :loading="skillsLoading" :error="skillsError" :disabled="busy" @refresh="loadSkills" />
+        <ElButton size="small" :disabled="busy || !data.prompt.trim()" @click="optimizePrompt">优化提示词</ElButton>
+      </div>
       <div class="settings-grid">
         <label>模型<ElSelect :model-value="data.model" :disabled="busy" placeholder="选择模型" @update:model-value="setModel"><ElOption v-for="model in models" :key="model.id" :label="model.description || model.name" :value="String(model.id)" /></ElSelect></label>
+        <div class="ratio-field"><span>比例</span><SegmentedControl :model-value="aspectRatio" :options="aspectRatios" :disabled="busy" :show-ratio-shapes="true" :label="isVideo ? '视频比例' : '图片比例'" @update:model-value="setParameter('aspect_ratio', $event)" /></div>
         <template v-for="field in parameterFields" :key="field.key">
           <label v-if="field.type === 'select' && field.options?.length">{{ field.label }}<ElSelect :model-value="parameterValue(field.key, field.default)" :disabled="busy" @update:model-value="setParameter(field.key, $event)"><ElOption v-for="option in field.options" :key="String(option)" :label="String(option)" :value="option" /></ElSelect></label>
           <label v-else-if="field.type === 'slider' || field.type === 'number'" class="slider-field">
@@ -338,10 +376,29 @@ function handleCommand(command: string) {
 .node-empty small { color: var(--color-faint); font-size: 11px; }
 .node-media { max-height: 360px; overflow: auto; display: grid; gap: 6px; }
 .node-media img, .node-media video { display: block; width: 100%; max-height: 300px; object-fit: contain; border-radius: 6px; }
-.node-media img { pointer-events: none; }
+.node-video { position: relative; }
+.node-video-play {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid rgba(var(--color-white-rgb), 0.7);
+  border-radius: 50%;
+  background: rgba(var(--color-black-rgb), 0.55);
+  color: var(--color-white);
+  cursor: pointer;
+}
+.node-video-play:hover { background: rgba(var(--color-black-rgb), 0.75); }
+.node-video-play:focus-visible { outline: 2px solid var(--color-white); outline-offset: 3px; }
 .media-missing { padding: 30px 10px; color: var(--color-muted); font-size: 12px; }
 .node-footer { padding-top: 6px; display: flex; justify-content: flex-end; }
 .node-error { color: var(--color-danger); font-size: 12px; padding: 8px; overflow-wrap: anywhere; }
+.node-warning { color: var(--color-warning); }
 
 .resize-corner {
   position: absolute;
@@ -364,6 +421,8 @@ function handleCommand(command: string) {
 
 .node-settings { position: absolute; top: calc(100% + 12px); left: 50%; transform: translateX(-50%); width: 420px; max-width: 80vw; padding: 12px; display: grid; gap: 12px; border: 1px solid var(--color-border); border-radius: 12px; background: color-mix(in srgb, var(--color-surface-base) 94%, transparent); backdrop-filter: blur(18px); box-shadow: var(--shadow-soft); z-index: 10; }
 .settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.ratio-field { grid-column: span 2; display: grid; gap: 5px; color: var(--color-muted); font-size: 11px; }
+.prompt-tools { display: flex; justify-content: flex-end; align-items: center; gap: 6px; margin-top: -8px; }
 .settings-grid label { min-width: 0; display: grid; gap: 6px; font-size: 11px; color: var(--color-muted); }
 .settings-grid .switch-field { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 32px; }
 .settings-grid :deep(.el-select), .settings-grid :deep(.el-input-number) { width: 100%; }

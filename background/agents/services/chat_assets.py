@@ -2,6 +2,7 @@
 import base64
 import io
 import json
+import re
 import subprocess
 from pathlib import Path
 
@@ -45,12 +46,19 @@ def _image_part(data: bytes) -> dict:
     return {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{encoded}"}}
 
 
-def build_asset_content(message: str, assets: list[dict]) -> str | list[dict]:
+def build_asset_content(message: str, assets: list[dict], asset_mentions: dict | None = None) -> str | list[dict]:
     if not assets:
         return message
     content = [{"type": "text", "text": message}]
     for asset in assets:
         mention = f"@{'视频' if asset['asset_type'] == 'video' else '图'}{asset['id']}"
+        # JSON 元数据恢复后键为字符串；旧消息没有映射时继续沿用资产编号。
+        mapped = (asset_mentions or {}).get(asset['id']) or (asset_mentions or {}).get(str(asset['id']))
+        if mapped:
+            pattern = r"@视频[1-9]\d*" if asset['asset_type'] == 'video' else r"@(?:图片|图)[1-9]\d*"
+            if not re.fullmatch(pattern, mapped):
+                raise HTTPException(status_code=400, detail="素材引用编号格式错误")
+            mention = mapped
         label = f"{mention} 对应参考资产编号：{asset['id']}，类型：{asset['asset_type']}"
         content.append({"type": "text", "text": label})
         if asset["asset_type"] == "picture":

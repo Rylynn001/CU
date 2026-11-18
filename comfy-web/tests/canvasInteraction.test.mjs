@@ -5,6 +5,7 @@ import { parse } from '@vue/compiler-sfc'
 import ts from 'typescript'
 import { computed, markRaw, reactive, ref } from 'vue'
 import { makeNode, nodeKinds, validConnection } from '../src/services/canvasGraph.ts'
+import { normalizeAspectRatioParameters } from '../src/constants/aspectRatios.ts'
 
 // 直接执行组件的脚本，隔离接口和挂载副作用，避免把处理逻辑复制到测试里。
 function loadSetup(path, bindings, names) {
@@ -24,10 +25,12 @@ function canvasSetup() {
   } }
   const noop = () => {}
   const setup = loadSetup('../src/views/Canvas.vue', {
-    computed, markRaw, reactive, ref, makeNode, nodeKinds, validConnection, window,
+    computed, markRaw, reactive, ref, makeNode, nodeKinds, validConnection, window, normalizeAspectRatioParameters,
     useVueFlow: () => flow, CanvasNodeComponent: {}, canvasActionsKey: Symbol(),
+    useRouter: () => ({}),
+    subscribeCanvasTasks: () => () => {},
     watch: noop, provide: noop, onMounted: noop, onBeforeUnmount: noop, onBeforeRouteLeave: noop,
-  }, ['connectStart', 'connectEnd', 'connect', 'paneClick', 'connectionCandidates', 'addConnectedNode', 'connectionMenu', 'pendingConnection', 'nodes', 'edges', 'ready'])
+  }, ['connectStart', 'connectEnd', 'connect', 'paneClick', 'connectionCandidates', 'addConnectedNode', 'connectionMenu', 'pendingConnection', 'nodes', 'edges', 'ready', 'syncModelParameters'])
   setup.ready.value = true
   setup.nodes.value.push(makeNode('remote-imageGenerationNode', { x: 0, y: 0 }))
   return { ...setup, flow, window }
@@ -63,10 +66,20 @@ test('成功连接、无效位置松手及取消触摸均清理起始状态，�
   }
 })
 
+test('画布历史和模型切换保留所选比例，清理旧尺寸字段', () => {
+  const canvas = canvasSetup()
+  const node = canvas.nodes.value[0]
+  node.data.parameters = { size: '1536x1024', quality: 'high' }
+  canvas.syncModelParameters(node, { parameters: { fields: [{ key: 'aspect_ratio', default: '1:1' }, { key: 'quality', default: 'medium' }] } })
+  assert.deepEqual(node.data.parameters, { aspect_ratio: '3:2', quality: 'high' })
+  canvas.syncModelParameters(node, { parameters: { fields: [{ key: 'size', default: 'auto' }, { key: 'image_size', default: '2K' }] } })
+  assert.deepEqual(node.data.parameters, { aspect_ratio: '3:2', image_size: '2K' })
+})
+
 test('端口跟随光标，缩放后位移一致，限制最大偏移并在离开时复位', () => {
   const props = { data: makeNode('remote-imageGenerationNode', { x: 0, y: 0 }).data }
   const { moveHandle, resetHandle } = loadSetup('../src/components/CanvasNode.vue', {
-    computed, defineProps: () => props, inject: () => ({}), canvasActionsKey: Symbol(),
+    computed, ref, defineProps: () => props, inject: () => ({}), canvasActionsKey: Symbol(),
     useVueFlow: () => ({ viewport: ref({ zoom: 1 }) }), watch: () => {}, onBeforeUnmount: () => {},
   }, ['moveHandle', 'resetHandle'])
   const values = new Map()

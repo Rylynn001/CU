@@ -60,6 +60,11 @@ class WorkflowRepository:
     def add_conversation(session_id: int, role: str, message: str, asset_ids: Optional[List[int]] = None,
                          metadata: Optional[Dict[str, Any]] = None) -> int:
         """写入一条用户或 Agent 消息并返回消息编号。"""
+        if metadata and asset_ids:
+            return execute_query(
+                "INSERT INTO workflow_conversations (session_id, role, message, asset_ids, metadata) VALUES (%s, %s, %s, %s, %s)",
+                (session_id, role, message, json.dumps(asset_ids), json.dumps(metadata, ensure_ascii=False)),
+            )
         if metadata:
             return execute_query(
                 "INSERT INTO workflow_conversations (session_id, role, message, metadata) VALUES (%s, %s, %s, %s)",

@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 async def advance_plan(plan_id):
+    # 调度器周期执行：无依赖步骤可立即提交；依赖步骤等上游 history 完成后再提交。
     with generation_plan_repo.plan_lock(plan_id) as acquired:
         if not acquired:
             return

@@ -1,10 +1,18 @@
 <script setup lang="ts">
 defineProps<{
   modelValue: string
-  options: ReadonlyArray<{ value: string; label: string }>
+  options: ReadonlyArray<{ value: string; label: string; width?: number; height?: number }>
   label: string
   disabled?: boolean
+  showRatioShapes?: boolean
 }>()
+
+function ratioShapeStyle(option: { width?: number; height?: number }) {
+  const width = option.width || 4
+  const height = option.height || 3
+  const scale = Math.min(20 / width, 16 / height)
+  return { width: `${width * scale}px`, height: `${height * scale}px` }
+}
 
 const emit = defineEmits<{
   'update:modelValue': [value: string]
@@ -12,16 +20,19 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <div class="segmented-control" role="group" :aria-label="label">
+  <div class="segmented-control" :class="{ 'ratio-control': showRatioShapes }" role="group" :aria-label="label">
     <button
       v-for="option in options"
       :key="option.value"
       type="button"
-      :class="{ active: modelValue === option.value }"
+      :class="{ active: modelValue === option.value, 'ratio-option': showRatioShapes }"
       :aria-pressed="modelValue === option.value"
       :disabled="disabled"
       @click="emit('update:modelValue', option.value)"
-    >{{ option.label }}</button>
+    >
+      <span v-if="showRatioShapes" class="ratio-shape" :class="{ automatic: option.value === 'auto' }" :style="ratioShapeStyle(option)" aria-hidden="true" />
+      {{ option.label }}
+    </button>
   </div>
 </template>
 
@@ -50,6 +61,29 @@ const emit = defineEmits<{
   cursor: pointer;
   transition: background 0.2s, color 0.2s;
 }
+
+.ratio-control { grid-template-columns: repeat(auto-fit, minmax(62px, 1fr)); }
+
+.segmented-control button.ratio-option {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 34px;
+  color: var(--color-text-soft);
+}
+
+.segmented-control button.ratio-option:hover:not(:disabled) { background: rgba(var(--color-white-rgb), 0.08); }
+
+.ratio-shape {
+  display: inline-block;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  border: 1px solid currentColor;
+  border-radius: 2px;
+}
+
+.ratio-shape.automatic { border-style: dashed; }
 
 .segmented-control button.active {
   background: rgba(var(--color-white-rgb), 0.1);

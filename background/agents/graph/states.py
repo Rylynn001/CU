@@ -12,6 +12,8 @@ class ConversationState(TypedDict):
     messages: Annotated[List[Dict[str, str]], add_messages]  # LangGraph 消息管理
     intent: Optional[str]  # txt2img, txt2video, chat
     generation_request: Optional[Dict[str, Any]]  # 生成请求参数
+    generation_draft: Optional[Dict[str, Any]]  # 尚未完成提示词处理的计划草稿，等待用户补充或重试
+    asset_ids: List[int]  # 本轮新补充的真实素材编号，只用于恢复暂停的步骤
     enable_prompt_optimization: bool  # 是否启用提示词优化
     current_tool: Optional[str]  # 当前执行的工具
     tool_result: Optional[Dict]  # 工具执行结果
@@ -24,8 +26,11 @@ class ConversationState(TypedDict):
 class PromptEnhanceState(TypedDict):
     """提示词优化子图状态"""
     user_prompt: str  # 原始提示词
+    messages: List[Any]  # 完整对话，保留技能追问和用户确认
     intent: str  # txt2img/txt2video
     enhanced_prompt: Optional[str]  # 增强后的提示词
+    clarification: Optional[Dict[str, Any]]  # 真正缺少创作内容/参考素材时的结构化追问
+    error: Optional[str]  # 优化失败时中止生成
     seedance_version: Optional[str]  # Seedance 版本(2.0/2.5)
     seedance_path: Optional[str]  # Seedance 路径(A/B/C/D)
     instruction: Optional[str]  # 生成的指令(中间结果)

@@ -13,6 +13,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent))
 from config import settings
 from workers import openai_worker, gemini_worker, ark_worker
 from agents.services.plan_scheduler import plan_scheduler_loop
+from api.tasks import video_task_polling_loop
 
 logging.basicConfig(
     level=logging.INFO,
@@ -82,6 +83,7 @@ async def main():
 
     tasks = [asyncio.create_task(worker_loop(i + 1)) for i in range(num_workers)]
     tasks.append(asyncio.create_task(plan_scheduler_loop()))
+    tasks.append(asyncio.create_task(video_task_polling_loop()))
 
     logger.info(f'{num_workers} 个异步 worker 已启动，等待任务...')
     try:

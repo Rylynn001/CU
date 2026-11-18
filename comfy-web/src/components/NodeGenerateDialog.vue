@@ -4,6 +4,8 @@ import { ElMessage } from 'element-plus'
 import { getApiModels, pollTaskUntilDone, type ApiModel } from '../api/apiService'
 import { submitImageGeneration, type InputImage } from '../services/imageGenerationService'
 import { submitVideoGeneration } from '../services/videoGenerationService'
+import SegmentedControl from './SegmentedControl.vue'
+import { IMAGE_ASPECT_RATIOS, VIDEO_ASPECT_RATIOS } from '../constants/aspectRatios'
 
 // 供参考图勾选用的资产（来自上一个面板）
 export interface SourceAsset {
@@ -39,14 +41,14 @@ const generating = ref(false)
 const aspectRatio = ref('1:1')
 const quality = ref('high')
 const batchSize = ref(1)
-const RATIOS = ['1:1', '16:9', '9:16', '4:3', '3:4']
+const RATIOS = IMAGE_ASPECT_RATIOS
 const QUALITIES = ['low', 'medium', 'high']
 
 // 视频参数
 const ratio = ref('16:9')
 const resolution = ref('720p')
 const duration = ref(8)
-const VIDEO_RATIOS = ['16:9', '4:3', '1:1', '3:4', '9:16']
+const VIDEO_RATIOS = VIDEO_ASPECT_RATIOS
 const RESOLUTIONS = ['480p', '720p', '1080p']
 
 // 只有图片资产可作参考图
@@ -93,14 +95,14 @@ async function handleGenerate() {
       const result = await submitImageGeneration({
         modelId: Number(modelId.value),
         prompt: prompt.value,
-        aspect_ratio: aspectRatio.value,
-        quality: quality.value,
-        batchSize: batchSize.value,
+        parameters: { aspect_ratio: aspectRatio.value, quality: quality.value, n: batchSize.value },
         img2img: refs.length > 0,
         inputImages,
       })
       if (result.taskId) {
         const done = await pollTaskUntilDone(result.taskId, 'image')
+        const warning = done.images.find(item => item.warning)?.warning
+        if (warning) ElMessage.warning(warning)
         const first = done.images?.[0] as { url: string; asset_id?: number } | undefined
         if (first?.asset_id) asset = { id: first.asset_id, url: first.url, isVideo: false }
       } else if (result.images?.length) {
@@ -112,14 +114,14 @@ async function handleGenerate() {
       const r = await submitVideoGeneration({
         modelId: modelId.value,
         prompt: prompt.value,
-        ratio: ratio.value,
-        resolution: resolution.value,
-        duration: duration.value,
+        parameters: { aspect_ratio: ratio.value, resolution: resolution.value, duration: duration.value },
         inputAssetIds: refs.length > 0 ? refs.map((a) => a.id) : undefined,
       })
       const taskId = r.taskId
       if (taskId) {
         const done = await pollTaskUntilDone(taskId, 'video')
+        const warning = done.images.find(item => item.warning)?.warning
+        if (warning) ElMessage.warning(warning)
         const first = done.images?.[0] as { url: string; asset_id?: number } | undefined
         if (first?.asset_id) asset = { id: first.asset_id, url: first.url, isVideo: true }
       }
@@ -169,9 +171,7 @@ async function handleGenerate() {
             <template v-if="mode === 'image'">
               <div class="ngd-field">
                 <label class="ngd-label">比例</label>
-                <div class="ngd-chips">
-                  <button v-for="r in RATIOS" :key="r" class="ngd-chip" :class="{ active: aspectRatio === r }" @click="aspectRatio = r">{{ r }}</button>
-                </div>
+                <SegmentedControl v-model="aspectRatio" :options="RATIOS" label="图片比例" :show-ratio-shapes="true" :disabled="generating" />
               </div>
               <div class="ngd-field">
                 <label class="ngd-label">清晰度</label>
@@ -193,9 +193,7 @@ async function handleGenerate() {
             <template v-else>
               <div class="ngd-field">
                 <label class="ngd-label">比例</label>
-                <div class="ngd-chips">
-                  <button v-for="r in VIDEO_RATIOS" :key="r" class="ngd-chip" :class="{ active: ratio === r }" @click="ratio = r">{{ r }}</button>
-                </div>
+                <SegmentedControl v-model="ratio" :options="VIDEO_RATIOS" label="视频比例" :show-ratio-shapes="true" :disabled="generating" />
               </div>
               <div class="ngd-field">
                 <label class="ngd-label">分辨率</label>

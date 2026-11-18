@@ -3,7 +3,9 @@ from langgraph.graph import END
 
 
 def should_optimize_prompt(state):
-    return 'prompt_enhance' if state.get('enable_prompt_optimization') and state.get('intent') == 'txt2video' else 'direct_execute'
+    return 'prompt_enhance' if state.get('enable_prompt_optimization') and state.get('intent') in {
+        'txt2img', 'txt2video', 'generation_plan'
+    } else 'direct_execute'
 
 
 def should_continue(state):

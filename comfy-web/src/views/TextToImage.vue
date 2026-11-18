@@ -21,7 +21,6 @@ import MediaViewer from '../components/MediaViewer.vue'
 import RecordContextMenu from '../components/RecordContextMenu.vue'
 import MentionTextarea from '../components/MentionTextarea.vue'
 import SegmentedControl from '../components/SegmentedControl.vue'
-import PromptComposerButton from '../components/PromptComposerButton.vue'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../components/ui/collapsible'
 // 本地 ComfyUI 接口：获取模型列表、采样器信息、提交任务、上传图片
 // import { getModels, getKSamplerInfo, submitPrompt, uploadImage, type PromptParams } from '../api/comfyui'
@@ -41,6 +40,7 @@ import { useImageSizeControl } from '../composables/useImageSizeControl'
 import { useRecordEditor } from '../composables/useRecordEditor'
 // 跨页面定位历史记录：资产库右键"定位历史记录"后，在这里消费并滚动+高亮
 import { useLocateHistory } from '../composables/useLocateHistory'
+import { IMAGE_ASPECT_RATIOS, generationParameterFields, normalizeAspectRatioParameters } from '../constants/aspectRatios'
 // 图片生成服务：封装了上传参考图 + 调用 API 的完整流程
 import { submitImageGeneration, type InputImage } from '../services/imageGenerationService'
 // 工具函数：获取当前登录用户 ID
@@ -171,23 +171,11 @@ const apiModel = ref('')
 // API 模型参数由 api_models.parameters 定义，页面只负责按定义渲染。
 const apiParameters = ref<Record<string, string | number | boolean>>({})
 const selectedApiModel = computed(() => apiModels.value.find(model => model.id === apiModel.value))
-const apiParameterFields = computed(() => {
-  const fields = [...(selectedApiModel.value?.parameters?.fields || [])]
-  const modelName = selectedApiModel.value?.name.toLowerCase() || ''
-  if (modelName.startsWith('gpt-image') && !fields.some(field => field.key === 'aspect_ratio')) {
-    const sizeField = fields.find(field => field.key === 'size')
-    const defaultSize = String(sizeField?.default || 'auto')
-    const defaultRatio = { '1024x1024': '1:1', '1536x1024': '16:9', '1024x1536': '9:16' }[defaultSize] || 'auto'
-    return [
-      { key: 'aspect_ratio', label: '比例', type: 'select' as const, default: defaultRatio, options: ['1:1', '16:9', '9:16', 'auto'] },
-      ...fields.filter(field => field.key !== 'size'),
-    ]
-  }
-  return fields
-})
+const apiParameterFields = computed(() => generationParameterFields('image', selectedApiModel.value?.parameters?.fields))
 const maxReferenceImages = computed(() => selectedApiModel.value?.parameters?.references?.images?.max ?? 12)
 const showAdvancedApi = ref(false)
 function fieldOptions(field: (typeof apiParameterFields.value)[number]) {
+  if (field.key === 'aspect_ratio') return IMAGE_ASPECT_RATIOS
   return (field.options || []).map(option => ({ value: String(option), label: String(option) }))
 }
 function resetApiParameters() {
@@ -820,12 +808,7 @@ function handleReuseParams(record: any, fromStorage = false) {
     }
     // 清晰度
     if (p.parameters && typeof p.parameters === 'object') {
-      apiParameters.value = { ...apiParameters.value, ...p.parameters }
-      if (apiParameterFields.value.some(field => field.key === 'aspect_ratio') && !apiParameters.value.aspect_ratio && apiParameters.value.size) {
-        const sizeToRatio: Record<string, string> = { '1024x1024': '1:1', '1536x1024': '16:9', '1024x1536': '9:16' }
-        apiParameters.value.aspect_ratio = sizeToRatio[String(apiParameters.value.size)] || 'auto'
-        delete apiParameters.value.size
-      }
+      apiParameters.value = { ...apiParameters.value, ...normalizeAspectRatioParameters('image', p.parameters) }
     } else {
       if (p.aspect_ratio) apiParameters.value.aspect_ratio = p.aspect_ratio
       if (p.quality) apiParameters.value.quality = p.quality
@@ -1025,10 +1008,11 @@ onUnmounted(() => {
               <div v-for="field in apiParameterFields.slice(0, 3)" :key="field.key" class="api-parameter">
                 <span class="parameter-label">{{ field.label }}</span>
                 <SegmentedControl
-                  v-if="field.type === 'select' && (field.options?.length || 0) <= 5"
+                  v-if="field.type === 'select' && (field.key === 'aspect_ratio' || (field.options?.length || 0) <= 5)"
                   :model-value="String(apiParameters[field.key] ?? '')"
                   :options="fieldOptions(field)"
                   :label="field.label"
+                  :show-ratio-shapes="field.key === 'aspect_ratio'"
                   class="parameter-control"
                   @update:model-value="apiParameters[field.key] = $event"
                 />
@@ -1050,10 +1034,11 @@ onUnmounted(() => {
                 <div v-for="field in apiParameterFields.slice(3)" :key="field.key" class="api-parameter">
                   <span class="parameter-label">{{ field.label }}</span>
                   <SegmentedControl
-                    v-if="field.type === 'select' && (field.options?.length || 0) <= 5"
+                    v-if="field.type === 'select' && (field.key === 'aspect_ratio' || (field.options?.length || 0) <= 5)"
                     :model-value="String(apiParameters[field.key] ?? '')"
                     :options="fieldOptions(field)"
                     :label="field.label"
+                    :show-ratio-shapes="field.key === 'aspect_ratio'"
                     class="parameter-control"
                     @update:model-value="apiParameters[field.key] = $event"
                   />
@@ -1184,9 +1169,6 @@ onUnmounted(() => {
             <span class="btn-glow" />
             <span class="btn-label">{{ justSubmitted ? '已提交 ✓' : generating ? '生成中...' : '开始生成' }}</span>
           </button>
-          <div class="composer-button-row">
-            <PromptComposerButton />
-          </div>
         </div>
       </aside>
 
@@ -1585,13 +1567,6 @@ onUnmounted(() => {
 .icon-btn:hover { background: rgba(var(--color-white-rgb), 0.2); color: var(--color-white); }
 
 .full-width { width: 100%; }
-
-.composer-button-row {
-  display: flex;
-  justify-content: center;
-  height: 40px;
-  margin-top: -4px;
-}
 
 /* 多图预览 */
 .multi-preview-wrap { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }

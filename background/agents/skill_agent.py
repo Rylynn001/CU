@@ -8,6 +8,7 @@ import subprocess
 from typing import Dict, List, Any, Optional
 from pathlib import Path
 import logging
+import yaml
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +19,7 @@ class SkillManager:
         """初始化 Skill 管理器
 
         Args:
-            skills_dir: Skills 存放目录，默认为 ~/.claude/skills
+            skills_dir: Skills 存放目录，默认为当前模块下的 skills 目录
         """
         if skills_dir is None:
             # 默认路径：background/agents/skills/
@@ -29,21 +30,24 @@ class SkillManager:
 
     def load_skills(self):
         """扫描并加载所有 Skills"""
+        self.skills.clear()
         if not self.skills_dir.exists():
             logger.warning(f"Skills 目录不存在: {self.skills_dir}")
             return
 
-        for skill_path in self.skills_dir.iterdir():
+        for skill_path in sorted(self.skills_dir.iterdir()):
             if not skill_path.is_dir():
                 continue
 
             skill_md = skill_path / "SKILL.md"
             if not skill_md.exists():
                 continue
+            if not skill_md.resolve().is_relative_to(self.skills_dir.resolve()):
+                continue
 
             try:
                 skill_info = self._parse_skill_md(skill_md)
-                self.skills[skill_info['name']] = {
+                self.skills[skill_path.name] = {
                     'path': skill_path,
                     'info': skill_info
                 }
@@ -63,17 +67,23 @@ class SkillManager:
         # 解析 frontmatter（---之间的部分）
         if content.startswith('---'):
             parts = content.split('---', 2)
+            if len(parts) < 3:
+                raise ValueError('技能说明头部缺少结束标记')
             if len(parts) >= 3:
                 frontmatter = parts[1].strip()
-                # 简单解析（实际项目可用 yaml 库）
-                info = {}
-                for line in frontmatter.split('\n'):
-                    if ':' in line:
-                        key, value = line.split(':', 1)
-                        info[key.strip()] = value.strip()
+                info = yaml.safe_load(frontmatter) or {}
+                if not isinstance(info, dict):
+                    raise ValueError('技能说明头部必须是字段映射')
+                info['name'] = str(info.get('name') or skill_md_path.parent.name)
+                info['description'] = str(info.get('description') or '')
+                info['instruction'] = parts[2].strip()
+                if not info['instruction']:
+                    raise ValueError('技能说明内容不能为空')
                 return info
 
-        return {'name': skill_md_path.parent.name, 'description': ''}
+        if not content.strip():
+            raise ValueError('技能说明内容不能为空')
+        return {'name': skill_md_path.parent.name, 'description': '', 'instruction': content.strip()}
 
     def find_skill_by_intent(self, user_message: str) -> Optional[str]:
         """根据用户意图找到最匹配的 Skill
@@ -180,12 +190,40 @@ class SkillManager:
         """
         return [
             {
-                'name': name,
+                'id': data['path'].name,
+                'name': data['info']['name'],
                 'description': data['info'].get('description', ''),
                 'path': str(data['path'])
             }
             for name, data in self.skills.items()
         ]
+
+    def get_instruction(self, skill_id: str) -> str:
+        """读取技能正文及其声明的参考资料。"""
+        if skill_id in self.skills:
+            skill = self.skills[skill_id]
+            instruction = skill['info']['instruction']
+            metadata = skill['info'].get('metadata') or {}
+            if not isinstance(metadata, dict):
+                raise ValueError(f"技能元数据配置无效: {skill_id}")
+            reference_files = metadata.get('instruction_files') or []
+            if not isinstance(reference_files, list) or not all(isinstance(item, str) for item in reference_files):
+                raise ValueError(f"技能参考文件配置无效: {skill_id}")
+
+            skill_root = skill['path'].resolve()
+            sections = [instruction]
+            for relative_path in reference_files:
+                reference_path = (skill_root / relative_path).resolve()
+                if not reference_path.is_relative_to(skill_root):
+                    raise ValueError(f"技能参考文件必须位于技能目录内: {relative_path}")
+                if not reference_path.is_file():
+                    raise ValueError(f"技能参考文件不存在: {relative_path}")
+                sections.append(
+                    f"\n\n--- 技能参考资料: {relative_path} ---\n\n"
+                    + reference_path.read_text(encoding='utf-8')
+                )
+            return ''.join(sections)
+        raise ValueError('所选技能已不存在，请刷新技能列表后重新选择')
 
 
 # 图片生成 Skill 封装（基于 claude-image）

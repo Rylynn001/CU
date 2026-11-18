@@ -275,6 +275,19 @@ async def retry_history(
     api_key = provider_config['api_key']
     base_url = provider_config['base_url']
     model_name = model_info['name']
+    if type_ in ('txt2img', 'img2img', 'txt2video', 'img2video'):
+        from core.aspect_ratios import normalize_parameters, provider_parameters
+        media_type = 'image' if type_ in ('txt2img', 'img2img') else 'video'
+        keys = ('aspect_ratio', 'size', 'image_size', 'quality', 'n') if media_type == 'image' else ('aspect_ratio', 'ratio', 'resolution', 'duration')
+        parameters = {key: payload[key] for key in keys if key in payload}
+        parameters.update(payload.get('parameters') or {})
+        try:
+            payload['parameters'] = normalize_parameters(media_type, parameters)
+            provider_parameters(media_type, model_info['provider'], model_name, payload['parameters'])
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        for key in keys:
+            payload.pop(key, None)
 
     new_task_id = str(uuid.uuid4())
 
@@ -318,11 +331,7 @@ async def retry_history(
             'model': model_name,
             'model_id': model_id,
             'prompt': prompt,
-            'parameters': payload.get('parameters') or {
-                'aspect_ratio': payload.get('aspect_ratio', '1:1'),
-                'quality': payload.get('quality', 'medium'),
-                'n': payload.get('n', 1),
-            },
+            'parameters': payload['parameters'],
             'user_id': payload_user_id,
             'api_key': api_key,
             'base_url': base_url,
@@ -358,11 +367,7 @@ async def retry_history(
             'model': model_name,
             'model_id': model_id,
             'prompt': prompt,
-            'parameters': payload.get('parameters') or {
-                'ratio': payload.get('ratio', '16:9'),
-                'resolution': payload.get('resolution', '720p'),
-                'duration': int(payload.get('duration', 8)),
-            },
+            'parameters': payload['parameters'],
             'user_id': payload_user_id,
             'api_key': api_key,
             'base_url': base_url,

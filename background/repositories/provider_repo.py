@@ -2,6 +2,7 @@
 import logging
 import json
 from database import execute_query
+from core.aspect_ratios import model_parameter_config
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +81,8 @@ def get_default_provider_id():
 
 def create_model(provider_id: int, name: str, description: str, model_type: str, provider: str, parameters: dict | None = None):
     """新增模型"""
+    if model_type in ('image', 'video'):
+        parameters = model_parameter_config(model_type, parameters)
     model_id = execute_query(
         '''INSERT INTO api_models (rfid, name, description, type, provider, parameters, created_at)
            VALUES (%s, %s, %s, %s, %s, %s, NOW())''',

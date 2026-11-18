@@ -1,4 +1,4 @@
-import { authFetch } from './apiService'
+import { authFetch, type ApiModelParameters } from './apiService'
 
 export interface WorkflowMessageRequest {
   canvas_id: number
@@ -6,16 +6,20 @@ export interface WorkflowMessageRequest {
   model_id: number
   session_id?: string
   asset_ids?: number[]
+  asset_mentions?: Record<number, string>
+  skill_id?: string
+  prompt_optimization?: boolean
   generation_options?: {
     media_type: 'image' | 'video' | 'plan' | null
     model?: number | null
     plan_id?: string
+    prompt?: string
+    step_prompts?: Record<string, string>
     image?: Record<string, unknown>
     video?: Record<string, unknown>
     n?: number | null
     aspect_ratio?: string | null
     quality?: string | null
-    ratio?: string | null
     resolution?: string | null
     duration?: number | null
   }
@@ -26,6 +30,7 @@ export interface WorkflowMessageResponse {
   user_conversation_id?: number | null
   agent_conversation_id?: number | null
   reply: string
+  optimized_prompt?: string | null
   intent?: string | null
   workflow_ready: boolean
   tasks: WorkflowTask[]
@@ -57,6 +62,7 @@ export interface ContextUsage {
 }
 
 export type WorkflowTrace =
+  | { type: 'skill_call'; skill_id: string | null; status: 'loaded' | 'skipped'; instruction_chars: number; message: string }
   | { type: 'model_request'; round: number; model: string; message_count: number; tools: string[] }
   | { type: 'tool_call'; round: number; call_id: string; name: string; input: unknown }
   | { type: 'tool_result'; round: number; call_id: string; name: string; output: Record<string, unknown> }
@@ -66,6 +72,15 @@ export interface LanguageModel {
   name: string
   provider: string
   type: string
+  context_window?: number | null
+}
+
+export interface ChatSkill { id: string; name: string; description: string }
+
+export async function getChatSkills(): Promise<ChatSkill[]> {
+  const res = await authFetch('/api/api-proxy/workflow/skills')
+  if (!res.ok) throw new Error('技能列表加载失败，请重试')
+  return res.json()
 }
 
 export interface GenerationModel {
@@ -73,6 +88,7 @@ export interface GenerationModel {
   name: string
   provider: string
   description?: string
+  parameters?: ApiModelParameters | null
 }
 
 export interface WorkflowSession {
@@ -123,6 +139,7 @@ export interface WorkflowTask {
   status: 'running' | 'completed' | 'failed' | string
   stage?: string
   error?: string
+  warning?: string
   model_name?: string
   parameters: { prompt?: string; n?: number; aspect_ratio?: string; quality?: string; ratio?: string; resolution?: string; duration?: number }
   images: Array<{ url: string; asset_id: number }>
@@ -165,11 +182,14 @@ export async function sendWorkflowMessageStream(
   onTrace?: (event: WorkflowTrace) => void,
   onUsage?: (usage: ContextUsage) => void,
   onCanvasChange?: (canvasId: number) => void,
+  signal?: AbortSignal,
 ): Promise<WorkflowMessageResponse> {
+  // 前端只负责发送聊天请求并解析 SSE；生成任务本身由后端工作流和后台调度器执行。
   const res = await authFetch('/api/api-proxy/workflow/chat/stream', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
+    signal,
   })
   if (!res.ok) {
     const error = await res.json().catch(() => null)

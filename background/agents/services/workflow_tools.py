@@ -2,6 +2,7 @@
 import uuid
 from pathlib import Path
 from typing import Literal
+from core.aspect_ratios import ImageAspectRatio, VideoAspectRatio
 
 from pydantic import BaseModel, ConfigDict, Field
 from repositories import asset_repo, history_repo, provider_repo, canvas_repo
@@ -17,7 +18,7 @@ class ImageArguments(BaseModel):
     model: int
     prompt: str = Field(min_length=1)
     n: int = Field(ge=1, le=10)
-    aspect_ratio: Literal["1:1", "16:9", "9:16", "4:3", "3:4"]
+    aspect_ratio: ImageAspectRatio
     quality: Literal["low", "medium", "high"]
     regenerate: bool = False
     input_asset_ids: list[int] = Field(default_factory=list)
@@ -26,7 +27,7 @@ class ImageArguments(BaseModel):
 class VideoArguments(BaseModel):
     model: int
     prompt: str = Field(min_length=1)
-    ratio: Literal["16:9", "9:16", "1:1"]
+    aspect_ratio: VideoAspectRatio
     resolution: Literal["720p", "1080p"]
     duration: int = Field(ge=1, le=60)
     input_asset_ids: list[int] | None = None
@@ -56,6 +57,7 @@ class WorkflowTools:
         self.model_catalog = None
         self.submitted = []
         self.asset_ids = []
+        self.asset_mentions = {}
         self.allowed_asset_ids = set()
         self.seedance = SeedancePromptTool()
 
@@ -122,8 +124,11 @@ class WorkflowTools:
 
     def generation_parameters(self, media_type: str, arguments: dict, options: dict) -> tuple[dict, dict]:
         schema = ImageArguments if media_type == 'image' else VideoArguments
-        keys = ('model', 'n', 'aspect_ratio', 'quality') if media_type == 'image' else ('model', 'ratio', 'resolution', 'duration')
-        args = schema.model_validate({**arguments, **{key: options[key] for key in keys if key in options}})
+        keys = ('model', 'n', 'aspect_ratio', 'quality') if media_type == 'image' else ('model', 'aspect_ratio', 'resolution', 'duration')
+        selected_options = dict(options)
+        if media_type == 'video' and 'aspect_ratio' not in selected_options and 'ratio' in selected_options:
+            selected_options['aspect_ratio'] = 'auto' if selected_options['ratio'] == 'adaptive' else selected_options['ratio']
+        args = schema.model_validate({**arguments, **{key: selected_options[key] for key in keys if key in selected_options}})
         if not args.prompt.strip():
             raise ValueError('生成描述不能为空')
         selected = next((model for model in self._models(media_type) if model['id'] == args.model), None)
@@ -137,8 +142,9 @@ class WorkflowTools:
         input_asset_ids = self._input_assets(arguments, media_type)
         if name in ('img2img', 'img2video') and not input_asset_ids:
             raise ValueError('请先引入参考素材')
-        arguments = {**arguments, 'input_asset_ids': input_asset_ids}
-        keys = ('model', 'n', 'aspect_ratio', 'quality') if media_type == 'image' else ('model', 'ratio', 'resolution', 'duration')
+        arguments = {**arguments, 'input_asset_ids': input_asset_ids,
+                     'prompt': self._reference_prompt(arguments['prompt'], input_asset_ids)}
+        keys = ('model', 'n', 'aspect_ratio', 'quality') if media_type == 'image' else ('model', 'aspect_ratio', 'resolution', 'duration')
         options = self._selected_generation_options(media_type, keys)
         if options is None:
             return self._request_generation_selection(media_type, arguments)
@@ -154,9 +160,11 @@ class WorkflowTools:
         return task
 
     def _request_plan(self, arguments: dict) -> dict:
+        # 这里仅暂存并返回参数选择数据；只有确认接口调用 confirm_plan 才创建节点和执行记录。
         plan = GenerationPlan.model_validate(arguments)
         for step in plan.steps:
             step.input_asset_ids = self._input_assets({'input_asset_ids': step.input_asset_ids}, step.media_type)
+            step.prompt = self._reference_prompt(step.prompt, step.input_asset_ids)
         self.pending_generation = {
             'media_type': 'plan', 'plan_id': str(uuid.uuid4()),
             'prompt': '按以下步骤依次生成', 'steps': plan.model_dump(exclude_none=True)['steps'],
@@ -165,6 +173,7 @@ class WorkflowTools:
         return {'selection_required': self.pending_generation}
 
     async def confirm_plan(self, pending: dict) -> dict:
+        # 用户确认模型及参数后，统一验证每一步并将计划写入数据库等待后台调度。
         from repositories import generation_plan_repo
         from api.generation import validate_reference_counts
         plan = GenerationPlan.model_validate({'steps': pending['steps']})
@@ -309,7 +318,9 @@ class WorkflowTools:
         return await self.discover_and_execute(name, arguments)
 
     def _selected_generation_options(self, media_type: str, required: tuple[str, ...]) -> dict | None:
-        options = self.generation_options
+        options = dict(self.generation_options)
+        if media_type == "video" and "aspect_ratio" not in options and "ratio" in options:
+            options["aspect_ratio"] = 'auto' if options["ratio"] == 'adaptive' else options["ratio"]
         if options.get("media_type") != media_type:
             return None
         missing = [key for key in required if options.get(key) is None]
@@ -327,10 +338,23 @@ class WorkflowTools:
             })
         return {"selection_required": self.pending_generation}
 
+    def _reference_prompt(self, prompt: str, asset_ids: list[int]) -> str:
+        # 界面编号可不连续；生成模型只能看到本次上传的素材及其实际顺序。
+        labels = [
+            f"第{index}个参考素材对应用户引用的{self.asset_mentions[asset_id]}（资产编号：{asset_id}）"
+            for index, asset_id in enumerate(asset_ids, 1) if asset_id in self.asset_mentions
+        ]
+        return prompt + '\n\n本次上传的参考素材对应关系：\n' + '\n'.join(labels) if labels else prompt
+
     def _input_assets(self, arguments: dict, media_type: str) -> list[int]:
         asset_ids = arguments.get("input_asset_ids", self.asset_ids)
         if not isinstance(asset_ids, list) or any(type(asset_id) is not int for asset_id in asset_ids):
             raise ValueError("参考资产编号必须是整数列表")
+        # 模型给出的子集也按用户本轮引用顺序上传，历史素材继续保留其原有顺序。
+        asset_ids = list(dict.fromkeys([
+            *(asset_id for asset_id in self.asset_ids if asset_id in asset_ids),
+            *asset_ids,
+        ]))
         # 即使模型没先调用检索工具，也只接受当前画布实际引用过的编号。
         session_messages = canvas_repo.get_asset_messages(
             self.canvas_id, self.user["user_id"],

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { Brain, Check, ChevronDown, CircleAlert, LoaderCircle } from '@lucide/vue'
+import { Brain, Check, ChevronDown, CircleAlert, LoaderCircle, Sparkles } from '@lucide/vue'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Tool, ToolContent, ToolHeader, ToolInput, ToolOutput } from '@/components/ai-elements/tool'
 import type { WorkflowTrace } from '@/api/workflow'
@@ -10,9 +10,11 @@ const props = defineProps<{
   steps?: string[]
   processing: boolean
   failed?: boolean
+  stopped?: boolean
 }>()
 const expanded = ref(props.processing)
 watch(() => props.processing, value => { expanded.value = value })
+const skillEvent = computed(() => props.events?.find(event => event.type === 'skill_call'))
 
 const toolNames: Record<string, string> = {
   discover_tools: '查找可用工具',
@@ -25,8 +27,9 @@ const toolNames: Record<string, string> = {
 
 const entries = computed(() => {
   const events = props.events ?? []
-  return events.flatMap((event, index) => {
+  return events.flatMap<{ key: string; event: Exclude<WorkflowTrace, { type: 'tool_result' }>; result: Extract<WorkflowTrace, { type: 'tool_result' }> | undefined }>((event, index) => {
     if (event.type === 'tool_result') return []
+    if (event.type === 'skill_call') return [{ key: `skill-${index}`, event, result: undefined }]
     if (event.type === 'model_request') return [{ key: `model-${index}`, event, result: undefined }]
     const result = events.find(candidate => candidate.type === 'tool_result'
       && candidate.round === event.round && candidate.call_id === event.call_id)
@@ -50,11 +53,15 @@ function toolState(entry: typeof entries.value[number]) {
 
 <template>
   <Collapsible v-model:open="expanded" class="ai-elements execution-trace">
+    <div v-if="skillEvent" class="trace-step skill-summary" role="status">
+      <Sparkles :size="14" />
+      <span>{{ skillEvent.status === 'loaded' ? `已加载技能 · ${skillEvent.skill_id}` : skillEvent.message }}</span>
+    </div>
     <CollapsibleTrigger class="trace-trigger">
       <LoaderCircle v-if="processing" :size="15" class="trace-spinner" />
       <CircleAlert v-else-if="failed" :size="15" class="trace-error" />
       <Brain v-else :size="15" />
-      <span>{{ processing ? '正在思考与执行' : failed ? '处理已中断' : '思考与执行过程' }}</span>
+      <span>{{ processing ? '正在思考与执行' : stopped ? '已停止' : failed ? '处理已中断' : '思考与执行过程' }}</span>
       <span v-if="entries.length" class="trace-count">{{ entries.length }} 个步骤</span>
       <ChevronDown :size="14" class="trace-chevron" :class="{ expanded }" />
     </CollapsibleTrigger>
@@ -66,7 +73,11 @@ function toolState(entry: typeof entries.value[number]) {
         <span>{{ step }}</span>
       </div>
       <template v-for="entry in entries" :key="entry.key">
-        <div v-if="entry.event.type === 'model_request'" class="trace-step model-step">
+        <div v-if="entry.event.type === 'skill_call'" class="trace-step skill-step">
+          <Sparkles :size="14" />
+          <div><span>{{ entry.event.status === 'loaded' ? `加载技能 · ${entry.event.skill_id}` : '通用提示词优化' }}</span><small>{{ entry.event.message }}</small></div>
+        </div>
+        <div v-else-if="entry.event.type === 'model_request'" class="trace-step model-step">
           <Brain :size="14" />
           <div><span>模型思考 · 第 {{ entry.event.round }} 轮</span><small>{{ entry.event.model }}</small></div>
         </div>
@@ -96,6 +107,8 @@ function toolState(entry: typeof entries.value[number]) {
 .trace-step { display: flex; align-items: flex-start; gap: 8px; padding: 5px 0; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
 .trace-step > svg { flex-shrink: 0; margin-top: 3px; }
 .model-step small { display: block; color: var(--color-faint); font-size: 11px; }
+.skill-step small { display: block; color: var(--color-faint); font-size: 11px; }
+.skill-summary { color: var(--color-text); }
 .trace-tool { margin: 8px 0; overflow: hidden; border-radius: 10px; background: var(--color-surface-soft); }
 .trace-tool :deep(button) { gap: 8px; text-align: left; }
 .trace-tool :deep(button > div) { min-width: 0; flex-wrap: wrap; }

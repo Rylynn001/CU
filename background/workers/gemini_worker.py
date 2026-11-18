@@ -14,6 +14,8 @@ from config import settings
 from database_worker import execute_query
 from repositories import history_repo_worker
 from core import parse_provider_error
+from core.aspect_ratios import normalize_parameters, provider_parameters
+from workers.output_dimensions import check_dimensions
 
 logger = logging.getLogger(__name__)
 
@@ -60,9 +62,10 @@ async def process(task: dict) -> None:
 
         image_b64_list = task.get('image_b64_list', [])
         prompt = task['prompt']
-        parameters = dict(task.get('parameters') or {})
+        product_parameters = normalize_parameters('image', task.get('parameters') or {})
+        aspect_ratio = product_parameters['aspect_ratio']
+        parameters = provider_parameters('image', 'gemini', task['model'], product_parameters)
         parameters.pop('n', None)
-        aspect_ratio = parameters.pop('aspect_ratio', '1:1')
         resolution = parameters.pop('image_size', '2K')
 
         if image_b64_list:
@@ -79,16 +82,14 @@ async def process(task: dict) -> None:
         # Gemini SDK 暂无官方 async 支持，使用同步调用
         # 实际 IO 时间占比小，主要瓶颈在 API 服务端生成
         import asyncio
+        image_config = {'image_size': resolution, **parameters}
+        logger.info('[%s] Gemini 图片比例适配: aspect_ratio=%s image_size=%s', task_id, aspect_ratio or '自动', resolution)
         response = await asyncio.to_thread(
             client.models.generate_content,
             model=task['model'],
             contents=contents,
             config=genai_types.GenerateContentConfig(
-                image_config=genai_types.ImageConfig(
-                    aspect_ratio=aspect_ratio,
-                    image_size=resolution,
-                    **parameters,
-                ),
+                image_config=genai_types.ImageConfig(**image_config),
             ),
         )
 
@@ -110,7 +111,8 @@ async def process(task: dict) -> None:
                             if os.path.exists(tmp_path):
                                 os.unlink(tmp_path)
                             raise
-                        images.append({'url': f'/api/api-proxy/output/{filename}', 'type': 'image', 'asset_id': None})
+                        images.append({'url': f'/api/api-proxy/output/{filename}', 'type': 'image', 'asset_id': None,
+                                   **check_dimensions(task_id, save_path, aspect_ratio)})
                         save_paths.append(save_path)
 
         result_images = images[-1:] if images else []
@@ -131,11 +133,13 @@ async def process(task: dict) -> None:
 
         type_ = 'img2img' if task.get('input_asset_ids') else 'txt2img'
         history_id = task.get('history_id')
+        warning = '\n'.join(item['warning'] for item in result_images if item.get('warning')) or None
         if history_id:
             await history_repo_worker.update_history(
                 history_id=history_id,
                 output_asset_ids=output_asset_ids,
                 status='done',
+                message=warning,
             )
         else:
             history_id = await history_repo_worker.save_history(
@@ -146,6 +150,7 @@ async def process(task: dict) -> None:
                 input_asset_ids=task.get('input_asset_ids', []),
                 output_asset_ids=output_asset_ids,
                 status='done',
+                message=warning,
                 type_=type_,
                 mode='api',
             )

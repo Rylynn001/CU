@@ -1,3 +1,4 @@
+import { ElMessage } from 'element-plus'
 import { pollTaskUntilDone, authFetch, getAuthHeader } from '../api/apiService'
 
 interface BaseRecord {
@@ -47,6 +48,8 @@ export function useTaskPolling<T extends BaseRecord>(
       if (checkRes.ok) {
         const checkData = await checkRes.json()
         if (checkData.status === 'completed' && checkData.result) {
+          const warning = checkData.result.find((item: { warning?: string }) => item.warning)?.warning
+          if (warning) ElMessage.warning(warning)
           const rec = getRecord()
           if (rec) {
             onDone(rec, {
@@ -73,6 +76,8 @@ export function useTaskPolling<T extends BaseRecord>(
 
       // 任务仍在进行中，开始完整轮询
       const result = await pollTaskUntilDone(record.taskId, expectedType)
+      const warning = result.images.find(item => item.warning)?.warning
+      if (warning) ElMessage.warning(warning)
       const rec = getRecord()
       if (rec) {
         onDone(rec, {

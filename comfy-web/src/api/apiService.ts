@@ -97,6 +97,20 @@ export async function createCanvas(name = '新画布'): Promise<CanvasSummary> {
   return res.json()
 }
 
+export async function renameCanvas(canvasId: number, name: string): Promise<void> {
+  const res = await authFetch(`${BASE}/canvases/${canvasId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  })
+  if (!res.ok) throw new Error((await res.text()) || `画布重命名失败: ${res.status}`)
+}
+
+export async function deleteCanvas(canvasId: number): Promise<void> {
+  const res = await authFetch(`${BASE}/canvases/${canvasId}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error((await res.text()) || `画布删除失败: ${res.status}`)
+}
+
 export async function getCanvas(canvasId: number): Promise<{ id: number; name: string; document: CanvasDocument }> {
   const res = await authFetch(`${BASE}/canvases/${canvasId}`)
   if (!res.ok) throw new Error(`画布加载失败: ${res.status}`)
@@ -123,9 +137,10 @@ export interface ApiGenerateParams {
 
 // 图片生成结果（同步返回图片 或 异步返回 taskId）
 export interface ApiGenerateResult {
-  images: Array<{ b64?: string; url?: string; asset_id?: number }>
+  images: Array<{ b64?: string; url?: string; asset_id?: number; width?: number; height?: number; warning?: string }>
   taskId?: string
   historyId?: number
+  inputAssetUrls?: Array<{ url: string; type: string }>
 }
 
 // ── Config ────────────────────────────────────────────────────────────────
@@ -240,6 +255,8 @@ export interface ApiVideoParams {
   model: string | number
   prompt: string
   parameters?: Record<string, string | number | boolean>
+  aspect_ratio?: string
+  /** 兼容旧调用方；新代码统一使用 aspect_ratio。 */
   ratio?: string       // 画面比例，如 "16:9"
   resolution?: string  // 分辨率，如 "1080p"
   duration?: number    // 时长（秒）
@@ -432,7 +449,7 @@ async function pollTaskStatus(taskId: string, expectedType: 'image' | 'video'): 
         const results = data.result || []
         const images = results
           .filter(item => item.type === expectedType)
-          .map(item => ({ url: item.url, asset_id: (item as any).asset_id }))
+          .map(item => ({ ...item, asset_id: (item as any).asset_id }))
 
         if (images.length === 0) {
           throw new TaskFailedError(`No ${expectedType} generated`)

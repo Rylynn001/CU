@@ -9,6 +9,7 @@ from config import settings
 from database_worker import execute_query
 from repositories import history_repo_worker
 from core import parse_provider_error
+from core.aspect_ratios import normalize_parameters, provider_parameters
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +38,10 @@ async def process_txt2video(task: dict) -> None:
         input_asset_ids = task.get('input_asset_ids', [])
         has_input_images = bool(input_asset_ids)
         task_type_label = '视频生成(图生)' if has_input_images else '视频生成(文生)'
+        product_parameters = normalize_parameters('video', task.get('parameters') or {})
+        aspect_ratio = product_parameters['aspect_ratio']
+        parameters = provider_parameters('video', 'ark', task['model'], product_parameters)
+        logger.info(f'[{task_id}] Seedance 视频比例适配: aspect_ratio={aspect_ratio}, ratio={parameters["ratio"]}')
 
         logger.info(f'[{task_id}] 正在处理 Ark {task_type_label}任务')
 
@@ -118,7 +123,7 @@ async def process_txt2video(task: dict) -> None:
                 client.content_generation.tasks.create,
                 model=task['model'],
                 content=content,
-                **task.get('parameters', {}),
+                **parameters,
             )
 
             remote_task_id = resp.id
@@ -144,7 +149,7 @@ async def process_txt2video(task: dict) -> None:
                     json={
                         "model": task['model'],
                         "content": [{"type": "text", "text": task.get('prompt', '')}],
-                        **task.get('parameters', {}),
+                        **parameters,
                     }
                 )
                 resp_raw.raise_for_status()
@@ -154,6 +159,7 @@ async def process_txt2video(task: dict) -> None:
 
         logger.info(f'[{task_id}] Ark {task_type_label}任务已创建: {remote_task_id}')
 
+        redis_client.setex(f"task:{task_id}:aspect_ratio", 3600, aspect_ratio)
         redis_client.setex(f"task:{task_id}:remote_id", 3600, remote_task_id)
         redis_client.setex(f"task:{task_id}:api_key", 3600, task['api_key'])
         redis_client.setex(f"task:{task_id}:base_url", 3600, task.get('base_url', ''))

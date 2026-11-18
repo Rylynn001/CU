@@ -103,12 +103,12 @@ async def _download_video(task_id: str, video_url: str, stored_user_id: str | No
 async def _poll_ark_task(task_id: str, remote_id: str, api_key: str, base_url: str | None, stored_user_id: str | None):
     """轮询 Ark 任务状态，完成后下载视频并更新 Redis"""
     try:
-        from openai import OpenAI
+        from openai import AsyncOpenAI
 
         logger.info(f"[轮询] task_id={task_id}, remote_id={remote_id}, base_url={base_url}, api_key={'***' + api_key[-4:] if api_key and len(api_key) > 4 else 'None'}")
 
-        client = OpenAI(api_key=api_key, base_url=base_url)
-        result = client.get(f"/contents/generations/tasks/{remote_id}", cast_to=object)
+        async with AsyncOpenAI(api_key=api_key, base_url=base_url, timeout=120.0) as client:
+            result = await client.get(f"/contents/generations/tasks/{remote_id}", cast_to=object)
         remote_status = result.get("status")
 
         logger.info(f'[轮询] task_id={task_id}, remote_id={remote_id}, Ark 返回状态: {remote_status}')
@@ -127,6 +127,9 @@ async def _poll_ark_task(task_id: str, remote_id: str, api_key: str, base_url: s
             try:
                 local_url, output_asset_id = await _download_video(task_id, video_url, stored_user_id)
 
+                from workers.output_dimensions import check_dimensions
+                aspect_ratio = redis_client.get(f"task:{task_id}:aspect_ratio") or 'auto'
+                dimensions = await asyncio.to_thread(check_dimensions, task_id, settings.OUTPUT_DIR / pathlib.Path(local_url).name, aspect_ratio, 'video')
                 # 更新历史记录
                 from repositories.history_repo import update_history
                 history_id_raw = redis_client.get(f"task:{task_id}:history_id")
@@ -136,7 +139,7 @@ async def _poll_ark_task(task_id: str, remote_id: str, api_key: str, base_url: s
                         history_id=history_id,
                         output_asset_ids=[output_asset_id] if output_asset_id else [],
                         status='done',
-                        message=None
+                        message=dimensions.get('warning')
                     )
                     logger.info(f"[轮询] task_id={task_id}, 已更新 history_id={history_id}")
                 else:
@@ -149,7 +152,7 @@ async def _poll_ark_task(task_id: str, remote_id: str, api_key: str, base_url: s
                     f"task:{task_id}:result",
                     3600,
                     json.dumps({
-                        'result': [{'url': local_url, 'type': 'video', 'asset_id': output_asset_id}],
+                        'result': [{'url': local_url, 'type': 'video', 'asset_id': output_asset_id, **dimensions}],
                         'history_id': history_id,
                     })
                 )
@@ -161,13 +164,14 @@ async def _poll_ark_task(task_id: str, remote_id: str, api_key: str, base_url: s
                     f"task:{task_id}:base_url",
                     f"task:{task_id}:provider",
                     f"task:{task_id}:user_id",
+                    f"task:{task_id}:aspect_ratio",
                     f"task:{task_id}:downloading"
                 )
 
                 logger.info(f"[轮询] task_id={task_id}, 已标记为 completed")
                 return {
                     'status': 'completed',
-                    'result': [{'url': local_url, 'type': 'video', 'asset_id': output_asset_id}],
+                    'result': [{'url': local_url, 'type': 'video', 'asset_id': output_asset_id, **dimensions}],
                     'history_id': history_id,
                 }
             except Exception as download_error:
@@ -289,9 +293,17 @@ async def get_task_status(task_id: str):
                 base_url = client.get(f"task:{task_id}:base_url")
                 user_id = client.get(f"task:{task_id}:user_id")
 
-                poll_result = await _poll_ark_task(task_id, remote_id, api_key, base_url, user_id)
-                if poll_result:
-                    return poll_result
+                # 页面查询和后台扫描共用锁，避免并发下载、重复写入资产。
+                lock = client.lock(f"task:{task_id}:polling", timeout=2400)
+                if lock.acquire(blocking=False):
+                    try:
+                        if client.get(f"task:{task_id}:status") == 'processing' and client.get(f"task:{task_id}:remote_id") == remote_id:
+                            poll_result = await _poll_ark_task(task_id, remote_id, api_key, base_url, user_id)
+                            if poll_result:
+                                return poll_result
+                    finally:
+                        if lock.owned():
+                            lock.release()
 
         return {'status': 'processing'}
 
@@ -312,6 +324,35 @@ async def get_task_status(task_id: str):
                     response['history_id'] = result_data['history_id']
 
     return response
+
+
+async def video_task_polling_loop():
+    """恢复并持续查询已提交的视频，退出画布或重启服务后仍会回收结果。"""
+    polling = {}
+    try:
+        while True:
+            for task_id, task in list(polling.items()):
+                if not task.done():
+                    continue
+                del polling[task_id]
+                try:
+                    task.result()
+                except Exception as error:
+                    logger.warning('后台视频查询失败 task_id=%s，下次扫描重试: %s', task_id, error)
+            try:
+                client = get_redis()
+                for key in client.scan_iter(match='task:*:remote_id', count=100):
+                    task_id = key[len('task:'):-len(':remote_id')]
+                    if task_id not in polling and client.get(f'task:{task_id}:status') == 'processing':
+                        # 慢下载独立执行，其他画布仍按周期查询。
+                        polling[task_id] = asyncio.create_task(get_task_status(task_id))
+            except Exception:
+                logger.exception('后台视频任务扫描失败，下次扫描重试')
+            await asyncio.sleep(3)
+    finally:
+        for task in polling.values():
+            task.cancel()
+        await asyncio.gather(*polling.values(), return_exceptions=True)
 
 
 @router.put("/tasks/{task_id}/status")

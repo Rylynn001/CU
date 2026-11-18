@@ -25,6 +25,13 @@ def create_canvas(user_id: int, name: str, document: dict):
     )
 
 
+def rename_canvas(canvas_id: int, user_id: int, name: str):
+    execute_query(
+        'UPDATE canvas SET name = %s WHERE id = %s AND user_id = %s AND deleted_at IS NULL',
+        (name, canvas_id, user_id),
+    )
+
+
 def save_canvas(canvas_id: int, user_id: int, name: str, document: dict, base_node_ids: list[str]):
     # 保留客户端加载后由助手新增的节点，避免自动保存覆盖正在提交的生成任务。
     with get_db() as conn:

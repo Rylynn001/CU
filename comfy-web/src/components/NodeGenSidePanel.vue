@@ -4,6 +4,8 @@ import { ElMessage } from 'element-plus'
 import { getApiModels, pollTaskUntilDone, type ApiModel } from '../api/apiService'
 import { submitImageGeneration, type InputImage } from '../services/imageGenerationService'
 import { submitVideoGeneration } from '../services/videoGenerationService'
+import SegmentedControl from './SegmentedControl.vue'
+import { IMAGE_ASPECT_RATIOS, VIDEO_ASPECT_RATIOS } from '../constants/aspectRatios'
 import { useAtMention } from '../composables/useAtMention'
 import type { SourceAsset, GeneratedAsset } from './NodeGenerateDialog.vue'
 
@@ -45,13 +47,13 @@ const generating = ref(false)
 const aspectRatio = ref('1:1')
 const quality = ref('high')
 const batchSize = ref(1)
-const RATIOS = ['1:1', '16:9', '9:16', '4:3', '3:4']
+const RATIOS = IMAGE_ASPECT_RATIOS
 const QUALITIES = [{ v: 'low', label: '低' }, { v: 'medium', label: '中' }, { v: 'high', label: '高' }]
 
 const videoRatio = ref('16:9')
 const resolution = ref('720p')
 const duration = ref(8)
-const VIDEO_RATIOS = ['16:9', '4:3', '1:1', '3:4', '9:16']
+const VIDEO_RATIOS = VIDEO_ASPECT_RATIOS
 const RESOLUTIONS = ['480p', '720p', '1080p']
 
 const selectedModel = computed(() => models.value.find(m => m.id === modelId.value))
@@ -110,7 +112,8 @@ function applySettings() {
   if (typeof settings.aspect_ratio === 'string') aspectRatio.value = settings.aspect_ratio
   if (typeof settings.quality === 'string') quality.value = settings.quality
   if (typeof settings.n === 'number') batchSize.value = settings.n
-  if (typeof settings.ratio === 'string') videoRatio.value = settings.ratio
+  if (typeof settings.aspect_ratio === 'string') videoRatio.value = settings.aspect_ratio
+  else if (typeof settings.ratio === 'string') videoRatio.value = settings.ratio === 'adaptive' ? 'auto' : settings.ratio
   if (typeof settings.resolution === 'string') resolution.value = settings.resolution
   if (typeof settings.duration === 'number') duration.value = settings.duration
 }
@@ -135,7 +138,7 @@ async function handleGenerate() {
       prompt: props.prompt,
       settings: props.mode === 'image'
         ? { model: Number(modelId.value), aspect_ratio: aspectRatio.value, quality: quality.value, n: batchSize.value }
-        : { model: Number(modelId.value), ratio: videoRatio.value, resolution: resolution.value, duration: duration.value },
+        : { model: Number(modelId.value), aspect_ratio: videoRatio.value, resolution: resolution.value, duration: duration.value },
     })
     return
   }
@@ -151,12 +154,14 @@ async function handleGenerate() {
       }))
       const result = await submitImageGeneration({
         modelId: Number(modelId.value), prompt: props.prompt,
-        aspect_ratio: aspectRatio.value, quality: quality.value, batchSize: batchSize.value,
+        parameters: { aspect_ratio: aspectRatio.value, quality: quality.value, n: batchSize.value },
         img2img: inputImages.length > 0, inputImages,
       })
       if (result.taskId) {
         if (result.historyId) emit('submitted', result.historyId)
         const done = await pollTaskUntilDone(result.taskId, 'image')
+        const warning = done.images.find(item => item.warning)?.warning
+        if (warning) ElMessage.warning(warning)
         done.images?.forEach((item, index) => {
           const output = item as { url: string; asset_id?: number }
           if (output.url) {
@@ -177,7 +182,7 @@ async function handleGenerate() {
       const refIds = props.refAssets.map((a) => a.id)
       const r = await submitVideoGeneration({
         modelId: Number(modelId.value), prompt: props.prompt,
-        ratio: videoRatio.value, resolution: resolution.value, duration: duration.value,
+        parameters: { aspect_ratio: videoRatio.value, resolution: resolution.value, duration: duration.value },
         inputAssetIds: refIds.length > 0 ? refIds : undefined,
       })
       const taskId = r.taskId
@@ -185,6 +190,8 @@ async function handleGenerate() {
       if (taskId) {
         if (historyId) emit('submitted', historyId)
         const done = await pollTaskUntilDone(taskId, 'video')
+        const warning = done.images.find(item => item.warning)?.warning
+        if (warning) ElMessage.warning(warning)
         done.images?.forEach((item, index) => {
           const output = item as { url: string; asset_id?: number }
           if (output.url) {
@@ -293,13 +300,7 @@ async function handleGenerate() {
       <template v-if="mode === 'image'">
         <div class="gsp-section">
           <div class="gsp-label">宽高比</div>
-          <div class="gsp-chips">
-            <button
-              v-for="r in RATIOS" :key="r"
-              class="gsp-chip" :class="{ active: aspectRatio === r }"
-              @click="aspectRatio = r"
-            >{{ r }}</button>
-          </div>
+          <SegmentedControl v-model="aspectRatio" :options="RATIOS" label="图片比例" :show-ratio-shapes="true" :disabled="generating" />
         </div>
         <div class="gsp-section">
           <div class="gsp-label">质量</div>
@@ -321,13 +322,7 @@ async function handleGenerate() {
       <template v-else>
         <div class="gsp-section">
           <div class="gsp-label">视频比例</div>
-          <div class="gsp-chips">
-            <button
-              v-for="r in VIDEO_RATIOS" :key="r"
-              class="gsp-chip" :class="{ active: videoRatio === r }"
-              @click="videoRatio = r"
-            >{{ r }}</button>
-          </div>
+          <SegmentedControl v-model="videoRatio" :options="VIDEO_RATIOS" label="视频比例" :show-ratio-shapes="true" :disabled="generating" />
         </div>
         <div class="gsp-section">
           <div class="gsp-label">分辨率</div>

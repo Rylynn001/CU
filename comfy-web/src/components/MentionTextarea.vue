@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElInput } from 'element-plus'
 
 const props = withDefaults(defineProps<{
@@ -22,9 +22,23 @@ const emit = defineEmits<{
 const inputRef = ref<InstanceType<typeof ElInput> | null>(null)
 const highlightRef = ref<HTMLElement | null>(null)
 const textarea = computed(() => inputRef.value?.textarea)
-const lastScrollTop = ref(0)
-const lastScrollLeft = ref(0)
 const isComposing = ref(false)
+let resizeObserver: ResizeObserver | undefined
+
+function syncHighlightLayout() {
+  const input = textarea.value
+  const highlight = highlightRef.value
+  if (!input || !highlight) return
+  // 外层页面会覆盖输入框样式，高亮层必须使用真实输入框的排版和可视宽度。
+  const style = getComputedStyle(input)
+  for (const property of ['padding', 'border-width', 'font-family', 'font-size', 'font-weight', 'font-style', 'line-height', 'letter-spacing', 'text-indent', 'text-align', 'word-break', 'overflow-wrap', 'tab-size']) {
+    highlight.style.setProperty(property, style.getPropertyValue(property))
+  }
+  highlight.style.width = `${input.clientWidth + parseFloat(style.borderLeftWidth) + parseFloat(style.borderRightWidth)}px`
+  highlight.style.height = `${input.clientHeight + parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth)}px`
+  highlight.scrollTop = input.scrollTop
+  highlight.scrollLeft = input.scrollLeft
+}
 
 function startComposition() {
   isComposing.value = true
@@ -52,31 +66,24 @@ function syncScroll() {
   const input = textarea.value
   const highlight = highlightRef.value
   if (!input || !highlight) return
-  lastScrollTop.value = input.scrollTop
-  lastScrollLeft.value = input.scrollLeft
-  requestAnimationFrame(() => {
-    highlight.scrollTop = input.scrollTop
-    highlight.scrollLeft = input.scrollLeft
-  })
+  highlight.scrollTop = input.scrollTop
+  highlight.scrollLeft = input.scrollLeft
 }
 
-function restoreScroll() {
+watch(() => props.modelValue, () => nextTick(syncHighlightLayout), { flush: 'post' })
+
+onMounted(() => nextTick(() => {
   const input = textarea.value
-  const highlight = highlightRef.value
-  if (!input || !highlight) return
-  nextTick(() => {
-    input.scrollTop = lastScrollTop.value
-    input.scrollLeft = lastScrollLeft.value
-    highlight.scrollTop = lastScrollTop.value
-    highlight.scrollLeft = lastScrollLeft.value
-  })
-}
-
-watch(() => props.modelValue, () => {
-  restoreScroll()
+  if (!input) return
+  input.addEventListener('scroll', syncScroll)
+  resizeObserver = new ResizeObserver(syncHighlightLayout)
+  resizeObserver.observe(input)
+  syncHighlightLayout()
+}))
+onBeforeUnmount(() => {
+  textarea.value?.removeEventListener('scroll', syncScroll)
+  resizeObserver?.disconnect()
 })
-
-onMounted(() => nextTick(() => textarea.value?.addEventListener('scroll', syncScroll)))
 
 defineExpose({ textarea })
 </script>
@@ -121,6 +128,7 @@ defineExpose({ textarea })
   inset: 0;
   z-index: 0;
   box-sizing: border-box;
+  border: 0 solid transparent;
   margin: 0;
   padding: 5px 11px;
   overflow: hidden;
@@ -139,7 +147,7 @@ defineExpose({ textarea })
 }
 
 .mention-highlight :deep(.mention-token) {
-  display: inline-block;
+  display: inline;
   border-radius: 3px;
   color: inherit;
   font: inherit;
@@ -181,6 +189,10 @@ defineExpose({ textarea })
 }
 
 /* 输入法组合拼音需要显示在真实输入框中，避免被高亮层的透明文字样式遮住。 */
+.mention-textarea.composing .mention-highlight {
+  visibility: hidden;
+}
+
 .mention-textarea.composing .mention-textarea-input :deep(.el-textarea__inner) {
   color: var(--color-text);
   -webkit-text-fill-color: var(--color-text);

@@ -52,6 +52,10 @@ class CanvasCreate(BaseModel):
     name: str = Field(default='新画布', max_length=100)
 
 
+class CanvasRename(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+
+
 class CanvasSave(CanvasCreate):
     document: CanvasDocument
     base_node_ids: list[str] = Field(default_factory=list, max_length=2000)
@@ -112,6 +116,16 @@ def save_canvas(canvas_id: int, req: CanvasSave, user: dict = Depends(get_curren
     document = canvas_repo.save_canvas(canvas_id, user['user_id'], req.name.strip() or '新画布', req.document.model_dump(), req.base_node_ids)
     tasks = refresh_tasks(WorkflowRepository.get_canvas_executions(canvas_id, user['user_id']), user['user_id'])
     return {'success': True, 'document': apply_tasks(document, tasks)}
+
+
+@router.patch('/canvases/{canvas_id}')
+def rename_canvas(canvas_id: int, req: CanvasRename, user: dict = Depends(get_current_user)):
+    require_canvas(canvas_id, user)
+    name = req.name.strip()
+    if not name:
+        raise HTTPException(400, '请输入画布名称')
+    canvas_repo.rename_canvas(canvas_id, user['user_id'], name)
+    return {'success': True}
 
 
 @router.post('/canvases/{canvas_id}/nodes/{node_id}/generate')

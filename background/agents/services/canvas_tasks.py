@@ -26,6 +26,8 @@ def refresh_tasks(executions, user_id):
                 status = rows[0]['status']
                 if status in ('done', 'completed', 'success') and any(row['asset_id'] is not None for row in rows):
                     task['status'] = 'completed'
+                    if rows[0].get('message'):
+                        task['warning'] = rows[0]['message']
                     task['videos' if task.get('media_type') == 'video' else 'images'] = [
                         {'url': f"/api/api-proxy/output/{PureWindowsPath(row['location']).name}", 'asset_id': row['asset_id']}
                         for row in rows if row['asset_id'] is not None and row['location']
@@ -54,6 +56,7 @@ def apply_tasks(document, tasks):
             'taskId': task.get('task_id') or task['execution_id'], 'historyId': task.get('history_id') or 0,
             'state': 'pending' if task['status'] in ('running', 'queued', 'submitting') else task['status'],
             'error': task.get('error'),
+            'warning': task.get('warning'),
         }
         data['inputAssetIds'] = task['parameters'].get('input_asset_ids') or []
         outputs = task.get('videos') or task.get('images') or []

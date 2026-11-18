@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { normalizeAspectRatioParameters } from '@/constants/aspectRatios'
 import { computed, markRaw, nextTick, onBeforeUnmount, onMounted, provide, reactive, ref, watch, Teleport, type Ref } from 'vue'
 import { onBeforeRouteLeave, useRouter } from 'vue-router'
 import { VueFlow, useVueFlow, SelectionMode, type Connection, type OnConnectStartParams, type ViewportTransform, type GraphEdge } from '@vue-flow/core'
@@ -9,11 +10,13 @@ import { Picture, VideoCamera, Document } from '@element-plus/icons-vue'
 import { Focus, Folders, Hand, Info, LogOut, Magnet, Map, MousePointer2, MousePointerClick, Network, Plus as PlusIcon, Search, Workflow, RotateCcw, RotateCw } from '@lucide/vue'
 import CanvasNodeComponent from '../components/CanvasNode.vue'
 import AssetPicker from '../components/AssetPicker.vue'
+import MediaViewer from '../components/MediaViewer.vue'
 import AiChatPanel from '../components/AiChatPanel.vue'
 import AiBlobWarpAvatar from '../components/AiBlobWarpAvatar.vue'
-import { authFetch, createCanvas, getApiModels, getCanvas, listCanvases, saveCanvas, uploadInputImage, type ApiModel, type CanvasSummary, type CanvasDocument } from '../api/apiService'
-import { canvasActionsKey, canvasReferences, collectInputs, makeNode, nodeKinds, validConnection, type CanvasAsset, type CanvasNode, type CanvasEdge, type CanvasParameterValue } from '../services/canvasGraph'
+import { authFetch, createCanvas, deleteCanvas, getApiModels, getCanvas, listCanvases, renameCanvas, saveCanvas, uploadInputImage, type ApiModel, type CanvasSummary, type CanvasDocument } from '../api/apiService'
+import { canvasActionsKey, canvasReferences, collectInputs, makeNode, nodeKinds, validConnection, type CanvasAsset, type CanvasNode, type CanvasEdge, type CanvasParameterValue, type PromptOptimizationTarget } from '../services/canvasGraph'
 import { arrangeCanvas } from '../services/arrangeCanvas'
+import { forgetCanvasTasks, refreshCanvasTasks, setActiveCanvas, subscribeCanvasTasks, trackCanvasTasks } from '../services/canvasTaskMonitor'
 import '@vue-flow/core/dist/style.css'
 import '@vue-flow/core/dist/theme-default.css'
 import '@vue-flow/minimap/dist/style.css'
@@ -25,6 +28,7 @@ const nodes = ref<CanvasNode[]>([])
 const edges = ref<CanvasEdge[]>([])
 const viewport = ref<ViewportTransform>({ x: 0, y: 0, zoom: 1 })
 const boards = ref<CanvasSummary[]>([])
+const loadingBoards = ref(true)
 const activeId = ref<number>()
 const name = ref('新画布')
 const loading = ref(false)
@@ -32,6 +36,7 @@ const ready = ref(false)
 const loadError = ref('')
 const saveState = ref('')
 const assets = ref<Record<number, CanvasAsset>>({})
+const previewAsset = ref<CanvasAsset>()
 const imageModels = ref<ApiModel[]>([])
 const videoModels = ref<ApiModel[]>([])
 const chatReferences = computed(() => canvasReferences(nodes.value, assets.value))
@@ -41,7 +46,10 @@ const fileInput = ref<HTMLInputElement>()
 const uploadBusy = ref(false)
 const creating = ref(false)
 const chatPanelOpen = ref(false)
+const chatPanel = ref<InstanceType<typeof AiChatPanel>>()
 const chatBusy = ref(false)
+const homeMode = ref(true)
+const homeCanvasId = ref<number>()
 let syncingGenerations = false
 const menu = ref<{ x: number; y: number; position: { x: number; y: number } }>()
 const connectionMenu = ref<{ x: number; y: number; position: { x: number; y: number }; nodeId: string; handleId: string; handleType: 'source' | 'target' }>()
@@ -52,9 +60,7 @@ const snapEnabled = ref(false)
 const showMap = ref(false)
 const handMode = ref(false)
 const submitting = reactive(new Set<string>())
-const polling = new Set<string>()
 let saveTimer: ReturnType<typeof setTimeout> | undefined
-let pollTimer: ReturnType<typeof setInterval> | undefined
 let saveQueue: Promise<void> = Promise.resolve()
 const savedSnapshot = ref('')
 let disposed = false
@@ -141,12 +147,15 @@ function modelForNode(node: CanvasNode) {
 
 function syncModelParameters(node: CanvasNode, model?: ApiModel) {
   const fields = model?.parameters?.fields ?? []
-  const current = node.data.parameters ?? {}
+  const mediaType = node.type === 'remote-videoGenerationNode' ? 'video' : 'image'
+  const current = normalizeAspectRatioParameters(mediaType, node.data.parameters ?? {})
   const next: Record<string, CanvasParameterValue> = {}
   for (const field of fields) {
+    if (field.key === 'aspect_ratio' || field.key === 'ratio' || field.key === 'size') continue
     if (current[field.key] !== undefined) next[field.key] = current[field.key]
     else if (field.default !== undefined) next[field.key] = field.default
   }
+  next.aspect_ratio = current.aspect_ratio
   node.data.parameters = next
 }
 
@@ -154,10 +163,10 @@ function normalizeNode(node: CanvasNode) {
   node.data.parameters ??= {}
   if (!node.data.parameters.aspect_ratio && node.data.ratio) node.data.parameters.aspect_ratio = node.data.ratio
   if (!node.data.parameters.quality && node.data.quality) node.data.parameters.quality = node.data.quality
-  if (!node.data.parameters.ratio && node.data.ratio) node.data.parameters.ratio = node.data.ratio
   if (!node.data.parameters.resolution && node.data.resolution) node.data.parameters.resolution = node.data.resolution
   if (!node.data.parameters.duration && node.data.duration) node.data.parameters.duration = node.data.duration
   syncModelParameters(node, modelForNode(node))
+  delete node.data.ratio
 }
 
 function message(error: unknown) { return error instanceof Error ? error.message : '操作失败，请重试' }
@@ -190,6 +199,7 @@ function persist(): Promise<void> {
 
 watch(snapshot, () => {
   if (!ready.value || loading.value) return
+  if (activeId.value) trackCanvasTasks(activeId.value, name.value, nodes.value)
   if (!dirty.value) { saveState.value = '已保存'; return }
   saveState.value = '未保存'
   clearTimeout(saveTimer)
@@ -208,8 +218,8 @@ async function hydrateAssets() {
   }
 }
 
-async function openBoard(id: number) {
-  if (loading.value || submitting.size || uploadBusy.value || chatBusy.value) return
+async function openBoard(id: number, preparing = false) {
+  if (loading.value || submitting.size || uploadBusy.value || (chatBusy.value && !preparing)) return false
   loading.value = true
   try {
     await persist()
@@ -223,6 +233,8 @@ async function openBoard(id: number) {
     activeId.value = id
     savedSnapshot.value = snapshot.value
     ready.value = true
+    setActiveCanvas(id)
+    trackCanvasTasks(id, board.name, nodes.value)
     saveState.value = '已保存'
     loadError.value = ''
     await nextTick()
@@ -231,23 +243,101 @@ async function openBoard(id: number) {
     historyIndex.value = -1
     pushHistory()
     await hydrateAssets().catch(error => ElMessage.warning(message(error)))
-    void pollTasks()
+    void syncGenerationNodes(id)
+    return true
   } catch (error) {
     loadError.value = message(error)
     ElMessage.error(message(error))
+    return false
   } finally { loading.value = false }
+}
+
+async function enterBoard(id: number) {
+  if (await openBoard(id)) homeMode.value = false
+}
+
+async function prepareChatCanvas(requestedName?: string): Promise<number> {
+  if (homeMode.value) {
+    let id = homeCanvasId.value
+    if (!id) {
+      const board = await createCanvas(requestedName?.trim() || '新画布')
+      boards.value.unshift(board)
+      homeCanvasId.value = board.id
+      id = board.id
+    }
+    if (!await openBoard(id, true)) throw new Error('画布加载失败，请重试')
+  }
+  await persist()
+  homeMode.value = false
+  chatPanelOpen.value = true
+  return activeId.value!
+}
+
+async function renameBoard(id: number, boardName: string) {
+  const nextName = boardName.trim()
+  if (!nextName) return
+  await renameCanvas(id, nextName)
+  const board = boards.value.find(item => item.id === id)
+  if (board) board.name = nextName
+  if (activeId.value === id) {
+    const saved = JSON.parse(savedSnapshot.value)
+    saved.name = nextName
+    savedSnapshot.value = JSON.stringify(saved)
+    name.value = nextName
+  }
+}
+
+async function removeBoard(id: number) {
+  await deleteCanvas(id)
+  forgetCanvasTasks(id)
+  boards.value = boards.value.filter(item => item.id !== id)
+  if (homeCanvasId.value === id) homeCanvasId.value = undefined
+  if (activeId.value === id) {
+    activeId.value = undefined
+    ready.value = false
+    nodes.value = []
+    edges.value = []
+    homeMode.value = true
+    chatPanelOpen.value = false
+  }
+}
+
+async function returnToCanvases() {
+  if (loading.value || submitting.size || uploadBusy.value || chatBusy.value) return
+  try {
+    await persist()
+    boards.value = await listCanvases()
+    homeCanvasId.value = undefined
+    homeMode.value = true
+    chatPanelOpen.value = false
+  } catch (error) { ElMessage.error(message(error)) }
 }
 
 async function newBoard() {
   if (loading.value || creating.value || submitting.size || uploadBusy.value || chatBusy.value) return
+  if (typeof chatPanel !== 'undefined' && chatPanel.value) {
+    chatPanel.value.openCreateCanvasDialog()
+    return
+  }
   creating.value = true
   try {
     await persist()
     const board = await createCanvas()
     boards.value.unshift(board)
-    await openBoard(board.id)
+    await enterBoard(board.id)
   } catch (error) { ElMessage.error(message(error)) }
   finally { creating.value = false }
+}
+
+async function createNamedBoard(boardName: string) {
+  if (loading.value || creating.value || submitting.size || uploadBusy.value || chatBusy.value) return
+  creating.value = true
+  try {
+    await persist()
+    const board = await createCanvas(boardName.trim() || '新画布')
+    boards.value.unshift(board)
+    await enterBoard(board.id)
+  } finally { creating.value = false }
 }
 
 function addNode(type: string, position?: { x: number; y: number }) {
@@ -477,55 +567,12 @@ async function run(id: string) {
     if (!response.ok) throw new Error(typeof result.detail === 'string' ? result.detail : '任务提交失败')
     data.executionId = result.execution_id
     data.task = { taskId: result.task_id, historyId: result.history_id, state: 'pending' }
+    trackCanvasTasks(activeId.value!, name.value, nodes.value)
     // 先保存任务归属，离开页面后也能通过历史记录恢复结果。
     await persist()
-    void pollTasks()
+    void syncGenerationNodes(activeId.value)
   } catch (error) { ElMessage.error(message(error)); void syncGenerationNodes(activeId.value) }
   finally { submitting.delete(id) }
-}
-
-async function pollTasks() {
-  await syncGenerationNodes(activeId.value)
-  for (const node of nodes.value) {
-    const task = node.data?.task
-    if (!task || !task.historyId || task.state !== 'pending' || polling.has(task.taskId)) continue
-    const boardId = activeId.value
-    polling.add(task.taskId)
-    try {
-      const response = await authFetch(`/api/api-proxy/canvases/tasks/${task.historyId}`)
-      if (!response.ok) throw new Error('生成记录查询失败')
-      const result = await response.json()
-      if (disposed || activeId.value !== boardId || !nodes.value.includes(node)) continue
-      if (['done', 'completed', 'success'].includes(result.status)) {
-        if (!result.asset_ids.length) throw new Error('生成已完成，但资产尚未入库')
-        const video = node.type === 'remote-videoGenerationNode'
-        node.data!.outputs[video ? 'video' : 'image'] = { dataType: video ? 'VIDEO' : 'IMAGE', value: { assetIds: result.asset_ids } }
-        task.state = 'completed'
-        delete task.error
-        await hydrateAssets()
-        await persist()
-      } else if (['error', 'failed', 'cancelled'].includes(result.status)) {
-        task.state = 'failed'
-        task.error = result.message || '生成失败，请调整后重新生成'
-        await persist()
-      } else {
-        // 沿用原有任务接口，视频供应商的查询和结果入库也由它完成。
-        const statusResponse = await authFetch(`/api/api-proxy/task/${task.taskId}`)
-        if (disposed || activeId.value !== boardId) continue
-        if (statusResponse.status === 404) {
-          task.state = 'failed'
-          task.error = '任务状态已过期，且历史记录尚未完成，请检查原任务后重试'
-        } else if (statusResponse.ok) {
-          const status = await statusResponse.json()
-          if (disposed || activeId.value !== boardId) continue
-          if (status.status === 'failed') { task.state = 'failed'; task.error = status.error?.error_message || '生成失败' }
-        }
-      }
-    } catch (error) {
-      // 网络暂时失败时保留任务，下次轮询继续，不重复提交生成。
-      if (!disposed && activeId.value === boardId) task.error = message(error)
-    } finally { polling.delete(task.taskId) }
-  }
 }
 
 function mergeGenerationNodes(incoming: CanvasNode[], incomingEdges: CanvasEdge[] = []) {
@@ -549,11 +596,11 @@ function mergeGenerationNodes(incoming: CanvasNode[], incomingEdges: CanvasEdge[
   return added
 }
 
-async function syncGenerationNodes(canvasId?: number) {
+async function syncGenerationNodes(canvasId?: number, incoming?: Awaited<ReturnType<typeof getCanvas>>) {
   if (!canvasId || canvasId !== activeId.value || !ready.value || loading.value || syncingGenerations || disposed) return
   syncingGenerations = true
   try {
-    const board = await getCanvas(canvasId)
+    const board = incoming ?? await refreshCanvasTasks(canvasId)
     if (canvasId !== activeId.value || disposed || loading.value) return
     const added = mergeGenerationNodes(board.document.nodes as unknown as CanvasNode[], board.document.edges as unknown as CanvasEdge[])
     if (added.length) {
@@ -574,6 +621,7 @@ function contextMenu(event: MouseEvent) {
 }
 
 function keydown(event: KeyboardEvent) {
+  if (previewAsset.value) return
   if ((event.target as HTMLElement).closest('input,textarea,select,[contenteditable="true"],.el-dialog')) return
   if (event.key === 'Delete' || event.key === 'Backspace') { event.preventDefault(); deleteSelection() }
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'd') { event.preventDefault(); nodes.value.filter(node => node.selected).forEach(node => duplicate(node.id)) }
@@ -586,6 +634,26 @@ onBeforeRouteLeave(async () => {
   if (submitting.size || uploadBusy.value || chatBusy.value) { ElMessage.warning('请等待任务提交或素材上传完成后再离开'); return false }
   try { await persist(); return true } catch (error) { ElMessage.error(message(error)); return false }
 })
+async function optimizePrompt(id: string, skillId?: string) {
+  const node = nodes.value.find(item => item.id === id)
+  if (!node || !activeId.value || !node.data.prompt.trim()) return false
+  return !!await chatPanel.value?.startPromptOptimization({
+    canvasId: activeId.value, nodeId: id, label: node.data.label, prompt: node.data.prompt,
+    mediaType: node.type.includes('video') ? 'video' : 'image', parameters: { ...node.data.parameters },
+    references: canvasReferences(nodes.value, assets.value, edges.value, id),
+  }, skillId)
+}
+
+function applyOptimizedPrompt(target: PromptOptimizationTarget, prompt: string) {
+  const node = nodes.value.find(item => item.id === target.nodeId)
+  if (target.canvasId !== activeId.value || !node) { ElMessage.warning('原节点已移除或画布已切换，无法回填'); return }
+  if (submitting.has(node.id) || node.data.task?.state === 'pending') { ElMessage.warning('节点正在生成，请完成后再应用'); return }
+  if (node.data.prompt !== target.prompt) { ElMessage.warning('原提示词已修改，请重新发起优化，避免覆盖你的编辑'); return }
+  node.data.prompt = prompt
+  target.prompt = prompt
+  ElMessage.success('已应用到原节点提示词')
+}
+
 provide(canvasActionsKey, {
   assets,
   imageModels,
@@ -597,40 +665,43 @@ provide(canvasActionsKey, {
     syncModelParameters(node, modelForNode(node))
   },
   isSubmitting: id => submitting.has(id),
+  optimizePrompt,
   run: id => { void run(id) },
   pick,
+  preview: asset => { previewAsset.value = asset },
   duplicate,
   remove,
 })
+const unsubscribeTasks = subscribeCanvasTasks(board => { void syncGenerationNodes(board.id, board) })
 onMounted(async () => {
   window.addEventListener('keydown', keydown)
   window.addEventListener('beforeunload', beforeUnload)
-  pollTimer = setInterval(() => { void pollTasks() }, 3000)
   try {
     boards.value = await listCanvases()
-    if (boards.value[0]) await openBoard(boards.value[0].id)
   } catch (error) { loadError.value = `${message(error)}。请确认已执行画布建表 SQL 并更新后端。` }
+  finally { loadingBoards.value = false }
   const results = await Promise.allSettled([getApiModels('image'), getApiModels('video')])
   if (results[0].status === 'fulfilled') imageModels.value = results[0].value
   if (results[1].status === 'fulfilled') videoModels.value = results[1].value
   if (results.some(result => result.status === 'rejected')) ElMessage.warning('部分模型加载失败，请刷新页面重试')
   nodes.value.forEach(normalizeNode)
 })
-onBeforeUnmount(() => { disposed = true; clearTimeout(saveTimer); clearInterval(pollTimer); window.removeEventListener('keydown', keydown); window.removeEventListener('beforeunload', beforeUnload) })
+onBeforeUnmount(() => { disposed = true; clearTimeout(saveTimer); unsubscribeTasks(); setActiveCanvas(); window.removeEventListener('keydown', keydown); window.removeEventListener('beforeunload', beforeUnload) })
 </script>
 
 <template>
-  <main class="canvas-page">
-    <header class="canvas-topbar">
-      <button type="button" class="canvas-exit" aria-label="退出画布" title="退出画布" @click="router.push('/')">
+  <main class="canvas-page" :class="{ 'canvas-home': homeMode }">
+    <button v-if="homeMode" type="button" class="canvas-home-back" @click="router.push('/')"><LogOut :size="16" />返回首页</button>
+    <header v-if="!homeMode" class="canvas-topbar">
+      <button type="button" class="canvas-exit" aria-label="返回画布列表" title="返回画布列表" @click="returnToCanvases">
         <LogOut :size="16" />
       </button>
       <ElSelect :model-value="activeId" :disabled="loading || submitting.size > 0 || uploadBusy || chatBusy" placeholder="选择画布" class="board-select" @change="openBoard">
         <ElOption v-for="board in boards" :key="board.id" :value="board.id" :label="board.name" />
       </ElSelect>
     </header>
-    <div class="canvas-workspace" :class="{ 'hand-mode': handMode }" @contextmenu.prevent="contextMenu" @pointerdown.capture="ignorePaneClick = false" @dragover.prevent="dragover" @drop.prevent="drop">
-      <VueFlow v-model:nodes="nodes" v-model:edges="edges" id="creative-canvas" :node-types="nodeTypes" :default-edge-options="defaultEdgeOptions" :min-zoom="0.2" :max-zoom="8" :pan-on-drag="handMode ? true : [1, 2]" :selection-mode="SelectionMode.Partial" selection-on-drag :snap-to-grid="snapEnabled" :snap-grid="[16, 16]" :delete-key-code="null" :zoom-on-double-click="false" :nodes-draggable="canEdit" :nodes-connectable="canEdit" :connect-on-click="false" :is-valid-connection="(connection) => validConnection(connection, nodes, edges)" :class="{ 'edges-hidden': !showEdges }" @connect="connect" @connect-start="connectStart" @connect-end="connectEnd" @edge-click="({ event, edge }) => showEdgeDisconnect(event, edge.id)" @move-end="({ flowTransform }) => viewport = flowTransform" @pane-click="paneClick">
+    <div v-show="!homeMode" class="canvas-workspace" :class="{ 'hand-mode': handMode }" @contextmenu.prevent="contextMenu" @pointerdown.capture="ignorePaneClick = false" @dragover.prevent="dragover" @drop.prevent="drop">
+      <VueFlow v-model:nodes="nodes" v-model:edges="edges" id="creative-canvas" :node-types="nodeTypes" :default-edge-options="defaultEdgeOptions" :min-zoom="0.2" :max-zoom="8" :pan-on-drag="handMode ? true : [1, 2]" :selection-mode="SelectionMode.Partial" selection-on-drag :snap-to-grid="snapEnabled" :snap-grid="[16, 16]" :delete-key-code="null" :zoom-on-double-click="false" :zoom-on-scroll="false" pan-on-scroll zoom-activation-key-code="Control" :nodes-draggable="canEdit" :nodes-connectable="canEdit" :connect-on-click="false" :is-valid-connection="(connection) => validConnection(connection, nodes, edges)" :class="{ 'edges-hidden': !showEdges }" @connect="connect" @connect-start="connectStart" @connect-end="connectEnd" @edge-click="({ event, edge }) => showEdgeDisconnect(event, edge.id)" @move-end="({ flowTransform }) => viewport = flowTransform" @pane-click="paneClick">
         <Background :gap="16" pattern-color="var(--color-border)" />
         <MiniMap v-if="showMap && nodes.length" class="canvas-map" pannable zoomable :width="180" :height="120" />
       </VueFlow>
@@ -710,7 +781,7 @@ onBeforeUnmount(() => { disposed = true; clearTimeout(saveTimer); clearInterval(
           <ElButton text aria-label="画布提示"><Info :size="18" /></ElButton>
         </el-tooltip>
       </div>
-      <button type="button" class="ai-orb" :class="{ active: chatPanelOpen }" aria-label="打开 AI 助手" :aria-expanded="chatPanelOpen" title="打开 AI 助手" @click="chatPanelOpen = !chatPanelOpen">
+      <button type="button" class="ai-orb" :class="{ active: chatPanelOpen }" aria-label="打开若晴AI" :aria-expanded="chatPanelOpen" title="打开若晴AI" @click="chatPanelOpen = !chatPanelOpen">
         <AiBlobWarpAvatar class="ai-orb-avatar" />
       </button>
     </div>
@@ -725,8 +796,10 @@ onBeforeUnmount(() => { disposed = true; clearTimeout(saveTimer); clearInterval(
       <button v-for="kind in connectionCandidates()" :key="kind.type" @click="addConnectedNode(kind.type)">{{ kind.label }}</button>
     </div>
     <AssetPicker v-model:visible="pickerVisible" :max-select="pickerNode ? 1 : 20" allow-video @select="applyAssets" />
-    <AiChatPanel v-if="activeId && ready" :key="activeId" v-model="chatPanelOpen" :canvas-id="activeId" :prepare-canvas="persist" :references="chatReferences"
-      @canvas-changed="syncGenerationNodes" @busy-change="chatBusy = $event" />
+    <MediaViewer :visible="!!previewAsset" :src="previewAsset?.url ?? ''" :type="previewAsset?.type" :asset-id="previewAsset?.id" @close="previewAsset = undefined" />
+    <AiChatPanel v-if="homeMode || ready" ref="chatPanel" v-model="chatPanelOpen" :canvas-id="homeMode ? homeCanvasId : activeId" :prepare-canvas="prepareChatCanvas" :references="homeMode ? [] : chatReferences" :boards="boards" :home-mode="homeMode" :home-loading="loadingBoards || loading || creating" :home-error="loadError" :rename-canvas="renameBoard" :delete-canvas="removeBoard" :create-canvas="createNamedBoard"
+      @apply-prompt="applyOptimizedPrompt"
+      @create-canvas="newBoard" @select-canvas="homeCanvasId = $event" @open-canvas="enterBoard" @canvas-changed="syncGenerationNodes" @busy-change="chatBusy = $event" />
     <Teleport to="body">
       <ElButton
         v-if="edgeDisconnect && flow.findEdge(edgeDisconnect.id)"
@@ -745,6 +818,9 @@ onBeforeUnmount(() => { disposed = true; clearTimeout(saveTimer); clearInterval(
 
 <style scoped>
 .canvas-page { position: relative; height: 100vh; background: transparent; color: var(--color-text); }
+.canvas-page.canvas-home { min-height: 100vh; height: auto; padding: clamp(100px, 15vh, 160px) clamp(24px, 7vw, 80px) 60px; }
+.canvas-home-back { position: fixed; top: 20px; left: 24px; z-index: 10; display: inline-flex; align-items: center; gap: 7px; border: 0; background: transparent; color: var(--color-muted); font-size: 12px; cursor: pointer; }
+.canvas-home-back:hover { color: var(--color-text); }
 .canvas-topbar { position: absolute; top: 16px; left: 16px; z-index: 20; display: flex; align-items: center; gap: 8px; }
 .canvas-exit { display: grid; width: 36px; height: 36px; place-items: center; border: 1px solid var(--color-border); border-radius: 12px; background: color-mix(in srgb, var(--color-surface-base) 84%, transparent); color: var(--color-muted); backdrop-filter: blur(18px); cursor: pointer; transition: color .2s, border-color .2s, background .2s; }
 .canvas-exit:hover { border-color: var(--color-border-strong); background: var(--color-surface); color: var(--color-text); }
@@ -774,5 +850,6 @@ onBeforeUnmount(() => { disposed = true; clearTimeout(saveTimer); clearInterval(
 .ai-orb:hover { transform: scale(1.06); box-shadow: 0 6px 26px rgba(0,0,0,0.38); }
 .ai-orb.active { border-color: var(--color-primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 28%, transparent), 0 4px 18px rgba(0,0,0,0.28); }
 .ai-orb-avatar { width: 24px; height: 24px; pointer-events: none; }
+.canvas-home .ai-orb { display: none; }
 @media (max-width: 600px) { .ai-orb { left: auto; right: 12px; bottom: 64px; } }
 </style>

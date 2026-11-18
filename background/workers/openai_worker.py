@@ -12,10 +12,13 @@ from config import settings
 from database_worker import execute_query
 from repositories import history_repo_worker
 from core import parse_provider_error
+from core.aspect_ratios import normalize_parameters, provider_parameters
+from workers.output_dimensions import check_dimensions
 
 logger = logging.getLogger(__name__)
 
 OUTPUT_DIR = pathlib.Path(settings.OUTPUT_DIR)
+
 
 
 def _get_redis():
@@ -67,16 +70,11 @@ async def process(task: dict) -> None:
             base_url=task['base_url'],
         )
 
-        parameters = dict(task.get('parameters') or {})
+        product_parameters = normalize_parameters('image', task.get('parameters') or {})
+        aspect_ratio = product_parameters['aspect_ratio']
+        parameters = provider_parameters('image', 'openai', task['model'], product_parameters)
         n = parameters.pop('n', 1)
-        # gpt-image 的界面使用比例，OpenAI Images API 使用 size。
-        aspect_ratio = parameters.pop('aspect_ratio', None)
-        if aspect_ratio and 'size' not in parameters:
-            parameters['size'] = {
-                '1:1': '1024x1024',
-                '16:9': '1536x1024',
-                '9:16': '1024x1536',
-            }.get(aspect_ratio, 'auto')
+        logger.info('[%s] OpenAI 图片比例适配: aspect_ratio=%s size=%s', task_id, aspect_ratio, parameters['size'])
         image_b64_list = task.get('image_b64_list', [])
 
         response = None
@@ -138,7 +136,8 @@ async def process(task: dict) -> None:
                     save_path = OUTPUT_DIR / filename
                     with open(save_path, 'wb') as f:
                         f.write(img_data)
-                    images.append({'url': f'/api/api-proxy/output/{filename}', 'type': 'image', 'asset_id': None})
+                    images.append({'url': f'/api/api-proxy/output/{filename}', 'type': 'image', 'asset_id': None,
+                                   **check_dimensions(task_id, save_path, aspect_ratio)})
                     save_paths.append(save_path)
 
         if not images:
@@ -157,11 +156,13 @@ async def process(task: dict) -> None:
 
         type_ = 'img2img' if task.get('input_asset_ids') else 'txt2img'
         history_id = task.get('history_id')
+        warning = '\n'.join(item['warning'] for item in images if item.get('warning')) or None
         if history_id:
             await history_repo_worker.update_history(
                 history_id=history_id,
                 output_asset_ids=output_asset_ids,
                 status='done',
+                message=warning,
             )
         else:
             history_id = await history_repo_worker.save_history(
@@ -172,6 +173,7 @@ async def process(task: dict) -> None:
                 input_asset_ids=task.get('input_asset_ids', []),
                 output_asset_ids=output_asset_ids,
                 status='done',
+                message=warning,
                 type_=type_,
                 mode='api',
             )
