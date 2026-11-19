@@ -160,6 +160,14 @@ const parameterLabels: Record<string, string> = { n: '张数', aspect_ratio: '�
 const imageRatios = IMAGE_ASPECT_RATIOS
 const videoRatios = VIDEO_ASPECT_RATIOS
 
+const videoResolutionOptions = computed(() => {
+  const field = generationModels.value
+    .find(model => model.id === generationModelId.value)
+    ?.parameters?.fields?.find(field => field.key === 'resolution')
+  const options = field?.options?.map(value => String(value)) ?? ['480p', '720p', '1080p', '4k']
+  return options.map(value => ({ value, label: value.toLowerCase() === '4k' ? '4K' : value }))
+})
+
 function taskState(task: WorkflowTask) {
   if (task.status === 'completed') return 'output-available' as const
   if (task.status === 'failed') return 'output-error' as const
@@ -307,6 +315,14 @@ watch([generationModelId, videoDurationField, fixedVideoDuration], () => {
   const step = videoDurationStep.value
   const value = videoDuration.value ?? Number(videoDurationField.value?.default ?? min)
   videoDuration.value = Math.max(min, Math.min(videoDurationMax.value, min + Math.round((value - min) / step) * step))
+})
+
+watch([generationModelId, videoResolutionOptions], () => {
+  if (generationType.value !== 'video') return
+  const options = videoResolutionOptions.value
+  if (!options.some(option => option.value === videoResolution.value)) {
+    videoResolution.value = options[0]?.value ?? null
+  }
 })
 
 function validVideoDuration(value: number) {
@@ -767,7 +783,7 @@ defineExpose({ startPromptOptimization, openCreateCanvasDialog })
               </template>
               <template v-else>
                 <div class="gen-field"><span>画面比例</span><SegmentedControl :model-value="videoRatio || ''" :options="videoRatios" :show-ratio-shapes="true" label="视频比例" @update:model-value="videoRatio = $event" /></div>
-                <div class="gen-field"><span>分辨率</span><SegmentedControl :model-value="videoResolution || ''" :options="[{value:'720p',label:'720p'},{value:'1080p',label:'1080p'}]" label="分辨率" @update:model-value="videoResolution = $event" /></div>
+                <div class="gen-field"><span>分辨率</span><SegmentedControl :model-value="videoResolution || ''" :options="videoResolutionOptions" label="分辨率" @update:model-value="videoResolution = $event" /></div>
                 <label class="gen-field"><span>视频时长 <span class="duration-value">{{ videoDuration ?? '—' }} 秒</span></span><ElSlider :model-value="videoDuration ?? videoDurationMin" :min="videoDurationMin" :max="videoDurationMax" :step="videoDurationStep" :disabled="generationModelId == null || fixedVideoDuration" :show-tooltip="false" aria-label="视频时长" @update:model-value="videoDuration = Number($event)" /></label>
                 <p v-if="pendingPlan" class="task-model">已指定时长的步骤按计划执行，此处时长用于其余视频步骤。</p>
               </template>

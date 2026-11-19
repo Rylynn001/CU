@@ -23,7 +23,13 @@ def start_workers():
 
     def run_async_workers():
         """在独立线程中运行异步事件循环"""
-        asyncio.run(worker_main())
+        # Linux/Docker 上需要显式设置事件循环策略和创建
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(worker_main())
+        finally:
+            loop.close()
 
     t = threading.Thread(
         target=run_async_workers,

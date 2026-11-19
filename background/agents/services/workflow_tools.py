@@ -28,7 +28,7 @@ class VideoArguments(BaseModel):
     model: int
     prompt: str = Field(min_length=1)
     aspect_ratio: VideoAspectRatio
-    resolution: Literal["720p", "1080p"]
+    resolution: Literal["480p", "720p", "1080p", "4k"]
     duration: int = Field(ge=1, le=60)
     input_asset_ids: list[int] | None = None
 

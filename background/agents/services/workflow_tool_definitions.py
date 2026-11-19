@@ -101,7 +101,7 @@ class WorkflowTool(Enum):
                     "model": {"type": "integer", "description": "list_video_models 返回的模型编号"},
                     "prompt": {"type": "string", "description": "视频内容描述"},
                     "aspect_ratio": {"type": "string", "enum": ["16:9", "4:3", "1:1", "3:4", "9:16", "21:9", "auto"]},
-                    "resolution": {"type": "string", "enum": ["720p", "1080p"]},
+                    "resolution": {"type": "string", "enum": ["480p", "720p", "1080p", "4k"]},
                     "duration": {"type": "integer", "minimum": 1, "maximum": 60},
                 },
                 "required": ["prompt"],

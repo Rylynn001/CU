@@ -45,7 +45,7 @@ async def worker_loop(worker_id: int) -> None:
             result = await asyncio.to_thread(
                 redis_client.brpop,
                 ['queue:txt2img', 'queue:txt2video'],
-                1
+                5
             )
             if not result:
                 continue
