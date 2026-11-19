@@ -5,6 +5,7 @@ import pathlib
 import asyncio
 import time
 import logging
+import hashlib
 from io import BytesIO
 
 # 添加项目路径
@@ -40,8 +41,10 @@ def print_env_info():
     print("-"*80)
     print(f"OSS_ACCESS_KEY_ID: {settings.OSS_ACCESS_KEY_ID[:8]}...{settings.OSS_ACCESS_KEY_ID[-4:] if settings.OSS_ACCESS_KEY_ID else 'None'}")
     print(f"OSS_ACCESS_KEY_SECRET 长度: {len(settings.OSS_ACCESS_KEY_SECRET) if settings.OSS_ACCESS_KEY_SECRET else 0}")
-    print(f"OSS_ACCESS_KEY_SECRET 开头: {settings.OSS_ACCESS_KEY_SECRET[:4] if settings.OSS_ACCESS_KEY_SECRET else 'None'}...")
-    print(f"OSS_ACCESS_KEY_SECRET 结尾: ...{settings.OSS_ACCESS_KEY_SECRET[-4:] if settings.OSS_ACCESS_KEY_SECRET else 'None'}")
+    secret_fingerprint = hashlib.sha256(settings.OSS_ACCESS_KEY_SECRET.encode()).hexdigest()[:12]
+    print(f"OSS_ACCESS_KEY_SECRET SHA256 前12位: {secret_fingerprint}")
+    print(f"OSS_ACCESS_KEY_ID 来自进程环境变量: {'OSS_ACCESS_KEY_ID' in os.environ}")
+    print(f"OSS_ACCESS_KEY_SECRET 来自进程环境变量: {'OSS_ACCESS_KEY_SECRET' in os.environ}")
     print(f"OSS_ENDPOINT: {settings.OSS_ENDPOINT}")
     print(f"OSS_BUCKET_NAME: {settings.OSS_BUCKET_NAME}")
 
