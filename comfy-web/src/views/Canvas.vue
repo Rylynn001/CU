@@ -66,6 +66,14 @@ const savedSnapshot = ref('')
 let disposed = false
 let arranging = false
 
+function generateCanvasId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID()
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, char => {
+    const random = Math.floor(Math.random() * 16)
+    return (char === 'x' ? random : (random & 0x3) | 0x8).toString(16)
+  })
+}
+
 // 简易撤销/重做历史（最多 50 步）
 type HistorySnapshot = { nodes: string; edges: string }
 const historyStack = ref<HistorySnapshot[]>([])
@@ -362,7 +370,7 @@ function addNode(type: string, position?: { x: number; y: number }) {
 
 function connect(connection: Connection) {
   if (!canEdit.value || !validConnection(connection, nodes.value, edges.value)) return
-  edges.value.push({ ...connection, id: crypto.randomUUID(), type: 'simplebezier' })
+  edges.value.push({ ...connection, id: generateCanvasId(), type: 'simplebezier' })
   pendingConnection.value = undefined
   connectionMenu.value = undefined
   pushHistory()
@@ -426,7 +434,7 @@ function addConnectedNode(type: string) {
     const connection: Connection = pending.handleType === 'source'
       ? { source: startNode.id, target: node.id, sourceHandle: startHandle.id, targetHandle: targetHandle.id }
       : { source: node.id, target: startNode.id, sourceHandle: targetHandle.id, targetHandle: startHandle.id }
-    if (validConnection(connection, nodes.value, edges.value)) edges.value.push({ ...connection, id: crypto.randomUUID(), type: 'simplebezier' })
+    if (validConnection(connection, nodes.value, edges.value)) edges.value.push({ ...connection, id: generateCanvasId(), type: 'simplebezier' })
   }
   connectionMenu.value = undefined
 }
@@ -440,7 +448,7 @@ function duplicate(id: string) {
   const source = nodes.value.find(node => node.id === id)
   if (!source || !canEdit.value) return
   const copy = JSON.parse(JSON.stringify({ id: source.id, type: source.type, position: source.position, data: source.data })) as CanvasNode
-  copy.id = crypto.randomUUID()
+  copy.id = generateCanvasId()
   copy.position = { x: source.position.x + 40, y: source.position.y + 60 }
   delete copy.data!.task
   nodes.value.forEach(node => { node.selected = false })

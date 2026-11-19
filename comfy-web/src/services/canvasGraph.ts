@@ -59,6 +59,14 @@ export interface PromptOptimizationTarget {
   references: CanvasReference[]
 }
 
+function generateNodeId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID()
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, char => {
+    const random = Math.floor(Math.random() * 16)
+    return (char === 'x' ? random : (random & 0x3) | 0x8).toString(16)
+  })
+}
+
 export function canvasReferences(nodes: CanvasNode[], assets: Record<number, CanvasAsset>, edges?: CanvasEdge[], targetId?: string): CanvasReference[] {
   const seen = new Set<number>()
   const counters = { image: 0, video: 0 }
@@ -96,7 +104,7 @@ export function makeNode(type: string, position: { x: number; y: number }): Canv
   if (generating) handles.push({ id: 'in', type: 'target', dataType: kind.output === 'IMAGE' ? ['IMAGE', 'STRING'] : ['IMAGE', 'VIDEO', 'STRING'], label: '参考素材、文本输入' })
   handles.push({ id: port, type: 'source', dataType: kind.output, label: `${kind.label}输出` })
   return {
-    id: crypto.randomUUID(), type, position,
+    id: generateNodeId(), type, position,
     data: { label: kind.label, prompt: '', model: '', parameters: {}, handles, outputs: {} },
   }
 }
