@@ -26,7 +26,6 @@ requests==2.32.3
 # AI APIs
 openai==2.32.0
 google-generativeai==0.8.3
-volcenginesdkarkruntime>=0.0.15
 
 # Encryption
 cryptography==46.0.7

@@ -61,15 +61,12 @@ async def process_txt2video(task: dict) -> None:
                     f'duration={task.get("duration")}, input_asset_ids={input_asset_ids}, '
                     f'prompt={task.get("prompt", "")[:50]}...')
 
-        # 如果有参考素材,使用 Ark SDK
+        # 处理有参考素材的情况
         if has_input_images:
-            # volcenginesdkarkruntime 暂无 async 版本，使用 asyncio.to_thread
             import asyncio
-            from volcenginesdkarkruntime import Ark
             import oss2
             import time
-
-            client = Ark(api_key=task['api_key'])
+            import httpx
 
             # OSS 配置
             auth = oss2.Auth(settings.OSS_ACCESS_KEY_ID, settings.OSS_ACCESS_KEY_SECRET)
@@ -104,7 +101,7 @@ async def process_txt2video(task: dict) -> None:
                     logger.info(f'[{task_id}] 资产 {asset_id}({media_type}) 已上传至 OSS: {file_url}')
                     all_media.append({'url': file_url, 'media_type': media_type})
 
-            logger.info(f'[{task_id}] 准备调用 Ark API: content_generation.tasks.create，media 数量={len(all_media)}')
+            logger.info(f'[{task_id}] 准备调用 Ark API: POST /contents/generations/tasks，media 数量={len(all_media)}')
 
             content = [{"type": "text", "text": task.get('prompt', '')}]
             for media in all_media:
@@ -118,17 +115,23 @@ async def process_txt2video(task: dict) -> None:
                 else:
                     raise ValueError(f'不支持的资产类型: {mt}，asset url: {media["url"]}')
 
-            # Ark SDK 调用使用 asyncio.to_thread
-            resp = await asyncio.to_thread(
-                client.content_generation.tasks.create,
-                model=task['model'],
-                content=content,
-                **parameters,
-            )
+            # 使用 httpx 直接调用 Ark API
+            async with httpx.AsyncClient(timeout=120.0) as http_client:
+                resp_raw = await http_client.post(
+                    f"{task['base_url']}/contents/generations/tasks",
+                    headers={"Authorization": f"Bearer {task['api_key']}", "Content-Type": "application/json"},
+                    json={
+                        "model": task['model'],
+                        "content": content,
+                        **parameters,
+                    }
+                )
+                resp_raw.raise_for_status()
+                resp = resp_raw.json()
 
-            remote_task_id = resp.id
+            remote_task_id = resp["id"]
         else:
-            # 纯文生视频，使用 OpenAI SDK (直接 httpx 调用)
+            # 纯文生视频，使用 httpx 直接调用
             from openai import AsyncOpenAI
             import httpx
 
