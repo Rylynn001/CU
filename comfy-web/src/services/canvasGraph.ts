@@ -156,6 +156,6 @@ export interface CanvasActions {
   preview: (asset: CanvasAsset) => void
   duplicate: (id: string) => void
   remove: (id: string) => void
-  optimizePrompt: (id: string, skillId?: string) => Promise<boolean>
+  optimizePrompt: (id: string, skillId: string) => Promise<boolean>
 }
 export const canvasActionsKey: InjectionKey<CanvasActions> = Symbol('canvasActions')

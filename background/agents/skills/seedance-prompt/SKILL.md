@@ -1,5 +1,5 @@
 ---
-name: seedance
+name: Seedance 2.0 / 2.5 视频 & 图片提示词生成器
 description: >
   Generate production-ready Chinese video prompts and image prompts for ByteDance Seedance 2.0 / 2.5 (即梦),
   and optionally execute them via the official dreamina CLI.

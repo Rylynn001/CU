@@ -28,6 +28,8 @@ const skills = ref<ChatSkill[]>([])
 const selectedSkillId = ref('')
 const skillsLoading = ref(false)
 const skillsError = ref('')
+const canOptimizePrompt = computed(() => !busy.value && !!selectedSkillId.value &&
+  (!!props.data.prompt.trim() || selectedSkillId.value === 'image-prompt-reverse'))
 async function loadSkills() {
   if (skillsLoading.value) return
   skillsLoading.value = true
@@ -39,7 +41,8 @@ async function loadSkills() {
   finally { skillsLoading.value = false }
 }
 async function optimizePrompt() {
-  if (await actions.optimizePrompt(props.id, selectedSkillId.value || undefined)) selectedSkillId.value = ''
+  if (!canOptimizePrompt.value) return
+  if (await actions.optimizePrompt(props.id, selectedSkillId.value)) selectedSkillId.value = ''
 }
 const media = computed<CanvasAsset[]>(() => Object.values(props.data.outputs).flatMap(output =>
   typeof output.value === 'string' ? [] : output.value.assetIds.map(id => actions.assets.value[id] ?? { id, url: '', type: isVideo.value ? 'video' : 'image' })
@@ -265,7 +268,7 @@ function handleCommand(command: string) {
       <mediaReferenceInput v-model="data.prompt" :items="references" :disabled="busy" />
       <div class="prompt-tools">
         <ChatSkillPicker v-model="selectedSkillId" :skills="skills" :loading="skillsLoading" :error="skillsError" :disabled="busy" @refresh="loadSkills" />
-        <ElButton size="small" :disabled="busy || !data.prompt.trim()" @click="optimizePrompt">优化提示词</ElButton>
+        <ElButton size="small" :disabled="!canOptimizePrompt" :title="selectedSkillId ? '使用所选技能优化提示词' : '请先选择技能'" @click="optimizePrompt">优化提示词</ElButton>
       </div>
       <div class="settings-grid">
         <label>模型<ElSelect :model-value="data.model" :disabled="busy" placeholder="选择模型" @update:model-value="setModel"><ElOption v-for="model in models" :key="model.id" :label="model.description || model.name" :value="String(model.id)" /></ElSelect></label>

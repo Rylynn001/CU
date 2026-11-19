@@ -76,6 +76,34 @@ test('画布历史和模型切换保留所选比例，清理旧尺寸字段', ()
   assert.deepEqual(node.data.parameters, { aspect_ratio: '3:2', image_size: '2K' })
 })
 
+test('图片和视频节点未选技能时禁止优化，反推允许空提示词', async () => {
+  for (const type of ['remote-imageGenerationNode', 'remote-videoGenerationNode']) {
+    const props = { id: 'target', type, data: makeNode(type, { x: 0, y: 0 }).data }
+    props.data.prompt = '原始提示词'
+    const requests = []
+    const state = loadSetup('../src/components/CanvasNode.vue', {
+      computed, ref, defineProps: () => props, canvasActionsKey: Symbol(),
+      inject: () => ({ isSubmitting: () => false, optimizePrompt: async (...args) => { requests.push(args); return true } }),
+      useVueFlow: () => ({}), watch: () => {}, onBeforeUnmount: () => {},
+    }, ['canOptimizePrompt', 'optimizePrompt', 'selectedSkillId'])
+    assert.equal(state.canOptimizePrompt.value, false)
+    await state.optimizePrompt()
+    assert.deepEqual(requests, [])
+    state.selectedSkillId.value = 'seedance-prompt'
+    assert.equal(state.canOptimizePrompt.value, true)
+    await state.optimizePrompt()
+    assert.deepEqual(requests, [['target', 'seedance-prompt']])
+    assert.equal(state.selectedSkillId.value, '')
+    props.data.prompt = ''
+    state.selectedSkillId.value = 'seedance-prompt'
+    assert.equal(state.canOptimizePrompt.value, false)
+    state.selectedSkillId.value = 'image-prompt-reverse'
+    assert.equal(state.canOptimizePrompt.value, true)
+    await state.optimizePrompt()
+    assert.deepEqual(requests.at(-1), ['target', 'image-prompt-reverse'])
+  }
+})
+
 test('端口跟随光标，缩放后位移一致，限制最大偏移并在离开时复位', () => {
   const props = { data: makeNode('remote-imageGenerationNode', { x: 0, y: 0 }).data }
   const { moveHandle, resetHandle } = loadSetup('../src/components/CanvasNode.vue', {

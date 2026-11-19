@@ -252,18 +252,21 @@ function createNewSession() {
   selectedSkillId.value = ''
 }
 
-async function startPromptOptimization(target: PromptOptimizationTarget, skillId?: string) {
+async function startPromptOptimization(target: PromptOptimizationTarget, skillId: string) {
+  if (!skillId) { ElMessage.warning('请先选择技能'); return false }
   if (isProcessing.value || loadingSession.value || props.homeLoading) { ElMessage.info('请等待当前对话完成后再优化'); return false }
   const model = composer.value?.selectedModel ?? availableModels.value[0]
   if (!model) { ElMessage.warning('暂无可用对话模型，请配置后重试'); return false }
   createNewSession()
   optimizationTarget.value = target
-  selectedSkillId.value = skillId || ''
+  selectedSkillId.value = skillId
   emit('update:modelValue', true)
   await nextTick()
   composer.value?.setPrompt('')
   return await handleSubmit({
-    prompt: `请优化以下${target.mediaType === 'video' ? '视频' : '图片'}提示词。需要补充关键信息时先向我提问。\n当前节点参数：${JSON.stringify(target.parameters)}\n\n${target.prompt}`,
+    prompt: skillId === 'image-prompt-reverse'
+      ? `请根据当前节点连接的上游参考图片反推提示词，只返回文字，不生成图片或视频。\n\n${target.prompt}`
+      : `请优化以下${target.mediaType === 'video' ? '视频' : '图片'}提示词。需要补充关键信息时先向我提问。\n当前节点参数：${JSON.stringify(target.parameters)}\n\n${target.prompt}`,
     skillId, model, useWebSearch: false, attachedFile: null,
   })
 }
@@ -401,6 +404,7 @@ const conversationItems = computed(() => {
 
 const handleSubmit = async (data: ChatSubmitData, confirmedOptions?: WorkflowMessageRequest['generation_options'], requestedName?: string) => {
   if (isProcessing.value || loadingSession.value || props.homeLoading) return
+  if (optimizationTarget.value && !data.skillId) { ElMessage.warning('请先选择技能'); return false }
   if (props.homeMode && !props.canvasId && !requestedName) {
     canvasName.value = ''
     canvasDialogError.value = ''
@@ -445,7 +449,7 @@ const handleSubmit = async (data: ChatSubmitData, confirmedOptions?: WorkflowMes
     controller.signal.throwIfAborted()
     if (!targetCanvasId) throw new Error('画布创建失败，请重试')
     const response = await sendWorkflowMessageStream(
-      { canvas_id: targetCanvasId, message: data.prompt, model_id: Number(data.model.id), session_id: currentSessionId.value, generation_options: confirmedOptions, asset_ids: submittedAssets.map(a => a.id), asset_mentions: assetMentions, skill_id: confirmedOptions ? undefined : data.skillId, prompt_optimization: !!optimizationTarget.value },
+      { canvas_id: targetCanvasId, message: data.prompt, model_id: Number(data.model.id), session_id: currentSessionId.value, generation_options: confirmedOptions, asset_ids: submittedAssets.map(a => a.id), asset_mentions: assetMentions, skill_id: confirmedOptions ? undefined : data.skillId, prompt_optimization: !!optimizationTarget.value, optimization_node_id: optimizationTarget.value?.nodeId },
       (status) => {
         agentMessage.steps ??= []
         if (agentMessage.steps.at(-1) !== status) agentMessage.steps.push(status)
@@ -468,7 +472,7 @@ const handleSubmit = async (data: ChatSubmitData, confirmedOptions?: WorkflowMes
     canStop.value = false
     agentMessage.context_usage = response.context_usage ?? agentMessage.context_usage
     agentMessage.optimizedPrompt = response.optimized_prompt || undefined
-    if (!confirmedOptions) selectedSkillId.value = ''
+    if (!confirmedOptions && !optimizationTarget.value) selectedSkillId.value = ''
     activeTasks.value = response.tasks || []
     if (!confirmedOptions) selectedAssets.value = []
     userMessage.id = response.user_conversation_id ?? undefined
@@ -676,6 +680,7 @@ defineExpose({ startPromptOptimization, openCreateCanvasDialog })
         :can-stop="canStop"
         :asset-count="selectedAssets.length"
         :skill-id="selectedSkillId"
+        :requires-skill="!!optimizationTarget"
         :context-usage="contextUsage"
         :references="referenceItems"
         @assets="assetPickerOpen = true"

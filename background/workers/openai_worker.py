@@ -92,12 +92,13 @@ async def process(task: dict) -> None:
                     full_prompt = ''.join(f'图{idx+1}：' for idx in range(len(image_b64_list)))
                     full_prompt += task['prompt']
 
+                    edit_parameters = {k: v for k, v in parameters.items() if k in {'size', 'quality', 'response_format'}}
                     response = await client.images.edit(
                         model=task['model'],
                         prompt=full_prompt,
                         image=image_files,
                         n=n,
-                        **parameters,
+                        **edit_parameters,
                     )
                 else:
                     logger.info(f'[{task_id}] 调用 OpenAI images.generate，model={task["model"]}, parameters={parameters}, n={n}')

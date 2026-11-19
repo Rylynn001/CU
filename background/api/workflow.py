@@ -20,7 +20,8 @@ from repositories.generation_repo import get_language_model_info
 from config import get_provider_config_by_rfid
 from agents.graph.states import ConversationState
 from agents.services.workflow_tools import WorkflowTools, session_tasks
-from agents.services.chat_assets import load_chat_assets, build_asset_content, asset_previews
+from agents.services.chat_assets import load_chat_assets, build_asset_content, asset_previews, node_reference_images
+from agents.services.canvas_tasks import refresh_tasks, apply_tasks
 from agents.skill_agent import SkillManager
 from agents.graph.utils.usage import read_model_usage
 from agents.graph.utils.prompt_validation import validate_final_prompt
@@ -182,6 +183,7 @@ class ChatRequest(BaseModel):
         default=False,
         description="是否仅优化画布节点提示词；为 true 时只返回文字，不提交图片或视频任务",
     )
+    optimization_node_id: Optional[str] = Field(default=None, min_length=1, max_length=100, description="提示词优化的画布节点编号，用于服务端读取上游参考图片")
 
 
 class ChatResponse(BaseModel):
@@ -323,7 +325,9 @@ async def _process_chat(request: ChatRequest, current_user: dict, on_progress=No
     request_id = str(uuid.uuid4())[:8]
     user_id = current_user["id"]
     session_id = request.session_id or None
-    _require_canvas(request.canvas_id, user_id)
+    if request.prompt_optimization and not (request.skill_id or '').strip():
+        raise HTTPException(status_code=400, detail='请先选择技能，再优化提示词')
+    canvas = _require_canvas(request.canvas_id, user_id)
     started_at = time.perf_counter()
     logger.info(
         "工作流对话开始 request_id=%s user_id=%s session_id=%s message_length=%d",
@@ -336,14 +340,22 @@ async def _process_chat(request: ChatRequest, current_user: dict, on_progress=No
     # 两个字段代表互斥阶段：提示词优化阶段不能夹带已确认的生成参数。
     if request.prompt_optimization and request.generation_options:
         raise HTTPException(status_code=400, detail='提示词优化不能同时提交生成任务')
+    if request.prompt_optimization and request.skill_id == 'image-prompt-reverse':
+        if not request.optimization_node_id:
+            raise HTTPException(status_code=400, detail='反推提示词缺少目标节点编号')
+        document = json.loads(canvas['document']) if isinstance(canvas['document'], str) else canvas['document']
+        tasks = await asyncio.to_thread(lambda: refresh_tasks(
+            WorkflowRepository.get_canvas_executions(request.canvas_id, user_id), user_id))
+        document = apply_tasks(document, tasks)
+        request.asset_ids, request.asset_mentions = node_reference_images(document, request.optimization_node_id)
     # 资产先从数据库加载，再转换成模型可读的文本/图片内容。
     assets = await asyncio.to_thread(load_chat_assets, request.asset_ids, user_id) if request.asset_ids else []
     user_content = await asyncio.to_thread(build_asset_content, request.message, assets, request.asset_mentions)
     skill_instruction = ''
     skill_trace = None
-    # 追问后的简短回答会继续使用暂停时的技能，避免下一轮无声切换优化规则。
-    saved_skill = ((existing_state or {}).get('optimization_skill_id') if request.prompt_optimization
-                   else ((existing_state or {}).get('generation_draft') or {}).get('skill_id'))
+    # 普通生成的暂停草稿保留原技能；节点优化每轮必须显式选择技能。
+    saved_skill = (((existing_state or {}).get('generation_draft') or {}).get('skill_id')
+                   if not request.prompt_optimization else None)
     skill_id = request.skill_id or saved_skill
     if skill_id and not request.generation_options:
         # SkillManager 只负责读取技能文件；技能文本随后作为 system 规则交给对话模型。
@@ -366,10 +378,6 @@ async def _process_chat(request: ChatRequest, current_user: dict, on_progress=No
             "Skill规则已加载 request_id=%s skill_id=%s status=loaded instruction_chars=%d prompt_optimization=%s",
             request_id, skill_id, len(skill_instruction), request.prompt_optimization,
         )
-    elif request.prompt_optimization:
-        skill_trace = {"type": "skill_call", "skill_id": None, "status": "skipped",
-                       "instruction_chars": 0, "message": "未选择技能，使用通用提示词优化"}
-        logger.info("提示词优化未使用Skill request_id=%s", request_id)
 
     # 2. 新会话延迟到工具真正提交任务，或聊天成功后再创建。
     # 这样“只追问/只优化但失败”的请求不会产生空的工作流会话。
@@ -580,8 +588,10 @@ async def _run_prompt_optimization(request, existing_state, user_content, skill_
 
 
 def _require_canvas(canvas_id: int, user_id: int):
-    if not canvas_repo.get_canvas(canvas_id, user_id):
+    canvas = canvas_repo.get_canvas(canvas_id, user_id)
+    if not canvas:
         raise HTTPException(status_code=404, detail="画布不存在")
+    return canvas
 
 
 def _require_session(session_id: int, user_id: int, canvas_id: int):
@@ -617,8 +627,6 @@ def _load_chat_state(session_id: Optional[int], user_id: int, canvas_id: int) ->
             for item in conversations
         ],
         "intent": session.get("intent"),
-        "optimization_skill_id": next((item.get('metadata', {}).get('skill_id') for item in reversed(conversations)
-                                       if item.get('metadata', {}).get('prompt_optimization') and item.get('metadata', {}).get('skill_id')), None),
         "generation_request": session.get("parameters", {}).get("generation_request"),
         "generation_draft": session.get("parameters", {}).get("generation_draft"),
         "missing_params": [],

@@ -642,9 +642,9 @@ onBeforeRouteLeave(async () => {
   if (submitting.size || uploadBusy.value || chatBusy.value) { ElMessage.warning('请等待任务提交或素材上传完成后再离开'); return false }
   try { await persist(); return true } catch (error) { ElMessage.error(message(error)); return false }
 })
-async function optimizePrompt(id: string, skillId?: string) {
+async function optimizePrompt(id: string, skillId: string) {
   const node = nodes.value.find(item => item.id === id)
-  if (!node || !activeId.value || !node.data.prompt.trim()) return false
+  if (!node || !activeId.value || !skillId || (!node.data.prompt.trim() && skillId !== 'image-prompt-reverse')) return false
   return !!await chatPanel.value?.startPromptOptimization({
     canvasId: activeId.value, nodeId: id, label: node.data.label, prompt: node.data.prompt,
     mediaType: node.type.includes('video') ? 'video' : 'image', parameters: { ...node.data.parameters },

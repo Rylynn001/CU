@@ -12,6 +12,31 @@ from PIL import Image
 from repositories import asset_repo
 
 
+def node_reference_images(document: dict, node_id: str) -> tuple[list[int], dict[int, str]]:
+    """从目标节点的实际入边和来源端口解析图片，不依赖前端提交的资产编号。"""
+    nodes = {node['id']: node for node in document['nodes']}
+    target = nodes.get(node_id)
+    if not target or target['type'] not in ('remote-imageGenerationNode', 'remote-videoGenerationNode'):
+        raise HTTPException(status_code=400, detail='提示词优化节点不存在或类型不匹配')
+    image_ids = []
+    for edge in document['edges']:
+        if edge['target'] != node_id:
+            continue
+        source = nodes[edge['source']]['data']
+        output = source.get('outputs', {}).get(edge.get('sourceHandle'))
+        if source.get('task', {}).get('state') == 'pending':
+            raise HTTPException(status_code=400, detail='上游节点正在生成，请等待完成后再反推提示词')
+        if not output or output['dataType'] != 'IMAGE':
+            continue
+        image_ids.extend(output['value']['assetIds'])
+    image_ids = list(dict.fromkeys(image_ids))
+    if not image_ids:
+        raise HTTPException(status_code=400, detail='请先连接有图片输出的上游节点，再反推提示词')
+    if len(image_ids) > 10:
+        raise HTTPException(status_code=400, detail='反推提示词最多支持 10 张上游图片')
+    return image_ids, {asset_id: f'@图片{index}' for index, asset_id in enumerate(image_ids, 1)}
+
+
 def load_chat_assets(asset_ids: list[int], user_id: int) -> list[dict]:
     assets = {asset["id"]: asset for asset in asset_repo.get_assets_by_ids(asset_ids)}
     result = []

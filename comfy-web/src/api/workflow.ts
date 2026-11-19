@@ -9,6 +9,7 @@ export interface WorkflowMessageRequest {
   asset_mentions?: Record<number, string>
   skill_id?: string
   prompt_optimization?: boolean
+  optimization_node_id?: string
   generation_options?: {
     media_type: 'image' | 'video' | 'plan' | null
     model?: number | null

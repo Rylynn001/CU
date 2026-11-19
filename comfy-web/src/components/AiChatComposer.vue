@@ -18,6 +18,7 @@ const props = withDefaults(defineProps<{
   previewOnly?: boolean
   assetCount?: number
   skillId?: string
+  requiresSkill?: boolean
   contextUsage?: ContextUsage | null
   references?: CanvasReference[]
   onSubmit?: (data: ChatSubmitData) => Promise<unknown>
@@ -32,6 +33,7 @@ const selectedModel = computed(() => props.models.find(model => model.id === mod
 const skillPrefixes: Record<string, string> = {
   'gpt-image-2-style-library': '使用 gpt-image-2-style-library 技能优化以下提示词，只要文字，不生成图片：\n\n',
   'seedance-prompt': '使用 Seedance 技能优化以下提示词，只要文字，不生成视频或图片：\n\n',
+  'image-prompt-reverse': '请使用图片提示词反推技能，根据引用的图片反推提示词，只返回文字，不生成图片或视频：\n\n',
 }
 function hasPrompt(text: string) {
   const prefix = skillPrefixes[props.skillId || '']
@@ -41,14 +43,14 @@ const { textInput, setTextInput } = usePromptInputProvider({
   maxFiles: 0,
   onError: () => ElMessage.info(props.previewOnly ? '当前仅支持文字草稿。' : '请通过回形针按钮引入参考资产。'),
   onSubmit: async ({ text }) => {
-    if (props.previewOnly || props.isProcessing || !hasPrompt(text) || !selectedModel.value) {
+    if (props.previewOnly || props.isProcessing || (props.requiresSkill && !props.skillId) || !hasPrompt(text) || !selectedModel.value) {
       setTextInput(text)
       return
     }
     await props.onSubmit?.({ prompt: text.trim(), skillId: props.skillId || undefined, model: selectedModel.value, useWebSearch: false, attachedFile: null })
   },
 })
-const disabled = computed(() => props.previewOnly || props.isProcessing || !hasPrompt(textInput.value) || !selectedModel.value)
+const disabled = computed(() => props.previewOnly || props.isProcessing || (props.requiresSkill && !props.skillId) || !hasPrompt(textInput.value) || !selectedModel.value)
 watch(() => props.skillId, (skillId, previousId) => {
   const previousPrefix = skillPrefixes[previousId || '']
   const content = previousPrefix && textInput.value.startsWith(previousPrefix)

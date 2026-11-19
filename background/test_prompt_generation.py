@@ -1,14 +1,19 @@
 """提示词与长任务回归测试：替换模型、数据库和生成工具，不发外网、不消耗额度。"""
 from copy import deepcopy
 import json
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
+from PIL import Image
 
 from api import workflow as api
 from agents.graph.subgraphs.prompt_enhance import llm_enhance_node
 from agents.graph.utils.prompt_validation import PromptEnhancementResult, validate_final_prompt
 from agents.services.generation_plan import GenerationPlan
+from agents.services.chat_assets import node_reference_images
+from agents.skill_agent import SkillManager
 
 
 def response(data):
@@ -241,10 +246,86 @@ class GenerationApiTest(unittest.IsolatedAsyncioTestCase):
     async def test_node_optimization_will_not_fill_a_question_into_canvas(self):
         client = client_for({'status': 'ready', 'reply': '优化哪个模型？', 'prompt': '优化哪个模型的提示词？'},
                             {'status': 'question', 'reply': '请提供原始提示词。'})
-        result = await self.chat(client, '优化节点提示词', prompt_optimization=True)
+        result = await self.chat(client, '优化节点提示词', prompt_optimization=True, skill_id='seedance-prompt')
         self.assertIsNone(result.optimized_prompt)
         self.assertEqual(result.reply, '请提供原始提示词。')
         self.assertEqual(self.tools[0].calls, [])
+
+    async def test_node_optimization_requires_explicit_skill_even_with_history(self):
+        self.messages.append({'role': 'user', 'message': '优化提示词', 'metadata': {
+            'prompt_optimization': True, 'skill_id': 'seedance-prompt'}})
+        for skill_id in (None, '', ' '):
+            client = client_for()
+            with self.assertRaises(api.HTTPException) as caught:
+                await self.chat(client, '继续优化', 80, prompt_optimization=True, skill_id=skill_id)
+            self.assertEqual(caught.exception.status_code, 400)
+            client.chat.completions.create.assert_not_awaited()
+        self.repo.create_session.assert_not_called()
+
+    async def test_reverse_skill_receives_real_image_from_both_entries(self):
+        with TemporaryDirectory() as directory:
+            image_path = Path(directory) / 'reference.png'
+            Image.new('RGB', (24, 16), 'red').save(image_path)
+            asset = {'id': 19, 'asset_type': 'picture', 'rfid': 4, 'location': str(image_path)}
+            document = {'nodes': [
+                {'id': 'source', 'type': 'remote-imageNode', 'data': {'outputs': {
+                    'image': {'dataType': 'IMAGE', 'value': {'assetIds': [19]}}}}},
+                {'id': 'target', 'type': 'remote-imageGenerationNode', 'data': {}},
+            ], 'edges': [{'source': 'source', 'target': 'target', 'sourceHandle': 'image'}]}
+            for node_entry in (True, False):
+                with self.subTest(node_entry=node_entry):
+                    client = client_for(ready('红色画面。')) if node_entry else client_for({'intent': 'chat'}, '红色画面。')
+                    kwargs = {'prompt_optimization': True, 'optimization_node_id': 'target'} if node_entry else {
+                        'asset_ids': [19], 'asset_mentions': {19: '@图片2'}}
+                    with patch.object(api, '_require_canvas', return_value={'document': json.dumps(document)}), \
+                            patch.object(api, 'refresh_tasks', return_value=[]), \
+                            patch('agents.services.chat_assets.asset_repo.get_assets_by_ids', return_value=[asset]) as lookup:
+                        result = await self.chat(client, '请反推参考图片提示词' if node_entry else '请反推 @图片2 提示词',
+                                                 skill_id='image-prompt-reverse', **kwargs)
+                    lookup.assert_called_with([19])
+                    messages = client.chat.completions.create.await_args_list[-1].kwargs['messages']
+                    user_parts = [part for message in messages if message['role'] == 'user' and isinstance(message['content'], list)
+                                  for part in message['content']]
+                    self.assertTrue(any(part.get('image_url', {}).get('url', '').startswith('data:image/jpeg;base64,') for part in user_parts))
+                    self.assertTrue(any(('@图片1' if node_entry else '@图片2') in part.get('text', '') for part in user_parts))
+                    system_rules = '\n'.join(message['content'] for message in messages if message['role'] == 'system')
+                    self.assertIn('通用图片分析框架', system_rules)
+                    self.assertIn('主体与媒介专项分析', system_rules)
+                    self.assertIn('插画画风专项分析', system_rules)
+                    self.assertFalse(result.workflow_ready)
+                    self.assertEqual(self.tools[-1].calls, [])
+
+
+class ReverseSkillTest(unittest.TestCase):
+    def test_skill_loads_complete_references_without_scripts(self):
+        manager = SkillManager()
+        instruction = manager.get_instruction('image-prompt-reverse')
+        for title in ('通用图片分析框架', '主体与媒介专项分析', '插画画风专项分析'):
+            self.assertIn(title, instruction)
+        self.assertFalse((manager.skills['image-prompt-reverse']['path'] / 'scripts').exists())
+        self.assertEqual(manager.get_skill_info('seedance-prompt')['info']['name'], 'Seedance 2.0 / 2.5 视频 & 图片提示词生成器')
+
+    def test_upstream_images_follow_ports_and_edges_without_unrelated_assets(self):
+        def output(kind, ids):
+            return {'dataType': kind, 'value': {'assetIds': ids}}
+        document = {'nodes': [
+            {'id': 'source', 'type': 'remote-imageNode', 'data': {'outputs': {
+                'image': output('IMAGE', [19, 20]), 'other': output('IMAGE', [99]), 'video': output('VIDEO', [70])}}},
+            {'id': 'unused', 'type': 'remote-imageNode', 'data': {'outputs': {'image': output('IMAGE', [88])}}},
+            {'id': 'target', 'type': 'remote-videoGenerationNode', 'data': {}},
+        ], 'edges': [
+            {'source': 'source', 'target': 'target', 'sourceHandle': port} for port in ('image', 'video', 'image')
+        ]}
+        self.assertEqual(node_reference_images(document, 'target'), ([19, 20], {19: '@图片1', 20: '@图片2'}))
+        document['nodes'][0]['data']['task'] = {'state': 'pending'}
+        with self.assertRaises(api.HTTPException):
+            node_reference_images(document, 'target')
+        document['nodes'][0]['data'].pop('task')
+        document['edges'] = []
+        with self.assertRaises(api.HTTPException):
+            node_reference_images(document, 'target')
+        with self.assertRaises(api.HTTPException):
+            node_reference_images(document, 'removed')
 
 
 if __name__ == '__main__':

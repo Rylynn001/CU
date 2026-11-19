@@ -129,6 +129,12 @@ test('技能前缀直接写入输入框，切换和取消保留正文，空模�
     assert.equal(composer.disabled.value, true)
     textInput.value += '猫在跑'
     assert.equal(composer.disabled.value, false)
+    props.requiresSkill = true
+    props.skillId = ''
+    assert.equal(composer.disabled.value, true)
+    props.skillId = 'image-prompt-reverse'
+    assert.equal(composer.disabled.value, false)
+    assert.match(textInput.value, /根据引用的图片反推提示词/)
   } finally { scope.stop() }
 })
 
@@ -257,15 +263,43 @@ test('节点优化携带参数和局部素材，多轮追问后仅最终结果�
   assert.match(requests[0].message, /16:9/)
   assert.deepEqual(requests[0].asset_ids, [19])
   assert.equal(panel.messages.value.at(-1).optimizedPrompt, undefined)
-  assert.equal(panel.selectedSkillId.value, '')
-  await panel.handleSubmit({ ...submission, prompt: '8秒' })
+  assert.equal(panel.selectedSkillId.value, 'seedance-prompt')
+  assert.equal(requests[0].optimization_node_id, 'n1')
+  assert.equal(await panel.handleSubmit({ ...submission, prompt: '8秒' }), false)
+  assert.equal(requests.length, 1)
+  await panel.handleSubmit({ ...submission, prompt: '8秒', skillId: panel.selectedSkillId.value })
   assert.equal(requests[1].prompt_optimization, true)
-  assert.equal(requests[1].skill_id, undefined)
+  assert.equal(requests[1].skill_id, 'seedance-prompt')
   assert.equal(panel.messages.value.at(-1).optimizedPrompt, '@图片1 人物缓慢转身，持续8秒')
   panel.createNewSession()
   assert.equal(panel.optimizationTarget.value, undefined)
   await panel.handleSubmit(submission)
   assert.equal(requests[2].prompt_optimization, false)
+})
+
+test('节点反推发送目标编号，未选技能不能启动，对话反推正确提交所引用图片', async () => {
+  const requests = []
+  const panel = panelWithStream(async request => { requests.push(request); return response }, {
+    defineProps: () => ({ canvasId: 1, prepareCanvas: async () => {}, references: [
+      { id: 19, type: 'image', label: '人物', mention: '@图片1', url: '/person.png' },
+      { id: 28, type: 'image', label: '风景', mention: '@图片2', url: '/landscape.png' },
+    ] }),
+  })
+  panel.availableModels.value = [{ id: '7' }]
+  const target = { canvasId: 1, nodeId: 'target', prompt: '', mediaType: 'image', parameters: {}, references: [] }
+  assert.equal(await panel.startPromptOptimization(target, ''), false)
+  assert.equal(panel.optimizationTarget.value, undefined)
+  assert.equal(requests.length, 0)
+  assert.equal(await panel.startPromptOptimization(target, 'image-prompt-reverse'), true)
+  assert.equal(requests[0].optimization_node_id, 'target')
+  assert.equal(requests[0].skill_id, 'image-prompt-reverse')
+  assert.match(requests[0].message, /上游参考图片反推提示词/)
+  panel.createNewSession()
+  await panel.handleSubmit({ ...submission, prompt: '请反推 @图片2 的提示词', skillId: 'image-prompt-reverse' })
+  assert.deepEqual(requests[1].asset_ids, [28])
+  assert.deepEqual(requests[1].asset_mentions, { 28: '@图片2' })
+  assert.equal(requests[1].prompt_optimization, false)
+  assert.equal(requests[1].optimization_node_id, undefined)
 })
 
 test('技能加载失败可重试，不留下扫描中的状态', async () => {
