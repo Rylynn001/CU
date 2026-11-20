@@ -1,5 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { IMAGE_ASPECT_RATIOS, VIDEO_ASPECT_RATIOS, generationParameterFields, normalizeAspectRatioParameters } from '../src/constants/aspectRatios.ts'
 
 test('图片和视频提供完整比例，每个矩形保持真实宽高比', () => {
@@ -26,4 +27,20 @@ test('模型切换仅展示一个比例字段，保留分辨率等其他参数',
   assert.deepEqual(fields.map(field => field.key), ['aspect_ratio', 'image_size'])
   assert.equal(fields[0].options.length, 11)
   assert.equal(generationParameterFields('video')[0].options.length, 7)
+})
+
+test('三份 GPT 模型配置展示分辨率档位，并在历史恢复时保留选择', () => {
+  for (const model of ['gpt-image-2', 'gpt-image-2.5-flare', 'gpt-image-2.5-sunburst']) {
+    const config = JSON.parse(readFileSync(new URL(`../../background/docs/model_parameters/${model}.json`, import.meta.url), 'utf8'))
+    const fields = generationParameterFields('image', config.fields)
+    assert.deepEqual(fields.slice(0, 3).map(field => field.key), ['aspect_ratio', 'image_size', 'quality'])
+    const resolution = fields.find(field => field.key === 'image_size')
+    assert.equal(resolution.label, '分辨率')
+    assert.equal(resolution.default, '1K')
+    assert.deepEqual(resolution.options, ['1K', '2K', '4K', 'auto'])
+    const defaults = Object.fromEntries(fields.map(field => [field.key, field.default]))
+    const restored = { ...defaults, ...normalizeAspectRatioParameters('image', { aspect_ratio: '9:16', image_size: '4K' }) }
+    assert.equal(restored.aspect_ratio, '9:16')
+    assert.equal(restored.image_size, '4K')
+  }
 })

@@ -138,7 +138,7 @@ async def process(task: dict) -> None:
                     with open(save_path, 'wb') as f:
                         f.write(img_data)
                     images.append({'url': f'/api/api-proxy/output/{filename}', 'type': 'image', 'asset_id': None,
-                                   **check_dimensions(task_id, save_path, aspect_ratio)})
+                                   **check_dimensions(task_id, save_path, aspect_ratio, expected_size=parameters['size'])})
                     save_paths.append(save_path)
 
         if not images:

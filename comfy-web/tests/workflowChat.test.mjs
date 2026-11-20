@@ -47,7 +47,7 @@ function panelWithStream(sendWorkflowMessageStream, overrides = {}) {
   }, ['handleSubmit', 'stopProcessing', 'canStop', 'messages', 'currentSessionId', 'isProcessing', 'loadSessions', 'selectSession', 'sessions', 'createNewSession',
     'openGenerationDialog', 'confirmGeneration', 'generationType', 'generationModelId', 'imageCount', 'imageAspectRatio', 'imageQuality',
     'videoRatio', 'videoResolution', 'videoDuration', 'videoDurationMin', 'videoDurationMax', 'videoDurationStep', 'availableModels', 'activeTasks', 'pollTasksOnce',
-    'canvasDialog', 'canvasName', 'canvasDialogError', 'confirmCanvasDialog', 'openCanvasDialog', 'selectAssets', 'selectedAssets', 'referenceItems',
+    'canvasDialog', 'canvasName', 'canvasDialogError', 'confirmCanvasDialog', 'openCanvasDialog', 'selectAssets', 'selectedAssets', 'referenceItems', 'uploadAsset',
     'pendingGenerationPrompt', 'pendingPlan', 'generationDialogError', 'generationDialogOpen', 'loadSkills', 'skills', 'selectedSkillId', 'skillsError', 'skillsLoading', 'startPromptOptimization', 'optimizationTarget'])
 }
 
@@ -530,6 +530,66 @@ test('入口首次提交先命名，确认后使用自定义名称创建并发�
   await panel.confirmCanvasDialog()
   assert.deepEqual(order, [['创建画布', '海报方案'], ['发送', 23]])
   assert.equal(panel.messages.value.at(-1).message, answer)
+})
+
+test('优化已连接参考图的节点时自动携带图片，即使提示词没有手写图片引用', async () => {
+  const requests = []
+  const reference = {
+    id: 91, url: '/api/api-proxy/output/reference.png', type: 'image', label: '参考图',
+    referenceId: 1, mention: '@图片1',
+  }
+  const panel = panelWithStream(async request => { requests.push(request); return response }, {
+    defineProps: () => ({ canvasId: 12, prepareCanvas: async () => {} }),
+  })
+  panel.optimizationTarget.value = {
+    canvasId: 12, nodeId: 'image-node', label: '图片节点', prompt: '一只猫',
+    mediaType: 'image', parameters: {}, references: [reference],
+  }
+  await panel.handleSubmit({ ...submission, prompt: '使用 gpt-image-2-style-library 优化：一只猫', skillId: 'gpt-image-2-style-library' })
+  assert.deepEqual(requests[0].asset_ids, [91])
+  assert.equal(requests[0].asset_mentions[91], '@图片1')
+  assert.deepEqual(panel.messages.value[0].assets.map(asset => asset.id), [91])
+})
+
+test('上传成功后作为图片附件发送，上传中阻止重复提交', async () => {
+  let finishUpload
+  const file = { type: 'image/png', name: '参考图.png' }
+  const busy = []
+  const requests = []
+  const panel = panelWithStream(async request => { requests.push(request); return response }, {
+    uploadInputImage: input => { assert.equal(input, file); return new Promise(resolve => { finishUpload = resolve }) },
+    defineEmits: () => (name, value) => { if (name === 'busy-change') busy.push(value) },
+  })
+  const input = { files: [file], value: '参考图.png' }
+  const pending = panel.uploadAsset({ target: input })
+  assert.equal(input.value, '')
+  assert.equal(panel.isProcessing.value, true)
+  await panel.handleSubmit(submission)
+  assert.equal(requests.length, 0)
+  finishUpload({ id: 91, location: 'D:\\input\\reference.png' })
+  await pending
+  assert.equal(panel.isProcessing.value, false)
+  assert.deepEqual(busy, [true, false])
+  assert.deepEqual(panel.selectedAssets.value, [{ id: 91, asset_type: 'picture', url: '/api/api-proxy/output/reference.png' }])
+  await panel.handleSubmit(submission)
+  assert.deepEqual(requests[0].asset_ids, [91])
+  assert.equal(requests[0].asset_mentions[91], '@图片1')
+})
+
+test('上传失败保留原附件并恢复输入，非图片和超限文件不发上传请求', async () => {
+  let calls = 0
+  const panel = panelWithStream(async () => response, {
+    uploadInputImage: async () => { calls++; throw new Error('上传失败') },
+  })
+  panel.selectAssets([{ id: 1, location: 'one.png' }])
+  await panel.uploadAsset({ target: { files: [{ type: 'image/png' }], value: 'x' } })
+  assert.equal(calls, 1)
+  assert.equal(panel.isProcessing.value, false)
+  assert.deepEqual(panel.selectedAssets.value.map(asset => asset.id), [1])
+  await panel.uploadAsset({ target: { files: [{ type: 'video/mp4' }], value: 'x' } })
+  panel.selectAssets(Array.from({ length: 9 }, (_,i) => ({ id: i + 2, location: 'x.png' })))
+  await panel.uploadAsset({ target: { files: [{ type: 'image/png' }], value: 'x' } })
+  assert.equal(calls, 1)
 })
 
 test('画布创建失败时不发送任务，保留失败提示供重试', async () => {

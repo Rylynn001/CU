@@ -340,14 +340,22 @@ async def _process_chat(request: ChatRequest, current_user: dict, on_progress=No
     # 两个字段代表互斥阶段：提示词优化阶段不能夹带已确认的生成参数。
     if request.prompt_optimization and request.generation_options:
         raise HTTPException(status_code=400, detail='提示词优化不能同时提交生成任务')
-    if request.prompt_optimization and request.skill_id == 'image-prompt-reverse':
-        if not request.optimization_node_id:
-            raise HTTPException(status_code=400, detail='反推提示词缺少目标节点编号')
+    if request.prompt_optimization and request.skill_id == 'image-prompt-reverse' and not request.optimization_node_id:
+        raise HTTPException(status_code=400, detail='反推提示词缺少目标节点编号')
+    if request.prompt_optimization and request.optimization_node_id:
         document = json.loads(canvas['document']) if isinstance(canvas['document'], str) else canvas['document']
         tasks = await asyncio.to_thread(lambda: refresh_tasks(
             WorkflowRepository.get_canvas_executions(request.canvas_id, user_id), user_id))
         document = apply_tasks(document, tasks)
-        request.asset_ids, request.asset_mentions = node_reference_images(document, request.optimization_node_id)
+        reverse = request.skill_id == 'image-prompt-reverse'
+        node_assets, node_mentions = node_reference_images(document, request.optimization_node_id, required=reverse)
+        if reverse:
+            request.asset_ids, request.asset_mentions = node_assets, node_mentions
+        else:
+            request.asset_ids = list(dict.fromkeys([*node_assets, *request.asset_ids]))
+            request.asset_mentions = {**request.asset_mentions, **node_mentions}
+            if len(request.asset_ids) > 10:
+                raise HTTPException(status_code=400, detail='每条消息最多引用 10 个素材')
     # 资产先从数据库加载，再转换成模型可读的文本/图片内容。
     assets = await asyncio.to_thread(load_chat_assets, request.asset_ids, user_id) if request.asset_ids else []
     user_content = await asyncio.to_thread(build_asset_content, request.message, assets, request.asset_mentions)

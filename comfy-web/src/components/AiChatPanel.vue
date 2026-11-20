@@ -18,7 +18,7 @@ import { Confirmation, ConfirmationRequest, ConfirmationActions, ConfirmationAct
 import AssetPicker from '@/components/AssetPicker.vue'
 import type { ChatSubmitData, AIModel } from '@/types/ai-models'
 import type { CanvasReference, PromptOptimizationTarget } from '@/services/canvasGraph'
-import type { CanvasSummary } from '@/api/apiService'
+import { uploadInputImage, type CanvasSummary } from '@/api/apiService'
 import {
   sendWorkflowMessageStream, getLanguageModels, getUserSessions, getChatSkills,
   getSessionHistory, retryGenerationPlan,
@@ -70,6 +70,7 @@ const historyError = ref('')
 const activeTasks = ref<WorkflowTask[]>([])
 const selectedAssets = ref<ChatAsset[]>([])
 const assetPickerOpen = ref(false)
+const uploadInput = ref<HTMLInputElement>()
 const referenceItems = computed(() => {
   const items = new Map((optimizationTarget.value?.references ?? props.references ?? []).map(item => [item.id, item]))
   for (const asset of selectedAssets.value) {
@@ -279,6 +280,30 @@ function selectAssets(assets: Array<{ id: number; location: string; asset_type?:
   }
 }
 
+function openUpload() {
+  if (!isProcessing.value && selectedAssets.value.length < 10) uploadInput.value?.click()
+}
+
+async function uploadAsset(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  if (isProcessing.value || loadingSession.value || props.homeLoading) return
+  if (!file.type.startsWith('image/')) { ElMessage.warning('这里只支持上传图片'); return }
+  if (selectedAssets.value.length >= 10) { ElMessage.warning('每条消息最多引用 10 个素材'); return }
+  isProcessing.value = true
+  emit('busy-change', true)
+  try {
+    const asset = await uploadInputImage(file)
+    if (!selectedAssets.value.some(item => item.id === asset.id)) {
+      selectedAssets.value.push({ id: asset.id, asset_type: 'picture', url: `/api/api-proxy/output/${asset.location.split(/[/\\]/).pop()}` })
+    }
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '图片上传失败')
+  } finally { isProcessing.value = false; emit('busy-change', false) }
+}
+
 function resetGenerationFields(type: 'image' | 'video') {
   generationType.value = type
   generationModels.value = pendingPlan.value?.models_by_type[type] ?? []
@@ -416,6 +441,12 @@ const handleSubmit = async (data: ChatSubmitData, confirmedOptions?: WorkflowMes
   const submittedAssets = confirmedOptions ? [] : [...selectedAssets.value]
   const assetMentions: Record<number, string> = {}
   if (!confirmedOptions) {
+    // 节点优化必须把已连接的参考图一起提交；用户无需手动输入 @图片编号。
+    if (optimizationTarget.value) {
+      for (const item of optimizationTarget.value.references) {
+        if (!submittedAssets.some(asset => asset.id === item.id)) submittedAssets.push({ id: item.id, url: item.url, asset_type: item.type === 'video' ? 'video' : 'picture' })
+      }
+    }
     const referencedIds = new Set<number>()
     for (const match of data.prompt.matchAll(/@(图|图片|视频)(\d+)/g)) {
       const type = match[1] === '视频' ? 'video' : 'image'
@@ -671,6 +702,7 @@ defineExpose({ startPromptOptimization, openCreateCanvasDialog })
           <button class="asset-remove" :disabled="isProcessing" @click="selectedAssets = selectedAssets.filter(a => a.id !== asset.id)">×</button>
         </div>
       </div>
+      <input ref="uploadInput" class="ai-upload-input" type="file" accept="image/*" @change="uploadAsset" />
       <AiChatComposer
         ref="composer"
         :key="homeMode ? 'home' : canvasId"
@@ -684,6 +716,7 @@ defineExpose({ startPromptOptimization, openCreateCanvasDialog })
         :context-usage="contextUsage"
         :references="referenceItems"
         @assets="assetPickerOpen = true"
+        @upload="openUpload"
         @stop="stopProcessing"
       >
         <template #skills>
@@ -827,6 +860,7 @@ defineExpose({ startPromptOptimization, openCreateCanvasDialog })
 
 <style scoped>
 .history-dialog { max-width: 440px; }
+.ai-upload-input { display: none; }
 .history-list { display: flex; flex-direction: column; gap: 4px; max-height: 55vh; overflow-y: auto; }
 .history-item { height: auto; align-items: flex-start; flex-direction: column; gap: 4px; padding: 12px; text-align: left; }
 .history-item[aria-current="true"] { background: var(--color-surface-soft); }

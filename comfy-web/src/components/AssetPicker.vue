@@ -177,6 +177,9 @@ watch(() => props.visible, (val) => {
     @update:model-value="emit('update:visible', $event)"
     title="选择资产"
     width="800px"
+    top="5vh"
+    class="asset-picker-dialog"
+    :append-to-body="true"
     :before-close="cancel"
   >
     <!-- 筛选按钮 -->
@@ -272,8 +275,11 @@ watch(() => props.visible, (val) => {
 </template>
 
 <style scoped>
+:global(.asset-picker-dialog) { max-width: calc(100vw - 32px); max-height: 90dvh; display: flex; flex-direction: column; }
+:global(.asset-picker-dialog > .el-dialog__body) { min-height: 0; overflow-y: auto; }
 .filter-bar {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 16px;
 }
@@ -281,21 +287,21 @@ watch(() => props.visible, (val) => {
 .filter-btn {
   padding: 5px 20px;
   border-radius: 20px;
-  border: 1px solid rgba(var(--color-white-rgb), 0.1);
-  background: rgba(var(--color-white-rgb), 0.03);
-  color: rgba(var(--color-white-rgb), 0.45);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-soft);
+  color: var(--color-muted);
   font-size: 13px;
   cursor: pointer;
   transition: all 0.2s;
 }
 .filter-btn:hover {
   border-color: rgba(var(--color-white-rgb), 0.24);
-  color: rgba(var(--color-white-rgb), 0.8);
+  color: var(--color-text);
 }
 .filter-btn.active {
   background: rgba(var(--color-white-rgb), 0.12);
   border-color: rgba(var(--color-white-rgb), 0.64);
-  color: rgba(var(--color-white-rgb), 0.95);
+  color: var(--color-text);
 }
 
 .loading {
@@ -356,7 +362,7 @@ watch(() => props.visible, (val) => {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
   gap: 16px;
-  max-height: 460px;
+  max-height: min(460px, 55vh);
   overflow-y: auto;
   padding: 4px;
 }
@@ -469,7 +475,7 @@ watch(() => props.visible, (val) => {
 }
 .select-count {
   font-size: 12px;
-  color: rgba(var(--color-white-rgb), 0.35);
+  color: var(--color-muted);
   margin-right: auto;
 }
 
@@ -482,8 +488,8 @@ watch(() => props.visible, (val) => {
   transition: all 0.2s;
 }
 .cancel-btn {
-  background: rgba(var(--color-white-rgb), 0.08);
-  color: rgba(var(--color-white-rgb), 0.7);
+  background: var(--color-surface-soft);
+  color: var(--color-text);
 }
 .cancel-btn:hover { background: rgba(var(--color-white-rgb), 0.12); }
 .confirm-btn {

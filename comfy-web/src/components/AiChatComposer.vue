@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { PaperclipIcon, ArrowUpIcon, LoaderCircleIcon, SquareIcon } from '@lucide/vue'
+import { PaperclipIcon, UploadIcon, ArrowUpIcon, LoaderCircleIcon, SquareIcon } from '@lucide/vue'
 import { PromptInput, PromptInputTextarea, PromptInputFooter, PromptInputTools, PromptInputButton, PromptInputSubmit } from '@/components/ai-elements/prompt-input'
 import { usePromptInputProvider } from '@/components/ai-elements/prompt-input/context'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -23,7 +23,7 @@ const props = withDefaults(defineProps<{
   references?: CanvasReference[]
   onSubmit?: (data: ChatSubmitData) => Promise<unknown>
 }>(), { models: () => [], assetCount: 0, references: () => [] })
-const emit = defineEmits<{ assets: []; stop: [] }>()
+const emit = defineEmits<{ assets: []; upload: []; stop: [] }>()
 const root = ref<HTMLElement>()
 const modelId = ref<string>('')
 watch(() => props.models, models => {
@@ -82,12 +82,14 @@ defineExpose({ focus, setPrompt, selectedModel })
       <PromptInputFooter v-if="$slots.workspace" class="composer-workspace-row">
         <PromptInputTools>
           <PromptInputButton aria-label="引入参考资产" title="引入参考资产" :disabled="isProcessing || assetCount >= 10" @click="emit('assets')"><PaperclipIcon class="size-4" /></PromptInputButton>
+          <PromptInputButton aria-label="上传图片" title="上传图片" :disabled="isProcessing || assetCount >= 10" @click="emit('upload')"><UploadIcon class="size-4" /></PromptInputButton>
           <slot name="workspace" />
         </PromptInputTools>
       </PromptInputFooter>
       <PromptInputFooter class="composer-controls">
         <PromptInputTools class="composer-tools">
           <PromptInputButton v-if="!previewOnly && !$slots.workspace" aria-label="引入参考资产" title="引入参考资产" :disabled="isProcessing || assetCount >= 10" @click="emit('assets')"><PaperclipIcon class="size-4" /></PromptInputButton>
+          <PromptInputButton v-if="!previewOnly && !$slots.workspace" aria-label="上传图片" title="上传图片" :disabled="isProcessing || assetCount >= 10" @click="emit('upload')"><UploadIcon class="size-4" /></PromptInputButton>
           <slot name="skills" />
           <div class="composer-model-context">
           <Select v-if="models.length" v-model="modelId" :disabled="isProcessing">

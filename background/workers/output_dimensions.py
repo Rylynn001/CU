@@ -8,7 +8,7 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 
-def check_dimensions(task_id: str, path: Path, aspect_ratio: str, media_type: str = 'image') -> dict:
+def check_dimensions(task_id: str, path: Path, aspect_ratio: str, media_type: str = 'image', *, expected_size: str | None = None) -> dict:
     try:
         if media_type == 'image':
             from PIL import Image
@@ -32,6 +32,12 @@ def check_dimensions(task_id: str, path: Path, aspect_ratio: str, media_type: st
 
     metadata = {'width': width, 'height': height}
     logger.info('[%s] 生成结果尺寸: requested_aspect_ratio=%s width=%s height=%s', task_id, aspect_ratio, width, height)
+    if expected_size and expected_size != 'auto':
+        expected_width, expected_height = map(int, expected_size.split('x'))
+        if (width, height) != (expected_width, expected_height):
+            metadata['warning'] = f'所选尺寸为 {expected_width}×{expected_height}，上游返回尺寸为 {width}×{height}，尺寸不符；已保留原始结果，请检查模型或中转服务是否支持该参数。'
+            logger.warning('[%s] %s', task_id, metadata['warning'])
+            return metadata
     if aspect_ratio != 'auto':
         expected_width, expected_height = map(int, aspect_ratio.split(':'))
         # 允许模型编码网格造成的约 1% 误差。

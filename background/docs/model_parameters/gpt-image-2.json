@@ -1,0 +1,98 @@
+{
+  "version": 1,
+  "fields": [
+    {
+      "key": "aspect_ratio",
+      "label": "比例",
+      "type": "select",
+      "default": "1:1",
+      "options": [
+        "1:1",
+        "16:9",
+        "9:16",
+        "21:9",
+        "2:3",
+        "3:2",
+        "3:4",
+        "4:3",
+        "4:5",
+        "5:4",
+        "auto"
+      ]
+    },
+    {
+      "key": "image_size",
+      "label": "分辨率",
+      "type": "select",
+      "default": "1K",
+      "options": [
+        "1K",
+        "2K",
+        "4K",
+        "auto"
+      ]
+    },
+    {
+      "key": "quality",
+      "label": "质量",
+      "type": "select",
+      "default": "auto",
+      "options": [
+        "low",
+        "medium",
+        "high",
+        "auto"
+      ]
+    },
+    {
+      "key": "n",
+      "label": "数量",
+      "type": "number",
+      "default": 1,
+      "min": 1,
+      "max": 4,
+      "step": 1
+    },
+    {
+      "key": "background",
+      "label": "背景",
+      "type": "select",
+      "default": "auto",
+      "options": [
+        "auto",
+        "opaque",
+        "transparent"
+      ]
+    },
+    {
+      "key": "output_format",
+      "label": "输出格式",
+      "type": "select",
+      "default": "png",
+      "options": [
+        "png",
+        "jpeg",
+        "webp"
+      ]
+    },
+    {
+      "key": "output_compression",
+      "label": "压缩质量",
+      "type": "number",
+      "default": 100,
+      "min": 0,
+      "max": 100,
+      "step": 1
+    }
+  ],
+  "references": {
+    "images": {
+      "supported": true,
+      "max": 6
+    },
+    "videos": {
+      "supported": false,
+      "max": 0
+    }
+  }
+}

@@ -295,6 +295,30 @@ class GenerationApiTest(unittest.IsolatedAsyncioTestCase):
                     self.assertFalse(result.workflow_ready)
                     self.assertEqual(self.tools[-1].calls, [])
 
+    async def test_regular_prompt_optimization_receives_connected_images(self):
+        with TemporaryDirectory() as directory:
+            image_path = Path(directory) / 'reference.png'
+            Image.new('RGB', (24, 16), 'red').save(image_path)
+            asset = {'id': 19, 'asset_type': 'picture', 'rfid': 4, 'location': str(image_path)}
+            document = {'nodes': [
+                {'id': 'source', 'type': 'remote-imageNode', 'data': {'outputs': {
+                    'image': {'dataType': 'IMAGE', 'value': {'assetIds': [19]}}}}},
+                {'id': 'target', 'type': 'remote-imageGenerationNode', 'data': {}},
+            ], 'edges': [{'source': 'source', 'target': 'target', 'sourceHandle': 'image'}]}
+            client = client_for({'status': 'ready', 'reply': '红色画面。', 'prompt': '红色画面。'})
+            with patch.object(api, '_require_canvas', return_value={'document': json.dumps(document)}), \
+                    patch.object(api, 'refresh_tasks', return_value=[]), \
+                    patch('agents.services.chat_assets.asset_repo.get_assets_by_ids', return_value=[asset]) as lookup:
+                result = await self.chat(client, '请优化这张图的提示词', prompt_optimization=True,
+                                         optimization_node_id='target', skill_id='gpt-image-2-style-library')
+            lookup.assert_called_with([19])
+            messages = client.chat.completions.create.await_args.kwargs['messages']
+            user_parts = [part for message in messages if message['role'] == 'user' and isinstance(message['content'], list)
+                          for part in message['content']]
+            self.assertTrue(any(part.get('image_url', {}).get('url', '').startswith('data:image/jpeg;base64,') for part in user_parts))
+            self.assertTrue(any('@图片1' in part.get('text', '') for part in user_parts))
+            self.assertEqual(result.optimized_prompt, '红色画面。')
+
 
 class ReverseSkillTest(unittest.TestCase):
     def test_skill_loads_complete_references_without_scripts(self):
@@ -322,6 +346,7 @@ class ReverseSkillTest(unittest.TestCase):
             node_reference_images(document, 'target')
         document['nodes'][0]['data'].pop('task')
         document['edges'] = []
+        self.assertEqual(node_reference_images(document, 'target', required=False), ([], {}))
         with self.assertRaises(api.HTTPException):
             node_reference_images(document, 'target')
         with self.assertRaises(api.HTTPException):
