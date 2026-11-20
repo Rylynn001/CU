@@ -348,9 +348,17 @@ async def _process_chat(request: ChatRequest, current_user: dict, on_progress=No
             WorkflowRepository.get_canvas_executions(request.canvas_id, user_id), user_id))
         document = apply_tasks(document, tasks)
         reverse = request.skill_id == 'image-prompt-reverse'
-        node_assets, node_mentions = node_reference_images(document, request.optimization_node_id, required=reverse)
+        node_assets, node_mentions = node_reference_images(document, request.optimization_node_id, required=False)
         if reverse:
-            request.asset_ids, request.asset_mentions = node_assets, node_mentions
+            request.asset_ids = list(dict.fromkeys([*request.asset_ids, *node_assets]))
+            assets = await asyncio.to_thread(load_chat_assets, request.asset_ids, user_id) if request.asset_ids else []
+            image_ids = [asset['id'] for asset in assets if asset['asset_type'] == 'picture']
+            if not image_ids:
+                raise HTTPException(status_code=400, detail='请先在助手中选择或上传图片，或连接上游图片节点，再反推提示词')
+            if len(image_ids) > 10:
+                raise HTTPException(status_code=400, detail='反推提示词最多支持 10 张图片')
+            request.asset_ids = image_ids
+            request.asset_mentions = {asset_id: f'@图片{index}' for index, asset_id in enumerate(image_ids, 1)}
         else:
             request.asset_ids = list(dict.fromkeys([*node_assets, *request.asset_ids]))
             request.asset_mentions = {**request.asset_mentions, **node_mentions}

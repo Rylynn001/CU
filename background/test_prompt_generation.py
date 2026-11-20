@@ -319,6 +319,58 @@ class GenerationApiTest(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(any('@图片1' in part.get('text', '') for part in user_parts))
             self.assertEqual(result.optimized_prompt, '红色画面。')
 
+    async def test_reverse_optimization_accepts_assistant_assets_with_or_without_connections(self):
+        with TemporaryDirectory() as directory:
+            assets = {}
+            for asset_id, name, color in ((19, 'selected.png', 'red'), (20, 'connected.png', 'blue')):
+                image_path = Path(directory) / name
+                Image.new('RGB', (24, 16), color).save(image_path)
+                assets[asset_id] = {'id': asset_id, 'asset_type': 'picture', 'rfid': 4, 'location': str(image_path)}
+
+            for connected_ids, selected_ids, expected_ids in (
+                ([], [19], [19]),
+                ([20], [19], [19, 20]),
+                ([19], [19], [19]),
+            ):
+                with self.subTest(connected_ids=connected_ids, selected_ids=selected_ids):
+                    source = {'id': 'source', 'type': 'remote-imageNode', 'data': {'outputs': {
+                        'image': {'dataType': 'IMAGE', 'value': {'assetIds': connected_ids}}}}}
+                    document = {'nodes': [source, {'id': 'target', 'type': 'remote-imageGenerationNode', 'data': {}}],
+                                'edges': ([{'source': 'source', 'target': 'target', 'sourceHandle': 'image'}]
+                                          if connected_ids else [])}
+                    client = client_for(ready('红色和蓝色画面。'))
+                    with patch.object(api, '_require_canvas', return_value={'document': json.dumps(document)}), \
+                            patch.object(api, 'refresh_tasks', return_value=[]), \
+                            patch('agents.services.chat_assets.asset_repo.get_assets_by_ids',
+                                  side_effect=lambda ids: [assets[asset_id] for asset_id in ids if asset_id in assets]) as lookup:
+                        result = await self.chat(
+                            client, '请反推这张图的提示词', asset_ids=selected_ids,
+                            asset_mentions={asset_id: f'@图片{index}' for index, asset_id in enumerate(selected_ids, 1)},
+                            prompt_optimization=True, optimization_node_id='target', skill_id='image-prompt-reverse',
+                        )
+
+                    lookup.assert_called_with(expected_ids)
+                    messages = client.chat.completions.create.await_args.kwargs['messages']
+                    user_parts = [part for message in messages if message['role'] == 'user' and isinstance(message['content'], list)
+                                  for part in message['content']]
+                    image_parts = [part for part in user_parts if part.get('image_url')]
+                    self.assertEqual(len(image_parts), len(expected_ids))
+                    self.assertTrue(any('@图片1' in part.get('text', '') for part in user_parts))
+                    if len(expected_ids) > 1:
+                        self.assertTrue(any('@图片2' in part.get('text', '') for part in user_parts))
+                    self.assertFalse(result.workflow_ready)
+
+    async def test_reverse_optimization_without_any_images_returns_clear_error(self):
+        document = {'nodes': [{'id': 'target', 'type': 'remote-imageGenerationNode', 'data': {}}], 'edges': []}
+        client = client_for()
+        with patch.object(api, '_require_canvas', return_value={'document': json.dumps(document)}), \
+                patch.object(api, 'refresh_tasks', return_value=[]):
+            with self.assertRaises(api.HTTPException) as caught:
+                await self.chat(client, '反推图片', prompt_optimization=True, optimization_node_id='target',
+                                skill_id='image-prompt-reverse')
+        self.assertIn('选择或上传图片，或连接上游图片节点', caught.exception.detail)
+        client.chat.completions.create.assert_not_awaited()
+
 
 class ReverseSkillTest(unittest.TestCase):
     def test_skill_loads_complete_references_without_scripts(self):
